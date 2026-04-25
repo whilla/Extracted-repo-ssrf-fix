@@ -27,6 +27,73 @@ export interface GeneratedImage {
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 
+function getAspectDescriptor(width = 1024, height = 1024): string {
+  if (height > width) return 'vertical portrait composition';
+  if (width > height) return 'cinematic widescreen composition';
+  return 'balanced centered composition';
+}
+
+function buildEnhancedImagePrompt(options: ImageGenerationOptions): string {
+  const {
+    prompt,
+    width = 1024,
+    height = 1024,
+    style,
+  } = options;
+
+  const styleHints = style
+    ? `Visual style: ${style}.`
+    : 'Visual style: grounded cinematic realism, not illustration, not fantasy concept art unless explicitly requested.';
+
+  return [
+    prompt.trim(),
+    styleHints,
+    `Composition: ${getAspectDescriptor(width, height)}, strong focal subject separation, intentional framing, natural depth of field, coherent background detail.`,
+    'Lighting: physically believable light, controlled contrast, cinematic highlight rolloff, no flat studio wash unless requested.',
+    'Human realism: anatomically correct hands, natural skin texture, realistic eyes, natural facial symmetry, believable fabric and material detail.',
+    'Image quality: high-end photography look, sharp subject detail, clean edges, no mushy textures, no posterized skin, no waxy face.',
+    'Do not stylize the output into obvious AI art. Keep it natural, premium, and visually credible.',
+  ].join(' ');
+}
+
+function buildNegativePrompt(options: ImageGenerationOptions): string {
+  const merged = [
+    options.negativePrompt,
+    'blurry',
+    'soft focus',
+    'low quality',
+    'low resolution',
+    'distorted anatomy',
+    'bad hands',
+    'extra fingers',
+    'extra limbs',
+    'deformed face',
+    'crossed eyes',
+    'waxy skin',
+    'plastic skin',
+    'flat lighting',
+    'overexposed highlights',
+    'underexposed face',
+    'text overlay',
+    'watermark',
+    'logo',
+    'caption',
+    'double subject',
+    'duplicate person',
+    'cropped head',
+    'floating objects',
+    'unnatural pose',
+    'robotic expression',
+    'cgi look',
+    'cartoon',
+    'illustration',
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  return merged;
+}
+
 // Helper for retrying failed requests
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -69,13 +136,12 @@ async function generateWithPuter(options: ImageGenerationOptions): Promise<Gener
     throw new Error('Puter not available');
   }
 
-  const { prompt, negativePrompt } = options;
-  
-  const enhancedPrompt = `${prompt}, high quality, detailed, professional`;
+  const enhancedPrompt = buildEnhancedImagePrompt(options);
+  const negativePrompt = buildNegativePrompt(options);
   
   return withRetry(async () => {
     const result = await window.puter.ai.txt2img(enhancedPrompt, {
-      negativePrompt: negativePrompt || 'blurry, low quality, distorted, watermark, text',
+      negativePrompt,
     });
     
     return {
@@ -101,7 +167,9 @@ async function generateWithStability(options: ImageGenerationOptions): Promise<G
     throw new Error('Stability AI API key not configured');
   }
 
-  const { prompt, negativePrompt, width = 1024, height = 1024, steps = 30 } = options;
+  const { width = 1024, height = 1024, steps = 40 } = options;
+  const prompt = buildEnhancedImagePrompt(options);
+  const negativePrompt = buildNegativePrompt(options);
 
   return withRetry(async () => {
     const response = await safeFetch(
@@ -118,7 +186,7 @@ async function generateWithStability(options: ImageGenerationOptions): Promise<G
             { text: prompt, weight: 1 },
             ...(negativePrompt ? [{ text: negativePrompt, weight: -1 }] : []),
           ],
-          cfg_scale: 7,
+          cfg_scale: 8,
           width,
           height,
           steps,
@@ -159,7 +227,9 @@ async function generateWithLeonardo(options: ImageGenerationOptions): Promise<Ge
     throw new Error('Leonardo AI API key not configured');
   }
 
-  const { prompt, negativePrompt, width = 1024, height = 1024 } = options;
+  const { width = 1024, height = 1024 } = options;
+  const prompt = buildEnhancedImagePrompt(options);
+  const negativePrompt = buildNegativePrompt(options);
 
   return withRetry(async () => {
     // Create generation
@@ -178,7 +248,7 @@ async function generateWithLeonardo(options: ImageGenerationOptions): Promise<Ge
           height,
           num_images: 1,
           modelId: '6bef9f1b-29cb-40c7-b9df-32b51c1f67d3', // Leonardo Creative
-          presetStyle: 'DYNAMIC',
+          presetStyle: 'CINEMATIC',
         }),
       },
       60000
@@ -236,7 +306,9 @@ async function generateWithIdeogram(options: ImageGenerationOptions): Promise<Ge
     throw new Error('Ideogram API key not configured');
   }
 
-  const { prompt, negativePrompt, style = 'AUTO' } = options;
+  const { style = 'AUTO' } = options;
+  const prompt = buildEnhancedImagePrompt(options);
+  const negativePrompt = buildNegativePrompt(options);
 
   return withRetry(async () => {
     const response = await safeFetch(

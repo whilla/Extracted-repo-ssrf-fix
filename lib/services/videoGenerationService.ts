@@ -31,6 +31,68 @@ const RETRY_DELAY = 1500;
 const DEFAULT_LTX_MODEL = 'fal-ai/ltx-video-v2.3';
 const DEFAULT_LTX_OPEN_ENDPOINT = 'http://127.0.0.1:8000/generate';
 
+function buildEnhancedVideoPrompt(options: VideoGenerationOptions): string {
+  const {
+    prompt,
+    aspectRatio = '16:9',
+    durationSeconds = 5,
+    cameraAngle,
+    cameraMotion,
+    shotStyle,
+    qualityProfile = 'cinematic',
+  } = options;
+
+  const formatHint =
+    aspectRatio === '9:16'
+      ? 'Vertical social-first framing with strong subject readability and immediate visual clarity.'
+      : 'Widescreen cinematic framing with depth, spatial continuity, and layered composition.';
+
+  return [
+    prompt.trim(),
+    formatHint,
+    `Duration target: ${durationSeconds} seconds.`,
+    `Quality target: ${qualityProfile === 'cinematic' ? 'premium cinematic realism with believable human performance' : 'clean social-native realism with strong clarity'}.`,
+    cameraAngle ? `Camera angle: ${cameraAngle}.` : 'Camera angle: intentional and physically believable, avoid random viewpoint drift.',
+    cameraMotion ? `Camera motion: ${cameraMotion}.` : 'Camera motion: smooth, motivated movement only, no jitter or unnatural warping.',
+    shotStyle ? `Shot style: ${shotStyle}.` : 'Shot style: coherent, controlled, filmic, not slideshow-like.',
+    'Temporal continuity: keep the same character identity, wardrobe, face structure, skin tone, props, and environment across the clip.',
+    'Motion realism: natural body mechanics, realistic walking and hand movement, grounded physics, no rubbery limbs, no AI morphing.',
+    'Lighting: believable cinematic lighting with stable exposure, practical motivated light sources, rich contrast, and no flicker.',
+    'Output must feel like a directed scene, not AI-generated b-roll.',
+  ].join(' ');
+}
+
+function buildEnhancedVideoNegativePrompt(options: VideoGenerationOptions): string {
+  return [
+    options.negativePrompt,
+    'low quality',
+    'blurry',
+    'flicker',
+    'frame inconsistency',
+    'identity drift',
+    'face morphing',
+    'rubbery limbs',
+    'bad hands',
+    'extra fingers',
+    'extra limbs',
+    'warped anatomy',
+    'stiff motion',
+    'robotic motion',
+    'unnatural eye movement',
+    'jittery camera',
+    'random zoom',
+    'slideshow feel',
+    'overprocessed skin',
+    'cgi look',
+    'cartoon look',
+    'text overlay',
+    'watermark',
+    'logo',
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -155,8 +217,6 @@ async function generateWithLtx23(options: VideoGenerationOptions): Promise<Gener
   const configuredEndpoint = await kvGet('ltx_endpoint') || process.env.NEXT_PUBLIC_LTX_ENDPOINT;
   const endpoint = normalizeFalEndpoint(configuredEndpoint || DEFAULT_LTX_MODEL);
   const {
-    prompt,
-    negativePrompt,
     aspectRatio = '16:9',
     durationSeconds = 5,
     seed,
@@ -166,6 +226,8 @@ async function generateWithLtx23(options: VideoGenerationOptions): Promise<Gener
     shotStyle,
     qualityProfile = 'cinematic',
   } = options;
+  const prompt = buildEnhancedVideoPrompt(options);
+  const negativePrompt = buildEnhancedVideoNegativePrompt(options);
 
   return withRetry(async () => {
     const response = await safeFetch(endpoint, {
@@ -217,8 +279,6 @@ async function generateWithOpenLtx23(options: VideoGenerationOptions): Promise<G
   const endpoint = String(configuredEndpoint || DEFAULT_LTX_OPEN_ENDPOINT).trim();
 
   const {
-    prompt,
-    negativePrompt,
     aspectRatio = '16:9',
     durationSeconds = 5,
     seed,
@@ -228,6 +288,8 @@ async function generateWithOpenLtx23(options: VideoGenerationOptions): Promise<G
     shotStyle,
     qualityProfile = 'cinematic',
   } = options;
+  const prompt = buildEnhancedVideoPrompt(options);
+  const negativePrompt = buildEnhancedVideoNegativePrompt(options);
 
   return withRetry(async () => {
     const response = await safeFetch(endpoint, {
