@@ -43,6 +43,7 @@ import type { ImageProvider } from '@/lib/services/imageGenerationService';
 import { generateContent } from '@/lib/services/contentEngine';
 import type { Platform } from '@/lib/types';
 import { normalizeIncomingMessage, detectExplicitMediaIntent, buildFallbackChatMessages } from './agentBehavior.mjs';
+import { ensureAgentSkillsInstalled, getEnabledAgentSkills, buildAgentSkillContext } from '@/lib/services/agentSkillService';
 
 const IMAGE_ENGINE_OPTIONS = [
   { model: 'puter', name: 'Puter Image' },
@@ -198,6 +199,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         kvGet<VideoProvider>('video_provider'),
         restoreSessionSnapshot(),
       ]);
+      await ensureAgentSkillsInstalled();
 
       setState(s => ({
         ...s,
@@ -799,7 +801,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
 
       // Build the full prompt with memory context
-      const systemPrompt = buildSystemPrompt(brandKit, undefined, memoryContext);
+      const enabledSkills = await getEnabledAgentSkills();
+      const systemPrompt = buildSystemPrompt(brandKit, undefined, memoryContext) + buildAgentSkillContext(enabledSkills);
       let userPrompt = normalizedContent;
       
       if (fileContext) {

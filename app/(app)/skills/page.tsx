@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { loadSkill, saveSkill } from '@/lib/services/memoryService';
+import { DEFAULT_APP_AGENT_SKILLS } from '@/lib/services/agentSkillService';
 import {
   Sparkles,
   Plus,
@@ -41,43 +42,10 @@ const SKILL_CATEGORIES = [
   { id: 'custom', name: 'Custom', icon: Sparkles },
 ];
 
-const DEFAULT_SKILLS: Omit<Skill, 'id' | 'createdAt' | 'usageCount'>[] = [
-  {
-    name: 'Viral Hook Generator',
-    description: 'Creates attention-grabbing opening lines',
-    prompt: 'Generate 5 viral hook variations for: {topic}. Make them controversial, curiosity-inducing, or emotionally provocative. Use power words and create an information gap.',
-    category: 'hooks',
-    enabled: true,
-  },
-  {
-    name: 'Story Framework',
-    description: 'Structures content using storytelling principles',
-    prompt: 'Create a story-driven post about {topic} using the framework: Hook → Conflict → Journey → Resolution → CTA. Make it personal and relatable.',
-    category: 'storytelling',
-    enabled: true,
-  },
-  {
-    name: 'CTA Optimizer',
-    description: 'Generates high-converting calls to action',
-    prompt: 'Create 5 compelling CTAs for {topic}. Use urgency, scarcity, or value-first approaches. Vary the style: direct, soft, question-based, benefit-focused.',
-    category: 'conversion',
-    enabled: true,
-  },
-  {
-    name: 'Engagement Booster',
-    description: 'Adds engagement triggers to content',
-    prompt: 'Rewrite this post to maximize engagement: {content}. Add questions, controversial takes, or relatable statements. Include at least 2 engagement triggers.',
-    category: 'engagement',
-    enabled: true,
-  },
-  {
-    name: 'Thread Builder',
-    description: 'Converts ideas into Twitter/X threads',
-    prompt: 'Transform this into a 7-tweet thread: {topic}. Tweet 1: Hook. Tweets 2-6: Value points. Tweet 7: Summary + CTA. Keep each tweet under 280 characters.',
-    category: 'growth',
-    enabled: true,
-  },
-];
+const DEFAULT_SKILLS: Omit<Skill, 'id' | 'createdAt' | 'usageCount'>[] = DEFAULT_APP_AGENT_SKILLS.map((skill) => ({
+  ...skill,
+  category: SKILL_CATEGORIES.some((entry) => entry.id === skill.category) ? skill.category : 'custom',
+}));
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
