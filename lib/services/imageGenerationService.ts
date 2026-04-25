@@ -13,6 +13,7 @@ export interface ImageGenerationOptions {
   style?: string;
   seed?: number;
   steps?: number;
+  qualityTier?: 'draft' | 'premium' | 'netflix';
 }
 
 export interface GeneratedImage {
@@ -41,13 +42,21 @@ function buildEnhancedImagePrompt(options: ImageGenerationOptions): string {
     style,
   } = options;
 
+  const qualityTier = options.qualityTier || 'premium';
   const styleHints = style
     ? `Visual style: ${style}.`
     : 'Visual style: grounded cinematic realism, not illustration, not fantasy concept art unless explicitly requested.';
+  const qualityHint =
+    qualityTier === 'netflix'
+      ? 'Quality target: prestige film still, premium streaming-drama realism, luxurious production value, elite cinematography.'
+      : qualityTier === 'premium'
+        ? 'Quality target: premium commercial-grade realism and polished cinematic image quality.'
+        : 'Quality target: clear, usable draft image quality.';
 
   return [
     prompt.trim(),
     styleHints,
+    qualityHint,
     `Composition: ${getAspectDescriptor(width, height)}, strong focal subject separation, intentional framing, natural depth of field, coherent background detail.`,
     'Lighting: physically believable light, controlled contrast, cinematic highlight rolloff, no flat studio wash unless requested.',
     'Human realism: anatomically correct hands, natural skin texture, realistic eyes, natural facial symmetry, believable fabric and material detail.',
@@ -92,6 +101,10 @@ function buildNegativePrompt(options: ImageGenerationOptions): string {
     .join(', ');
 
   return merged;
+}
+
+function isPremiumImageProvider(provider: ImageProvider): boolean {
+  return provider === 'stability' || provider === 'leonardo' || provider === 'ideogram';
 }
 
 // Helper for retrying failed requests
@@ -358,7 +371,7 @@ async function generateWithIdeogram(options: ImageGenerationOptions): Promise<Ge
  * Main function to generate images - auto-selects best available provider
  */
 export async function generateImage(options: ImageGenerationOptions): Promise<GeneratedImage> {
-  const { prompt, provider } = options;
+  const { prompt, provider, qualityTier = 'premium' } = options;
 
   // Validate input
   if (!prompt || prompt.trim().length === 0) {
@@ -383,6 +396,9 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
     if (!providerMap[provider]) {
       throw new Error(`Unsupported image provider: ${provider}`);
     }
+    if (qualityTier === 'netflix' && !isPremiumImageProvider(provider)) {
+      throw new Error('Netflix-grade image mode requires Stability, Leonardo, or Ideogram. Puter is not allowed for that quality tier.');
+    }
     return providerMap[provider]();
   }
 
@@ -406,6 +422,10 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
     },
   ];
 
+  if (qualityTier === 'netflix') {
+    providerAttempts.pop();
+  }
+
   for (const attempt of providerAttempts) {
     try {
       if (await attempt.check()) {
@@ -415,6 +435,10 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
       console.warn('Provider attempt failed, trying next:', error);
       continue;
     }
+  }
+
+  if (qualityTier === 'netflix') {
+    throw new Error('Netflix-grade image mode requires a configured premium provider. Add Stability, Leonardo, or Ideogram in Settings.');
   }
 
   throw new Error('No configured image provider is available. Add Stability, Leonardo, Ideogram, or enable Puter AI in this environment.');

@@ -206,6 +206,7 @@ export async function generateAgentImage(
         prompt: plan.prompt,
         negativePrompt: plan.negativePrompt,
         provider,
+        qualityTier: 'netflix',
         width: plan.aspectRatio === '9:16' ? 1024 : 1024,
         height: plan.aspectRatio === '9:16' ? 1792 : 1024,
       });
@@ -279,7 +280,7 @@ export async function generateAgentVideo(
         cameraAngle: plan.cameraAngle,
         cameraMotion: plan.cameraMotion,
         shotStyle: plan.shotStyle,
-        qualityProfile: 'cinematic',
+        qualityProfile: 'netflix',
       });
       break;
     } catch (error) {

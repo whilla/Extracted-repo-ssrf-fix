@@ -15,7 +15,7 @@ export interface VideoGenerationOptions {
   cameraAngle?: string;
   cameraMotion?: string;
   shotStyle?: string;
-  qualityProfile?: 'social' | 'cinematic';
+  qualityProfile?: 'social' | 'cinematic' | 'netflix';
 }
 
 export interface GeneratedVideo {
@@ -51,7 +51,13 @@ function buildEnhancedVideoPrompt(options: VideoGenerationOptions): string {
     prompt.trim(),
     formatHint,
     `Duration target: ${durationSeconds} seconds.`,
-    `Quality target: ${qualityProfile === 'cinematic' ? 'premium cinematic realism with believable human performance' : 'clean social-native realism with strong clarity'}.`,
+    `Quality target: ${
+      qualityProfile === 'netflix'
+        ? 'prestige-streaming cinematic realism, premium production value, natural dramatic performance, elite lighting and lens language'
+        : qualityProfile === 'cinematic'
+          ? 'premium cinematic realism with believable human performance'
+          : 'clean social-native realism with strong clarity'
+    }.`,
     cameraAngle ? `Camera angle: ${cameraAngle}.` : 'Camera angle: intentional and physically believable, avoid random viewpoint drift.',
     cameraMotion ? `Camera motion: ${cameraMotion}.` : 'Camera motion: smooth, motivated movement only, no jitter or unnatural warping.',
     shotStyle ? `Shot style: ${shotStyle}.` : 'Shot style: coherent, controlled, filmic, not slideshow-like.',
