@@ -319,6 +319,48 @@ export async function getConnectedProviders(): Promise<ProviderAccount[]> {
 export async function verifyProviderKey(providerId: string, apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
     switch (providerId) {
+      case 'openrouter': {
+        const response = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+        });
+        return { valid: response.ok, error: response.ok ? undefined : 'Invalid OpenRouter API key' };
+      }
+
+      case 'groq': {
+        const response = await fetch('https://api.groq.com/openai/v1/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+        });
+        return { valid: response.ok, error: response.ok ? undefined : 'Invalid Groq API key' };
+      }
+
+      case 'gemini': {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        return { valid: response.ok, error: response.ok ? undefined : 'Invalid Gemini API key' };
+      }
+
+      case 'deepseek': {
+        const response = await fetch('https://api.deepseek.com/models', {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+        });
+        return { valid: response.ok, error: response.ok ? undefined : 'Invalid DeepSeek API key' };
+      }
+
+      case 'suno': {
+        const response = await fetch('https://api.suno.ai/api/generate', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prompt: 'validation ping',
+            duration: 15,
+            style: 'ambient',
+          }),
+        });
+        return { valid: response.ok, error: response.ok ? undefined : 'Invalid Suno API key' };
+      }
+
       case 'elevenlabs': {
         const response = await fetch('https://api.elevenlabs.io/v1/user', {
           headers: { 'xi-api-key': apiKey },

@@ -1,6 +1,6 @@
 // Content Engine - Full generation pipeline
 import type { BrandKit, ContentDraft, ContentVersion, Platform } from '@/lib/types';
-import { chat, generateImage, generatePromptVariations, getCurrentModel } from './aiService';
+import { chat, generateImage, generatePromptVariations, getCurrentModel, universalChat } from './aiService';
 import { validateImageQuality } from './mediaValidator';
 import { generateId, saveDraft, loadBrandKit, getRecentTopics, loadDraft } from './memoryService';
 import { PLATFORMS } from '@/lib/constants/platforms';
@@ -124,7 +124,7 @@ Format your response as JSON:
 
   let response: string;
   try {
-    response = await chat(prompt, { model, brandKit: brand });
+    response = await universalChat(prompt, { model, brandKit: brand });
   } catch (error) {
     console.warn('Primary content generation failed, using offline fallback', error);
     return generateOfflineContent(options, brand);

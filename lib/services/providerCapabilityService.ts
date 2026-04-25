@@ -132,6 +132,66 @@ const PROVIDER_DEFINITIONS: Omit<ProviderCapability, 'status' | 'lastHealthCheck
     requiresApiKey: true,
   },
   {
+    id: 'githubmodels',
+    name: 'GitHub Models',
+    capabilities: {
+      chat: true,
+      vision: false,
+      imageGeneration: false,
+      audioGeneration: false,
+      codeGeneration: true,
+      functionCalling: true,
+      streaming: true,
+      embeddings: false,
+    },
+    models: [
+      { id: 'openai/gpt-4o', name: 'GPT-4o', contextWindow: 128000, maxOutputTokens: 16384, capabilities: ['chat', 'code'], recommended: true, deprecated: false, bestFor: ['general', 'coding'] },
+    ],
+    rateLimits: { requestsPerMinute: 60, tokensPerMinute: 120000, tokensPerDay: 1000000 },
+    pricing: { inputTokens: 0, outputTokens: 0 },
+    requiresApiKey: true,
+  },
+  {
+    id: 'bytez',
+    name: 'Bytez',
+    capabilities: {
+      chat: true,
+      vision: false,
+      imageGeneration: false,
+      audioGeneration: false,
+      codeGeneration: true,
+      functionCalling: true,
+      streaming: true,
+      embeddings: false,
+    },
+    models: [
+      { id: 'Qwen/Qwen3-4B', name: 'Qwen 3 4B', contextWindow: 128000, maxOutputTokens: 8192, capabilities: ['chat', 'code'], recommended: true, deprecated: false, bestFor: ['fast-chat', 'general'] },
+    ],
+    rateLimits: { requestsPerMinute: 60, tokensPerMinute: 120000, tokensPerDay: 1000000 },
+    pricing: { inputTokens: 0.2, outputTokens: 0.4 },
+    requiresApiKey: true,
+  },
+  {
+    id: 'poe',
+    name: 'Poe',
+    capabilities: {
+      chat: true,
+      vision: true,
+      imageGeneration: false,
+      audioGeneration: false,
+      codeGeneration: true,
+      functionCalling: true,
+      streaming: true,
+      embeddings: false,
+    },
+    models: [
+      { id: 'Claude-Sonnet-4.6', name: 'Claude Sonnet 4.6', contextWindow: 200000, maxOutputTokens: 8192, capabilities: ['chat', 'vision', 'code'], recommended: true, deprecated: false, bestFor: ['writing', 'analysis'] },
+    ],
+    rateLimits: { requestsPerMinute: 60, tokensPerMinute: 120000, tokensPerDay: 1000000 },
+    pricing: { inputTokens: 0.3, outputTokens: 0.7 },
+    requiresApiKey: true,
+  },
+  {
     id: 'nvidia',
     name: 'NVIDIA NIM',
     capabilities: {
@@ -220,9 +280,14 @@ async function checkApiKeyConfigured(providerId: string): Promise<boolean> {
   const keyMap: Record<string, string> = {
     groq: 'groq_key',
     openrouter: 'openrouter_key',
+    githubmodels: 'github_models_key',
+    bytez: 'bytez_key',
+    poe: 'poe_key',
     nvidia: 'nvidia_key',
     deepseek: 'deepseek_key',
     gemini: 'gemini_key',
+    together: 'together_key',
+    fireworks: 'fireworks_key',
   };
 
   const keyName = keyMap[providerId];

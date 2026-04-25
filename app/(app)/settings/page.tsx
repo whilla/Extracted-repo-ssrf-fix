@@ -6,6 +6,7 @@ import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { kvGet, kvSet } from '@/lib/services/puterService';
+import { saveProviderAccount, verifyProviderKey } from '@/lib/services/accountService';
 import {
   Brain,
   Zap,
@@ -38,6 +39,30 @@ const AI_PROVIDERS = [
     models: ['openai/gpt-4o', 'anthropic/claude-3-opus', 'meta-llama/llama-3.1-405b', 'mistralai/mixtral-8x22b'],
     keyRequired: true,
     docsUrl: 'https://openrouter.ai/keys',
+  },
+  {
+    id: 'githubmodels',
+    name: 'GitHub Models',
+    description: 'GitHub-hosted access to GPT, Claude, Llama, Mistral and more',
+    models: ['openai/gpt-4o', 'meta-llama/Llama-3.3-70B-Instruct', 'mistral-ai/Mistral-Large-2411'],
+    keyRequired: true,
+    docsUrl: 'https://github.com/marketplace/models',
+  },
+  {
+    id: 'bytez',
+    name: 'Bytez',
+    description: 'Hosted open-source LLM access with API key routing',
+    models: ['Qwen/Qwen3-4B', 'meta-llama/Llama-3.3-70B-Instruct', 'deepseek-ai/DeepSeek-V3'],
+    keyRequired: true,
+    docsUrl: 'https://www.bytez.com',
+  },
+  {
+    id: 'poe',
+    name: 'Poe',
+    description: 'Poe API access for frontier chat models',
+    models: ['Claude-Sonnet-4.6', 'GPT-4o', 'Gemini-2.5-Pro'],
+    keyRequired: true,
+    docsUrl: 'https://creator.poe.com/docs/server-bots/poe-api-bots',
   },
   {
     id: 'groq',
@@ -116,6 +141,9 @@ export default function SettingsPage() {
     // AI Providers
     geminiKey: '',
     openrouterKey: '',
+    githubModelsKey: '',
+    bytezKey: '',
+    poeKey: '',
     groqKey: '',
     nvidiaKey: '',
     togetherKey: '',
@@ -132,6 +160,7 @@ export default function SettingsPage() {
   });
   const [saving, setSaving] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const [providerValidation, setProviderValidation] = useState<Record<string, { status: 'idle' | 'checking' | 'valid' | 'invalid'; message?: string }>>({});
   const [activeTab, setActiveTab] = useState<'ai' | 'publishing' | 'audio' | 'image'>('ai');
 
   useEffect(() => {
@@ -152,6 +181,9 @@ export default function SettingsPage() {
           soundrawKey,
           geminiKey,
           openrouterKey,
+          githubModelsKey,
+          bytezKey,
+          poeKey,
           groqKey,
           nvidiaKey,
           togetherKey,
@@ -179,6 +211,9 @@ export default function SettingsPage() {
           kvGet('soundraw_key'),
           kvGet('gemini_key'),
           kvGet('openrouter_key'),
+          kvGet('github_models_key'),
+          kvGet('bytez_key'),
+          kvGet('poe_key'),
           kvGet('groq_key'),
           kvGet('nvidia_key'),
           kvGet('together_key'),
@@ -208,6 +243,9 @@ export default function SettingsPage() {
           soundrawKey: soundrawKey || '',
           geminiKey: geminiKey || '',
           openrouterKey: openrouterKey || '',
+          githubModelsKey: githubModelsKey || '',
+          bytezKey: bytezKey || '',
+          poeKey: poeKey || '',
           groqKey: groqKey || '',
           nvidiaKey: nvidiaKey || '',
           togetherKey: togetherKey || '',
@@ -257,6 +295,9 @@ export default function SettingsPage() {
       // AI Providers
       if (settings.geminiKey) savePromises.push(kvSet('gemini_key', settings.geminiKey));
       if (settings.openrouterKey) savePromises.push(kvSet('openrouter_key', settings.openrouterKey));
+      if (settings.githubModelsKey) savePromises.push(kvSet('github_models_key', settings.githubModelsKey));
+      if (settings.bytezKey) savePromises.push(kvSet('bytez_key', settings.bytezKey));
+      if (settings.poeKey) savePromises.push(kvSet('poe_key', settings.poeKey));
       if (settings.groqKey) savePromises.push(kvSet('groq_key', settings.groqKey));
       if (settings.nvidiaKey) savePromises.push(kvSet('nvidia_key', settings.nvidiaKey));
       if (settings.togetherKey) savePromises.push(kvSet('together_key', settings.togetherKey));
@@ -273,6 +314,18 @@ export default function SettingsPage() {
       if (settings.ltxOpenEndpoint) savePromises.push(kvSet('ltx_open_endpoint', settings.ltxOpenEndpoint));
       
       await Promise.all(savePromises);
+
+      await Promise.all([
+        validateAndPersistProvider('openrouter', settings.openrouterKey),
+        validateAndPersistProvider('githubmodels', settings.githubModelsKey),
+        validateAndPersistProvider('bytez', settings.bytezKey),
+        validateAndPersistProvider('poe', settings.poeKey),
+        validateAndPersistProvider('groq', settings.groqKey),
+        validateAndPersistProvider('gemini', settings.geminiKey),
+        validateAndPersistProvider('deepseek', settings.deepseekKey),
+        validateAndPersistProvider('suno', settings.sunoKey),
+      ]);
+
       alert('Settings saved successfully!');
     } catch (error) {
       console.error('Save error:', error);
@@ -286,10 +339,44 @@ export default function SettingsPage() {
     setShowKeys(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const validateAndPersistProvider = async (providerId: string, apiKey: string) => {
+    if (!apiKey.trim()) return;
+
+    setProviderValidation(prev => ({
+      ...prev,
+      [providerId]: { status: 'checking', message: 'Checking key...' },
+    }));
+
+    const verification = await verifyProviderKey(providerId, apiKey.trim());
+    if (!verification.valid) {
+      setProviderValidation(prev => ({
+        ...prev,
+        [providerId]: { status: 'invalid', message: verification.error || 'Invalid key' },
+      }));
+      return;
+    }
+
+    await saveProviderAccount({
+      provider: providerId,
+      apiKey: apiKey.trim(),
+      status: 'active',
+      tier: 'free',
+      lastVerified: new Date().toISOString(),
+    });
+
+    setProviderValidation(prev => ({
+      ...prev,
+      [providerId]: { status: 'valid', message: 'Key verified and saved' },
+    }));
+  };
+
   const getKeyForProvider = (providerId: string): string => {
     const keyMap: Record<string, string> = {
       gemini: settings.geminiKey,
       openrouter: settings.openrouterKey,
+      githubmodels: settings.githubModelsKey,
+      bytez: settings.bytezKey,
+      poe: settings.poeKey,
       groq: settings.groqKey,
       nvidia: settings.nvidiaKey,
       together: settings.togetherKey,
@@ -303,6 +390,9 @@ export default function SettingsPage() {
     const keyMap: Record<string, keyof typeof settings> = {
       gemini: 'geminiKey',
       openrouter: 'openrouterKey',
+      githubmodels: 'githubModelsKey',
+      bytez: 'bytezKey',
+      poe: 'poeKey',
       groq: 'groqKey',
       nvidia: 'nvidiaKey',
       together: 'togetherKey',
@@ -389,8 +479,13 @@ export default function SettingsPage() {
               </optgroup>
               <optgroup label="Custom Providers (Requires API Key)">
                 <option value="gemini-1.5-pro">Gemini Pro (Google)</option>
-                <option value="llama-3.1-70b">Llama 3.1 70B (Groq)</option>
                 <option value="openrouter/auto">OpenRouter Auto</option>
+                <option value="openai/gpt-4o">GPT-4o (GitHub Models)</option>
+                <option value="Claude-Sonnet-4.6">Claude Sonnet 4.6 (Poe)</option>
+                <option value="Qwen/Qwen3-4B">Qwen 3 4B (Bytez)</option>
+                <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
+                <option value="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo">Llama 3.1 70B (Together)</option>
+                <option value="accounts/fireworks/models/llama-v3p1-70b-instruct">Llama 3.1 70B (Fireworks)</option>
               </optgroup>
             </select>
             <p className="text-sm text-muted-foreground mt-2">
@@ -404,6 +499,7 @@ export default function SettingsPage() {
               const hasKey = provider.id === 'puter' || provider.id === 'ollama' 
                 ? true 
                 : !!getKeyForProvider(provider.id);
+              const validation = providerValidation[provider.id];
               
               return (
                 <GlassCard key={provider.id} className="p-5">
@@ -479,6 +575,18 @@ export default function SettingsPage() {
                       </span>
                     )}
                   </div>
+
+                  {validation && validation.status !== 'idle' && (
+                    <p className={`text-xs mt-3 ${
+                      validation.status === 'valid'
+                        ? 'text-nexus-success'
+                        : validation.status === 'invalid'
+                        ? 'text-destructive'
+                        : 'text-muted-foreground'
+                    }`}>
+                      {validation.message}
+                    </p>
+                  )}
                 </GlassCard>
               );
             })}
@@ -681,6 +789,17 @@ export default function SettingsPage() {
               <a href="https://suno.com/create" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-nexus-cyan hover:underline mt-2">
                 Sign up free <ExternalLink className="w-3 h-3" />
               </a>
+              {providerValidation.suno && providerValidation.suno.status !== 'idle' && (
+                <p className={`text-xs mt-3 ${
+                  providerValidation.suno.status === 'valid'
+                    ? 'text-nexus-success'
+                    : providerValidation.suno.status === 'invalid'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+                }`}>
+                  {providerValidation.suno.message}
+                </p>
+              )}
             </GlassCard>
             
             {/* Udio */}

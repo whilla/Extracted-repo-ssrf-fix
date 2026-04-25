@@ -68,7 +68,19 @@ export interface PlatformConfig {
 }
 
 // AI Models
-export type AIProvider = 'puter' | 'gemini' | 'openrouter' | 'groq' | 'nvidia' | 'ollama' | 'together' | 'fireworks' | 'deepseek';
+export type AIProvider =
+  | 'puter'
+  | 'gemini'
+  | 'openrouter'
+  | 'groq'
+  | 'nvidia'
+  | 'ollama'
+  | 'together'
+  | 'fireworks'
+  | 'deepseek'
+  | 'githubmodels'
+  | 'bytez'
+  | 'poe';
 
 export interface AIModel {
   provider: AIProvider;

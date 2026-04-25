@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/context/AuthContext';
+import { useNexusAutomation } from '@/hooks/useNexus';
 import {
   LayoutDashboard,
   Wand2,
@@ -32,6 +33,7 @@ import {
   Zap,
   Radio,
   Database,
+  Power,
 } from 'lucide-react';
 
 const navItems = [
@@ -64,6 +66,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const automation = useNexusAutomation();
 
   return (
     <>
@@ -107,6 +110,43 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-sidebar-border scrollbar-track-transparent">
+          <button
+            onClick={automation.toggle}
+            className={cn(
+              'w-full flex items-center gap-3 px-4 py-3 rounded-xl mb-3 text-left',
+              'transition-all duration-200 border',
+              automation.state.isRunning
+                ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/15'
+                : 'bg-sidebar-accent/60 border-sidebar-border text-sidebar-foreground/80 hover:bg-sidebar-accent'
+            )}
+            aria-label={automation.state.isRunning ? 'Turn autopilot off' : 'Turn autopilot on'}
+          >
+            <Power className={cn('w-5 h-5', automation.state.isRunning && 'text-emerald-300')} />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium">Autopilot {automation.state.isRunning ? 'On' : 'Off'}</div>
+              <div className="text-xs opacity-70">
+                {automation.state.isRunning
+                  ? automation.state.nextRun
+                    ? `Next run ${new Date(automation.state.nextRun).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                    : 'Running'
+                  : 'Tap to start automation'}
+              </div>
+            </div>
+            <div
+              className={cn(
+                'w-11 h-6 rounded-full p-1 transition-colors',
+                automation.state.isRunning ? 'bg-emerald-400/80' : 'bg-muted'
+              )}
+            >
+              <div
+                className={cn(
+                  'w-4 h-4 rounded-full bg-white transition-transform',
+                  automation.state.isRunning ? 'translate-x-5' : 'translate-x-0'
+                )}
+              />
+            </div>
+          </button>
+
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;

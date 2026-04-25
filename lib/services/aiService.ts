@@ -15,19 +15,197 @@ export const AVAILABLE_MODELS: AIModel[] = [
   // Custom key providers
   { provider: 'gemini', model: 'gemini-1.5-pro', name: 'Gemini Pro', contextWindow: 1000000, supportsVision: true },
   { provider: 'openrouter', model: 'openrouter/auto', name: 'OpenRouter Auto', contextWindow: 128000, supportsVision: true },
+  { provider: 'githubmodels', model: 'openai/gpt-4o', name: 'GitHub Models GPT-4o', contextWindow: 128000, supportsVision: false },
+  { provider: 'bytez', model: 'Qwen/Qwen3-4B', name: 'Bytez Qwen 3 4B', contextWindow: 128000, supportsVision: false },
+  { provider: 'poe', model: 'Claude-Sonnet-4.6', name: 'Poe Claude Sonnet 4.6', contextWindow: 200000, supportsVision: true },
   { provider: 'groq', model: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Groq)', contextWindow: 128000, supportsVision: false },
   { provider: 'groq', model: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (Groq)', contextWindow: 32768, supportsVision: false },
   { provider: 'nvidia', model: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B (NVIDIA)', contextWindow: 128000, supportsVision: false },
   { provider: 'deepseek', model: 'deepseek-chat', name: 'DeepSeek Chat', contextWindow: 64000, supportsVision: false },
+  { provider: 'together', model: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', name: 'Llama 3.1 70B (Together)', contextWindow: 128000, supportsVision: false },
+  { provider: 'fireworks', model: 'accounts/fireworks/models/llama-v3p1-70b-instruct', name: 'Llama 3.1 70B (Fireworks)', contextWindow: 128000, supportsVision: false },
   { provider: 'ollama', model: 'ollama/llama3.2', name: 'Llama 3.2 (Local)', contextWindow: 128000, supportsVision: false },
 ];
 
 // Default model priority chain
 const MODEL_PRIORITY = ['gpt-4o', 'claude-sonnet-4-5', 'gpt-4o-mini'];
 
+const PROVIDER_DEFAULT_MODELS = {
+  puter: ['gpt-4o', 'claude-sonnet-4-5', 'gpt-4o-mini'],
+  openrouter: ['openrouter/auto'],
+  githubmodels: ['openai/gpt-4o'],
+  poe: ['Claude-Sonnet-4.6'],
+  bytez: ['Qwen/Qwen3-4B'],
+  groq: ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
+  gemini: ['gemini-1.5-pro'],
+  deepseek: ['deepseek-chat'],
+  nvidia: ['nvidia/llama-3.1-nemotron-70b-instruct'],
+  together: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo'],
+  fireworks: ['accounts/fireworks/models/llama-v3p1-70b-instruct'],
+  ollama: ['ollama/llama3.2'],
+} as const;
+
+type RoutedProvider =
+  | 'puter'
+  | 'openrouter'
+  | 'githubmodels'
+  | 'poe'
+  | 'bytez'
+  | 'groq'
+  | 'gemini'
+  | 'deepseek'
+  | 'nvidia'
+  | 'together'
+  | 'fireworks'
+  | 'ollama';
+
 // Sleep utility
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function buildMessageArray(
+  messages: AIMessage[] | string,
+  brandKit: BrandKit | null,
+  memory: string
+): AIMessage[] {
+  if (typeof messages === 'string') {
+    return [
+      { role: 'system', content: buildSystemPrompt(brandKit, undefined, memory) },
+      { role: 'user', content: messages }
+    ];
+  }
+
+  if (messages.length === 0 || messages[0].role !== 'system') {
+    return [
+      { role: 'system', content: buildSystemPrompt(brandKit, undefined, memory) },
+      ...messages
+    ];
+  }
+
+  return messages;
+}
+
+function normalizeChatMessages(messages: AIMessage[]): Array<{ role: string; content: string }> {
+  return messages.map((message) => ({
+    role: message.role,
+    content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
+  }));
+}
+
+function getErrorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error || 'Unknown error');
+}
+
+function isQuotaOrBillingError(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes('quota') ||
+    text.includes('out of credits') ||
+    text.includes('insufficient credit') ||
+    text.includes('insufficient balance') ||
+    text.includes('billing') ||
+    text.includes('payment required') ||
+    text.includes('402') ||
+    text.includes('credit balance') ||
+    text.includes('usage limit') ||
+    text.includes('exceeded your current quota')
+  );
+}
+
+function isRetriableProviderError(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    isQuotaOrBillingError(text) ||
+    text.includes('rate') ||
+    text.includes('429') ||
+    text.includes('timeout') ||
+    text.includes('temporar') ||
+    text.includes('temporarily') ||
+    text.includes('unavailable') ||
+    text.includes('failed to fetch') ||
+    text.includes('network') ||
+    text.includes('503') ||
+    text.includes('502') ||
+    text.includes('500')
+  );
+}
+
+function isConfigurationError(message: string): boolean {
+  const text = message.toLowerCase();
+  return text.includes('not configured') || text.includes('api key') || text.includes('missing');
+}
+
+async function callOpenAICompatibleChat(
+  url: string,
+  apiKey: string,
+  messages: AIMessage[],
+  model: string,
+  extraHeaders?: Record<string, string>
+): Promise<string> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      ...extraHeaders,
+    },
+    body: JSON.stringify({
+      model,
+      messages: normalizeChatMessages(messages),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || data.output?.[0]?.content?.[0]?.text || '';
+}
+
+async function getConfiguredProviders(): Promise<RoutedProvider[]> {
+  const keyChecks = await Promise.all([
+    kvGet('openrouter_key'),
+    kvGet('github_models_key'),
+    kvGet('bytez_key'),
+    kvGet('poe_key'),
+    kvGet('groq_key'),
+    kvGet('gemini_key'),
+    kvGet('deepseek_key'),
+    kvGet('nvidia_key'),
+    kvGet('together_key'),
+    kvGet('fireworks_key'),
+    kvGet('ollama_url'),
+  ]);
+
+  const [
+    openrouterKey,
+    githubModelsKey,
+    bytezKey,
+    poeKey,
+    groqKey,
+    geminiKey,
+    deepseekKey,
+    nvidiaKey,
+    togetherKey,
+    fireworksKey,
+    ollamaUrl,
+  ] = keyChecks;
+
+  const configured: RoutedProvider[] = ['puter'];
+  if (openrouterKey) configured.push('openrouter');
+  if (githubModelsKey) configured.push('githubmodels');
+  if (bytezKey) configured.push('bytez');
+  if (poeKey) configured.push('poe');
+  if (groqKey) configured.push('groq');
+  if (geminiKey) configured.push('gemini');
+  if (deepseekKey) configured.push('deepseek');
+  if (nvidiaKey) configured.push('nvidia');
+  if (togetherKey) configured.push('together');
+  if (fireworksKey) configured.push('fireworks');
+  if (ollamaUrl) configured.push('ollama');
+  return configured;
 }
 
 // Retry with exponential backoff
@@ -237,31 +415,79 @@ export async function chatWithOpenRouter(
   // Get memory context if not provided
   const memory = memoryContext ?? await buildMemoryContext();
   
-  const messageArray = typeof messages === 'string' 
-    ? [{ role: 'user', content: buildSystemPrompt(brandKit, undefined, memory) + '\n\n' + messages }]
-    : messages;
+  const messageArray = buildMessageArray(messages, brandKit, memory);
   
   return withRetry(async () => {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+    return callOpenAICompatibleChat(
+      'https://openrouter.ai/api/v1/chat/completions',
+      apiKey,
+      messageArray,
+      model.replace('openrouter/', ''),
+      {
         'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : '',
-      },
-      body: JSON.stringify({
-        model: model.replace('openrouter/', ''),
-        messages: messageArray.map(m => ({
-          role: m.role,
-          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
-        })),
-      }),
-    });
-    
-    if (!response.ok) throw new Error(`OpenRouter error: ${await response.text()}`);
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
+      }
+    );
   }, 3, 'chatWithOpenRouter');
+}
+
+export async function chatWithGitHubModels(
+  messages: AIMessage[] | string,
+  options: { model?: string; brandKit?: BrandKit | null; memoryContext?: string } = {}
+): Promise<string> {
+  const { model = 'openai/gpt-4o', brandKit = null, memoryContext } = options;
+  const apiKey = await kvGet('github_models_key');
+  if (!apiKey) throw new Error('GitHub Models API key not configured. Add it in Settings.');
+  const memory = memoryContext ?? await buildMemoryContext();
+  const messageArray = buildMessageArray(messages, brandKit, memory);
+
+  return withRetry(async () => {
+    return callOpenAICompatibleChat(
+      'https://models.github.ai/inference/chat/completions',
+      apiKey,
+      messageArray,
+      model
+    );
+  }, 3, 'chatWithGitHubModels');
+}
+
+export async function chatWithBytez(
+  messages: AIMessage[] | string,
+  options: { model?: string; brandKit?: BrandKit | null; memoryContext?: string } = {}
+): Promise<string> {
+  const { model = 'Qwen/Qwen3-4B', brandKit = null, memoryContext } = options;
+  const apiKey = await kvGet('bytez_key');
+  if (!apiKey) throw new Error('Bytez API key not configured. Add it in Settings.');
+  const memory = memoryContext ?? await buildMemoryContext();
+  const messageArray = buildMessageArray(messages, brandKit, memory);
+
+  return withRetry(async () => {
+    return callOpenAICompatibleChat(
+      'https://api.bytez.com/v1/chat/completions',
+      apiKey,
+      messageArray,
+      model
+    );
+  }, 3, 'chatWithBytez');
+}
+
+export async function chatWithPoe(
+  messages: AIMessage[] | string,
+  options: { model?: string; brandKit?: BrandKit | null; memoryContext?: string } = {}
+): Promise<string> {
+  const { model = 'Claude-Sonnet-4.6', brandKit = null, memoryContext } = options;
+  const apiKey = await kvGet('poe_key');
+  if (!apiKey) throw new Error('Poe API key not configured. Add it in Settings.');
+  const memory = memoryContext ?? await buildMemoryContext();
+  const messageArray = buildMessageArray(messages, brandKit, memory);
+
+  return withRetry(async () => {
+    return callOpenAICompatibleChat(
+      'https://api.poe.com/v1/chat/completions',
+      apiKey,
+      messageArray,
+      model
+    );
+  }, 3, 'chatWithPoe');
 }
 
 // Chat with NVIDIA NIM
@@ -301,6 +527,46 @@ export async function chatWithNvidia(
     const data = await response.json();
     return data.choices?.[0]?.message?.content || '';
   }, 3, 'chatWithNvidia');
+}
+
+export async function chatWithTogether(
+  messages: AIMessage[] | string,
+  options: { model?: string; brandKit?: BrandKit | null; memoryContext?: string } = {}
+): Promise<string> {
+  const { model = 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', brandKit = null, memoryContext } = options;
+  const apiKey = await kvGet('together_key');
+  if (!apiKey) throw new Error('Together API key not configured. Add it in Settings.');
+  const memory = memoryContext ?? await buildMemoryContext();
+  const messageArray = buildMessageArray(messages, brandKit, memory);
+
+  return withRetry(async () => {
+    return callOpenAICompatibleChat(
+      'https://api.together.xyz/v1/chat/completions',
+      apiKey,
+      messageArray,
+      model
+    );
+  }, 3, 'chatWithTogether');
+}
+
+export async function chatWithFireworks(
+  messages: AIMessage[] | string,
+  options: { model?: string; brandKit?: BrandKit | null; memoryContext?: string } = {}
+): Promise<string> {
+  const { model = 'accounts/fireworks/models/llama-v3p1-70b-instruct', brandKit = null, memoryContext } = options;
+  const apiKey = await kvGet('fireworks_key');
+  if (!apiKey) throw new Error('Fireworks API key not configured. Add it in Settings.');
+  const memory = memoryContext ?? await buildMemoryContext();
+  const messageArray = buildMessageArray(messages, brandKit, memory);
+
+  return withRetry(async () => {
+    return callOpenAICompatibleChat(
+      'https://api.fireworks.ai/inference/v1/chat/completions',
+      apiKey,
+      messageArray,
+      model
+    );
+  }, 3, 'chatWithFireworks');
 }
 
 // Chat with Ollama (local)
@@ -388,14 +654,31 @@ export async function universalChat(
   } = {}
 ): Promise<string> {
   const { model = 'gpt-4o' } = options;
-  const fallbackModels = Array.from(new Set([
-    model,
-    ...MODEL_PRIORITY.filter(candidate => candidate !== model),
-  ]));
+  const configuredProviders = await getConfiguredProviders();
+  const preferredConfig = AVAILABLE_MODELS.find((candidate) => candidate.model === model);
+  const preferredProvider = (preferredConfig?.provider || 'puter') as RoutedProvider;
+  const fallbackProviders = [
+    preferredProvider,
+    ...configuredProviders.filter((provider) => provider !== preferredProvider),
+  ];
+
+  const candidateModels = Array.from(new Set(
+    fallbackProviders.flatMap((provider) => {
+      if (provider === preferredProvider) {
+        const sameProviderModels = AVAILABLE_MODELS
+          .filter((entry) => entry.provider === preferredProvider)
+          .map((entry) => entry.model);
+        return [model, ...sameProviderModels];
+      }
+
+      const providerDefaults = PROVIDER_DEFAULT_MODELS[provider];
+      return providerDefaults ? [...providerDefaults] : [];
+    })
+  ));
 
   let lastError: Error | null = null;
 
-  for (const candidateModel of fallbackModels) {
+  for (const candidateModel of candidateModels) {
     try {
       const modelConfig = AVAILABLE_MODELS.find(m => m.model === candidateModel);
       const provider = modelConfig?.provider || 'puter';
@@ -407,8 +690,18 @@ export async function universalChat(
           return await chatWithGroq(messages, { ...options, model: candidateModel });
         case 'openrouter':
           return await chatWithOpenRouter(messages, { ...options, model: candidateModel });
+        case 'githubmodels':
+          return await chatWithGitHubModels(messages, { ...options, model: candidateModel });
+        case 'bytez':
+          return await chatWithBytez(messages, { ...options, model: candidateModel });
+        case 'poe':
+          return await chatWithPoe(messages, { ...options, model: candidateModel });
         case 'nvidia':
           return await chatWithNvidia(messages, { ...options, model: candidateModel });
+        case 'together':
+          return await chatWithTogether(messages, { ...options, model: candidateModel });
+        case 'fireworks':
+          return await chatWithFireworks(messages, { ...options, model: candidateModel });
         case 'ollama':
           return await chatWithOllama(messages, { ...options, model: candidateModel });
         case 'deepseek':
@@ -418,7 +711,16 @@ export async function universalChat(
       }
     } catch (error) {
       lastError = error as Error;
-      console.warn(`universalChat failed on ${candidateModel}, trying fallback model`, lastError);
+      const errorMessage = getErrorText(error);
+      if (isConfigurationError(errorMessage)) {
+        console.warn(`universalChat skipped ${candidateModel}: ${errorMessage}`);
+        continue;
+      }
+      if (isRetriableProviderError(errorMessage)) {
+        console.warn(`universalChat failed on ${candidateModel}, trying fallback provider/model`, lastError);
+        continue;
+      }
+      console.warn(`universalChat failed on ${candidateModel}, trying next available option`, lastError);
     }
   }
 
@@ -584,7 +886,12 @@ export const aiService = {
   chatWithGemini,
   chatWithGroq,
   chatWithOpenRouter,
+  chatWithGitHubModels,
+  chatWithBytez,
+  chatWithPoe,
   chatWithNvidia,
+  chatWithTogether,
+  chatWithFireworks,
   chatWithOllama,
   chatWithDeepSeek,
   universalChat,
