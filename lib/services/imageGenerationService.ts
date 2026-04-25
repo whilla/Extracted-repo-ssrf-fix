@@ -28,6 +28,25 @@ export interface GeneratedImage {
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 
+async function getProviderApiKey(provider: ImageProvider): Promise<string | null> {
+  const keyAliases: Record<ImageProvider, string[]> = {
+    puter: [],
+    stability: ['stability_key', 'provider_stability_apiKey'],
+    leonardo: ['leonardo_key', 'provider_leonardo_apiKey'],
+    ideogram: ['ideogram_key', 'provider_ideogram_apiKey'],
+  };
+
+  const aliases = keyAliases[provider];
+  for (const key of aliases) {
+    const value = await kvGet(key);
+    if (value && String(value).trim().length > 0) {
+      return String(value).trim();
+    }
+  }
+
+  return null;
+}
+
 function getAspectDescriptor(width = 1024, height = 1024): string {
   if (height > width) return 'vertical portrait composition';
   if (width > height) return 'cinematic widescreen composition';
@@ -190,7 +209,7 @@ async function canUsePuter(): Promise<boolean> {
  * Generate image with Stability AI
  */
 async function generateWithStability(options: ImageGenerationOptions): Promise<GeneratedImage> {
-  const apiKey = await kvGet('stability_key');
+  const apiKey = await getProviderApiKey('stability');
   if (!apiKey) {
     throw new Error('Stability AI API key not configured');
   }
@@ -250,7 +269,7 @@ async function generateWithStability(options: ImageGenerationOptions): Promise<G
  * Generate image with Leonardo AI
  */
 async function generateWithLeonardo(options: ImageGenerationOptions): Promise<GeneratedImage> {
-  const apiKey = await kvGet('leonardo_key');
+  const apiKey = await getProviderApiKey('leonardo');
   if (!apiKey) {
     throw new Error('Leonardo AI API key not configured');
   }
@@ -329,7 +348,7 @@ async function generateWithLeonardo(options: ImageGenerationOptions): Promise<Ge
  * Generate image with Ideogram
  */
 async function generateWithIdeogram(options: ImageGenerationOptions): Promise<GeneratedImage> {
-  const apiKey = await kvGet('ideogram_key');
+  const apiKey = await getProviderApiKey('ideogram');
   if (!apiKey) {
     throw new Error('Ideogram API key not configured');
   }
@@ -420,15 +439,15 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
   // Auto-select best available configured provider with real fallback.
   const providerAttempts: Array<{ check: () => Promise<boolean>; generate: () => Promise<GeneratedImage> }> = [
     { 
-      check: async () => !!(await kvGet('stability_key')), 
+      check: async () => !!(await getProviderApiKey('stability')), 
       generate: () => generateWithStability(cleanOptions) 
     },
     { 
-      check: async () => !!(await kvGet('leonardo_key')), 
+      check: async () => !!(await getProviderApiKey('leonardo')), 
       generate: () => generateWithLeonardo(cleanOptions) 
     },
     { 
-      check: async () => !!(await kvGet('ideogram_key')), 
+      check: async () => !!(await getProviderApiKey('ideogram')), 
       generate: () => generateWithIdeogram(cleanOptions) 
     },
     { 
@@ -456,7 +475,7 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
     throw new Error('Netflix-grade image mode requires a configured premium provider. Add Stability, Leonardo, or Ideogram in Settings.');
   }
 
-  throw new Error('No configured image provider is available. Add Stability, Leonardo, Ideogram, or enable Puter AI in this environment.');
+  throw new Error('No reachable image provider is available right now. Check provider status/credits and retry, or switch provider.');
 }
 
 /**
@@ -494,9 +513,9 @@ export async function getAvailableProviders(): Promise<ImageProvider[]> {
   const providers: ImageProvider[] = [];
 
   const [stability, leonardo, ideogram] = await Promise.all([
-    kvGet('stability_key'),
-    kvGet('leonardo_key'),
-    kvGet('ideogram_key'),
+    getProviderApiKey('stability'),
+    getProviderApiKey('leonardo'),
+    getProviderApiKey('ideogram'),
   ]);
 
   if (await canUsePuter()) providers.push('puter');

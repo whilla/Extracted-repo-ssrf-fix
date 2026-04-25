@@ -238,7 +238,17 @@ export async function generateAgentImage(
     provider?: ImageProvider;
   } = {}
 ): Promise<MediaGenerationResult> {
-  let plan = await buildMediaPrompt(request, 'image', options.preferredModel);
+  const maxFidelity = wantsMaxFidelity(request);
+  const useFastPath = !maxFidelity;
+  let plan = useFastPath
+    ? {
+        prompt: request.trim(),
+        negativePrompt: undefined,
+        aspectRatio: clampAspectRatio(/\b(9:16|vertical|reel|shorts|tiktok)\b/i.test(request) ? '9:16' : '16:9'),
+        reasoning: 'Fast-path prompt routing for lower latency image generation.',
+        agentOutputs: [],
+      }
+    : await buildMediaPrompt(request, 'image', options.preferredModel);
   const generationStrategies: Array<{
     provider?: ImageProvider;
     qualityTier: 'netflix' | 'premium';
@@ -257,8 +267,9 @@ export async function generateAgentImage(
   let result: Awaited<ReturnType<typeof generateImageAsset>> | null = null;
   let lastError: Error | null = null;
   let usedMinQualityScore = 78;
+  const maxGenerationAttempts = useFastPath ? 1 : 2;
 
-  for (let generationAttempt = 0; generationAttempt < 2 && !result; generationAttempt++) {
+  for (let generationAttempt = 0; generationAttempt < maxGenerationAttempts && !result; generationAttempt++) {
     for (const strategy of generationStrategies) {
       try {
         result = await generateImageAsset({
@@ -288,7 +299,7 @@ export async function generateAgentImage(
     if (!quickValidation.valid) {
       lastError = new Error(quickValidation.reason || 'Generated image was invalid');
       result = null;
-    } else {
+    } else if (!useFastPath) {
       const quality = await validateImageQuality(result.url);
       if (!quality.passed || (quality.score || 0) < usedMinQualityScore) {
         lastError = new Error(quality.reason || 'Generated image failed quality validation');

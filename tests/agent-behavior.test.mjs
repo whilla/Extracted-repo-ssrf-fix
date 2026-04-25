@@ -4,7 +4,7 @@ import {
   normalizeIncomingMessage,
   detectExplicitMediaIntent,
   buildFallbackChatMessages,
-} from '../lib/context/agentBehavior.js';
+} from '../lib/context/agentBehavior.mjs';
 
 test('normalizeIncomingMessage handles blank content with files', () => {
   assert.equal(normalizeIncomingMessage('   ', true), 'Please analyze the attached files.');

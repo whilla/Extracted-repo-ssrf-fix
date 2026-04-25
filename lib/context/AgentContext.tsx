@@ -42,7 +42,7 @@ import type { VideoProvider } from '@/lib/services/videoGenerationService';
 import type { ImageProvider } from '@/lib/services/imageGenerationService';
 import { generateContent } from '@/lib/services/contentEngine';
 import type { Platform } from '@/lib/types';
-import { normalizeIncomingMessage, detectExplicitMediaIntent, buildFallbackChatMessages } from './agentBehavior';
+import { normalizeIncomingMessage, detectExplicitMediaIntent, buildFallbackChatMessages } from './agentBehavior.mjs';
 
 const IMAGE_ENGINE_OPTIONS = [
   { model: 'puter', name: 'Puter Image' },
