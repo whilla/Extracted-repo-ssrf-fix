@@ -1,6 +1,6 @@
-const CACHE_NAME = 'nexusai-shell-v1';
+const CACHE_NAME = 'nexusai-shell-v2';
 const OFFLINE_URL = '/offline.html';
-const APP_SHELL = ['/', '/manifest.json', '/icon.svg', OFFLINE_URL];
+const APP_SHELL = ['/manifest.json', '/icon.svg', OFFLINE_URL];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -22,14 +22,9 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
+        .then((response) => response)
         .catch(async () => {
-          const cached = await caches.match(event.request);
-          return cached || caches.match(OFFLINE_URL);
+          return caches.match(OFFLINE_URL);
         })
     );
     return;
@@ -41,7 +36,18 @@ self.addEventListener('fetch', (event) => {
 
       return fetch(event.request)
         .then((response) => {
-          if (!response || response.status !== 200 || response.type !== 'basic') {
+          const requestUrl = new URL(event.request.url);
+          const sameOrigin = requestUrl.origin === self.location.origin;
+          const isCacheableAsset =
+            sameOrigin &&
+            (requestUrl.pathname.startsWith('/_next/static/') ||
+              requestUrl.pathname.startsWith('/icons') ||
+              requestUrl.pathname === '/icon.svg' ||
+              requestUrl.pathname === '/manifest.json' ||
+              requestUrl.pathname.startsWith('/audio/') ||
+              requestUrl.pathname.startsWith('/images/'));
+
+          if (!response || response.status !== 200 || response.type !== 'basic' || !isCacheableAsset) {
             return response;
           }
 
