@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/context/AuthContext';
+import { getCachedAuthUser, hasCachedAuthSession } from '@/lib/services/puterService';
 import { AgentProvider } from '@/lib/context/AgentContext';
 import { BrandKitProvider } from '@/lib/context/BrandKitContext';
 import { AppShell } from '@/components/layout/AppShell';
@@ -16,23 +17,25 @@ import { NotificationBootstrap } from '@/components/NotificationBootstrap';
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isLoading, isAuthenticated, onboardingComplete, brandKit } = useAuth();
+  const hasLocalSession = hasCachedAuthSession() || !!getCachedAuthUser();
+  const allowAppShell = isAuthenticated || hasLocalSession;
   const isReady = onboardingComplete || !!brandKit;
 
   useEffect(() => {
     if (isLoading) return;
 
-    if (!isAuthenticated) {
+    if (!allowAppShell) {
       router.replace('/');
     } else if (!isReady) {
       router.replace('/onboarding');
     }
-  }, [isLoading, isAuthenticated, isReady, router]);
+  }, [isLoading, allowAppShell, isReady, router]);
 
   if (isLoading) {
     return <FullPageLoading text="Loading..." />;
   }
 
-  if (!isAuthenticated) {
+  if (!allowAppShell) {
     return <FullPageLoading text="Redirecting to login..." />;
   }
 
