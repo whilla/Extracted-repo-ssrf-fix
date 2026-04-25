@@ -358,8 +358,11 @@ export function getActivityHeatmap(platform: Platform): number[][] {
   for (let day = 0; day < 7; day++) {
     heatmap[day] = [];
     for (let hour = 0; hour < 24; hour++) {
-      // Base activity with some variation
-      let activity = 20 + Math.random() * 30;
+      const daytimeCurve = hour >= 6 && hour <= 22
+        ? 24 + Math.max(0, 18 - Math.abs(14 - hour) * 2)
+        : 8;
+      const weekdayBoost = day >= 1 && day <= 5 ? 6 : 0;
+      let activity = daytimeCurve + weekdayBoost;
       
       // Boost for best times
       const matchingSlot = recommendation.find(s => s.day === day && s.hour === hour);
@@ -372,7 +375,7 @@ export function getActivityHeatmap(platform: Platform): number[][] {
         activity *= 0.3;
       }
       
-      heatmap[day][hour] = Math.round(activity);
+      heatmap[day][hour] = Math.round(Math.max(0, Math.min(100, activity)));
     }
   }
   

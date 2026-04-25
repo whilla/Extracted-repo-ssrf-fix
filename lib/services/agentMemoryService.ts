@@ -1,6 +1,7 @@
 // Agent Memory Service - Persistent memory that survives model switches
 // This stores learned information, user preferences, niche details, and content ideas
 import { kvGet, kvSet, readFile, writeFile, PATHS } from './puterService';
+import { universalChat } from './aiService';
 
 export interface AgentMemory {
   // Core brand/niche knowledge
@@ -8,6 +9,8 @@ export interface AgentMemory {
   nicheDetails: string[];
   targetAudience: string;
   audienceInsights: string[];
+  targetPlatforms: string[];
+  monetizationGoals: string[];
   
   // Content ideas and themes
   contentIdeas: ContentIdea[];
@@ -58,7 +61,116 @@ export interface ConversationSummary {
   messageCount: number;
 }
 
+export interface MemoryExtraction {
+  niche?: string;
+  nicheDetails?: string[];
+  targetAudience?: string;
+  audienceInsights?: string[];
+  targetPlatforms?: string[];
+  monetizationGoals?: string[];
+  businessGoals?: string[];
+  contentIdeas?: string[];
+  userFacts?: Array<{ key: string; value: string }>;
+}
+
 const MEMORY_PATH = `${PATHS.system}/agent_memory.json`;
+
+function dedupeStrings(values: string[], lowercase = false): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const rawValue of values) {
+    const trimmed = String(rawValue || '').trim();
+    if (!trimmed) continue;
+
+    const normalized = lowercase ? trimmed.toLowerCase() : trimmed;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function createIdeaId(idea: string): string {
+  const slug = idea
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+
+  return `idea-${slug || Date.now()}`;
+}
+
+function normalizeContentIdeas(contentIdeas: ContentIdea[]): ContentIdea[] {
+  const seen = new Set<string>();
+  const result: ContentIdea[] = [];
+
+  for (const item of contentIdeas || []) {
+    const idea = String(item?.idea || '').trim();
+    if (!idea) continue;
+
+    const key = idea.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    result.push({
+      id: String(item?.id || '').trim() || createIdeaId(idea),
+      idea,
+      category: String(item?.category || 'memory').trim() || 'memory',
+      platform: item?.platform ? String(item.platform).trim().toLowerCase() : undefined,
+      status: item?.status === 'used' || item?.status === 'archived' ? item.status : 'new',
+      createdAt: item?.createdAt || new Date().toISOString(),
+      usedAt: item?.usedAt,
+    });
+  }
+
+  return result.slice(-100);
+}
+
+function normalizeAgentMemory(memory?: Partial<AgentMemory> | null): AgentMemory {
+  return {
+    ...DEFAULT_MEMORY,
+    ...memory,
+    niche: String(memory?.niche || '').trim(),
+    nicheDetails: dedupeStrings(memory?.nicheDetails || []),
+    targetAudience: String(memory?.targetAudience || '').trim(),
+    audienceInsights: dedupeStrings(memory?.audienceInsights || []),
+    targetPlatforms: dedupeStrings(memory?.targetPlatforms || [], true),
+    monetizationGoals: dedupeStrings(memory?.monetizationGoals || []),
+    contentIdeas: normalizeContentIdeas(memory?.contentIdeas || []),
+    contentPillars: dedupeStrings(memory?.contentPillars || []),
+    contentThemes: dedupeStrings(memory?.contentThemes || []),
+    preferredTone: String(memory?.preferredTone || '').trim(),
+    writingStyle: String(memory?.writingStyle || '').trim(),
+    avoidTopics: dedupeStrings(memory?.avoidTopics || []),
+    preferredHashtags: dedupeStrings(memory?.preferredHashtags || [], true),
+    userFacts: (memory?.userFacts || [])
+      .map(fact => ({
+        key: String(fact?.key || '').trim(),
+        value: String(fact?.value || '').trim(),
+        confidence: typeof fact?.confidence === 'number' ? fact.confidence : 0.8,
+        source: String(fact?.source || 'inferred').trim() || 'inferred',
+        createdAt: fact?.createdAt || new Date().toISOString(),
+      }))
+      .filter(fact => fact.key && fact.value),
+    businessGoals: dedupeStrings(memory?.businessGoals || []),
+    competitors: dedupeStrings(memory?.competitors || []),
+    conversationSummaries: (memory?.conversationSummaries || [])
+      .map(summary => ({
+        id: String(summary?.id || '').trim() || `summary-${Date.now()}`,
+        summary: String(summary?.summary || '').trim(),
+        keyPoints: dedupeStrings(summary?.keyPoints || []),
+        createdAt: summary?.createdAt || new Date().toISOString(),
+        messageCount: typeof summary?.messageCount === 'number' ? summary.messageCount : 0,
+      }))
+      .filter(summary => summary.summary)
+      .slice(-20),
+    lastUpdated: memory?.lastUpdated || new Date().toISOString(),
+  };
+}
 
 // Default empty memory
 const DEFAULT_MEMORY: AgentMemory = {
@@ -66,6 +178,8 @@ const DEFAULT_MEMORY: AgentMemory = {
   nicheDetails: [],
   targetAudience: '',
   audienceInsights: [],
+  targetPlatforms: [],
+  monetizationGoals: [],
   contentIdeas: [],
   contentPillars: [],
   contentThemes: [],
@@ -84,16 +198,17 @@ const DEFAULT_MEMORY: AgentMemory = {
 export async function loadAgentMemory(): Promise<AgentMemory> {
   try {
     const memory = await readFile<AgentMemory>(MEMORY_PATH, true);
-    return memory || { ...DEFAULT_MEMORY };
+    return normalizeAgentMemory(memory);
   } catch {
-    return { ...DEFAULT_MEMORY };
+    return normalizeAgentMemory();
   }
 }
 
 // Save agent memory
 export async function saveAgentMemory(memory: AgentMemory): Promise<boolean> {
-  memory.lastUpdated = new Date().toISOString();
-  return writeFile(MEMORY_PATH, memory);
+  const normalized = normalizeAgentMemory(memory);
+  normalized.lastUpdated = new Date().toISOString();
+  return writeFile(MEMORY_PATH, normalized);
 }
 
 // Update specific fields in memory
@@ -106,10 +221,15 @@ export async function updateAgentMemory(updates: Partial<AgentMemory>): Promise<
 // Add a content idea
 export async function addContentIdea(idea: string, category: string, platform?: string): Promise<boolean> {
   const memory = await loadAgentMemory();
+  const normalizedIdea = idea.trim();
+  if (!normalizedIdea) return true;
+
+  const exists = memory.contentIdeas.some(existing => existing.idea.toLowerCase() === normalizedIdea.toLowerCase());
+  if (exists) return true;
   
   const newIdea: ContentIdea = {
     id: `idea-${Date.now()}`,
-    idea,
+    idea: normalizedIdea,
     category,
     platform,
     status: 'new',
@@ -123,6 +243,51 @@ export async function addContentIdea(idea: string, category: string, platform?: 
     memory.contentIdeas = memory.contentIdeas.slice(-100);
   }
   
+  return saveAgentMemory(memory);
+}
+
+export async function setPrimaryNiche(niche: string): Promise<boolean> {
+  const memory = await loadAgentMemory();
+  const normalized = niche.trim();
+  if (!normalized) return true;
+  memory.niche = normalized;
+  if (!memory.nicheDetails.includes(normalized)) {
+    memory.nicheDetails.unshift(normalized);
+    memory.nicheDetails = memory.nicheDetails.slice(0, 20);
+  }
+  return saveAgentMemory(memory);
+}
+
+export async function setTargetAudienceMemory(audience: string): Promise<boolean> {
+  const memory = await loadAgentMemory();
+  const normalized = audience.trim();
+  if (!normalized) return true;
+  memory.targetAudience = normalized;
+  if (!memory.audienceInsights.includes(normalized)) {
+    memory.audienceInsights.unshift(normalized);
+    memory.audienceInsights = memory.audienceInsights.slice(0, 20);
+  }
+  return saveAgentMemory(memory);
+}
+
+export async function addTargetPlatform(platform: string): Promise<boolean> {
+  const memory = await loadAgentMemory();
+  const normalized = platform.trim().toLowerCase();
+  if (!normalized) return true;
+  if (!memory.targetPlatforms.includes(normalized)) {
+    memory.targetPlatforms.push(normalized);
+  }
+  return saveAgentMemory(memory);
+}
+
+export async function addMonetizationGoal(goal: string): Promise<boolean> {
+  const memory = await loadAgentMemory();
+  const normalized = goal.trim();
+  if (!normalized) return true;
+  if (!memory.monetizationGoals.includes(normalized)) {
+    memory.monetizationGoals.push(normalized);
+    memory.monetizationGoals = memory.monetizationGoals.slice(-20);
+  }
   return saveAgentMemory(memory);
 }
 
@@ -217,19 +382,30 @@ export async function buildMemoryContext(): Promise<string> {
   const memory = await loadAgentMemory();
   
   const sections: string[] = [];
+  const lockedProfile: string[] = [];
   
   // Niche and audience
   if (memory.niche) {
+    lockedProfile.push(`Primary niche: ${memory.niche}`);
     sections.push(`NICHE: ${memory.niche}`);
   }
   if (memory.nicheDetails.length > 0) {
     sections.push(`NICHE DETAILS:\n${memory.nicheDetails.map(d => `- ${d}`).join('\n')}`);
   }
   if (memory.targetAudience) {
+    lockedProfile.push(`Target audience: ${memory.targetAudience}`);
     sections.push(`TARGET AUDIENCE: ${memory.targetAudience}`);
   }
   if (memory.audienceInsights.length > 0) {
     sections.push(`AUDIENCE INSIGHTS:\n${memory.audienceInsights.map(i => `- ${i}`).join('\n')}`);
+  }
+  if (memory.targetPlatforms.length > 0) {
+    lockedProfile.push(`Target platforms: ${memory.targetPlatforms.join(', ')}`);
+    sections.push(`TARGET PLATFORMS: ${memory.targetPlatforms.join(', ')}`);
+  }
+  if (memory.monetizationGoals.length > 0) {
+    lockedProfile.push(`Monetization goals: ${memory.monetizationGoals.join(', ')}`);
+    sections.push(`MONETIZATION GOALS:\n${memory.monetizationGoals.map(goal => `- ${goal}`).join('\n')}`);
   }
   
   // Content pillars and themes
@@ -272,6 +448,7 @@ export async function buildMemoryContext(): Promise<string> {
   // Recent content ideas (for reference)
   const recentIdeas = memory.contentIdeas.filter(i => i.status === 'new').slice(-5);
   if (recentIdeas.length > 0) {
+    lockedProfile.push(`Reusable content ideas: ${recentIdeas.map(i => i.idea).join(' | ')}`);
     sections.push(`SAVED CONTENT IDEAS:\n${recentIdeas.map(i => `- ${i.idea}`).join('\n')}`);
   }
   
@@ -285,7 +462,11 @@ export async function buildMemoryContext(): Promise<string> {
     return '';
   }
   
-  return `\n\n=== PERSISTENT MEMORY ===\n${sections.join('\n\n')}\n=== END MEMORY ===`;
+  const lockedProfileSection = lockedProfile.length > 0
+    ? `LOCKED OPERATING PROFILE:\n- ${lockedProfile.join('\n- ')}\n- Treat this profile as the default operating context unless the user explicitly changes it.\n- Keep output aligned with this niche, audience, platform mix, monetization direction, and saved ideas.`
+    : '';
+
+  return `\n\n=== PERSISTENT MEMORY ===\n${lockedProfileSection ? `${lockedProfileSection}\n\n` : ''}${sections.join('\n\n')}\n=== END MEMORY ===`;
 }
 
 // Sync memory with brand kit (one-time or when brand kit updates)
@@ -354,6 +535,66 @@ export function extractMemoryFromResponse(response: string): {
   }
   
   return result;
+}
+
+export async function extractStructuredMemory(
+  userMessage: string,
+  aiResponse?: string
+): Promise<MemoryExtraction> {
+  const prompt = `Extract persistent memory from this conversation turn.
+
+User message:
+"""${userMessage}"""
+
+Assistant response:
+"""${aiResponse || ''}"""
+
+Only extract information that should be remembered for future consistency.
+Return strict JSON:
+{
+  "niche": "string or empty",
+  "nicheDetails": ["..."],
+  "targetAudience": "string or empty",
+  "audienceInsights": ["..."],
+  "targetPlatforms": ["instagram","tiktok"],
+  "monetizationGoals": ["..."],
+  "businessGoals": ["..."],
+  "contentIdeas": ["..."],
+  "userFacts": [{"key":"brand_name","value":"..."}]
+}
+
+Rules:
+- Prefer empty strings or empty arrays over guessing.
+- Extract platform names only if explicitly or strongly implied.
+- Extract content ideas only if they are specific enough to reuse later.
+- Keep entries concise.`;
+
+  try {
+    const response = await universalChat(prompt, { model: 'gpt-4o-mini' });
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return {};
+    const parsed = JSON.parse(jsonMatch[0]);
+    return {
+      niche: typeof parsed.niche === 'string' ? parsed.niche.trim() : undefined,
+      nicheDetails: Array.isArray(parsed.nicheDetails) ? parsed.nicheDetails.map((v: string) => String(v).trim()).filter(Boolean) : [],
+      targetAudience: typeof parsed.targetAudience === 'string' ? parsed.targetAudience.trim() : undefined,
+      audienceInsights: Array.isArray(parsed.audienceInsights) ? parsed.audienceInsights.map((v: string) => String(v).trim()).filter(Boolean) : [],
+      targetPlatforms: Array.isArray(parsed.targetPlatforms) ? parsed.targetPlatforms.map((v: string) => String(v).trim().toLowerCase()).filter(Boolean) : [],
+      monetizationGoals: Array.isArray(parsed.monetizationGoals) ? parsed.monetizationGoals.map((v: string) => String(v).trim()).filter(Boolean) : [],
+      businessGoals: Array.isArray(parsed.businessGoals) ? parsed.businessGoals.map((v: string) => String(v).trim()).filter(Boolean) : [],
+      contentIdeas: Array.isArray(parsed.contentIdeas) ? parsed.contentIdeas.map((v: string) => String(v).trim()).filter(Boolean) : [],
+      userFacts: Array.isArray(parsed.userFacts)
+        ? parsed.userFacts
+            .map((item: { key?: string; value?: string }) => ({
+              key: String(item?.key || '').trim(),
+              value: String(item?.value || '').trim(),
+            }))
+            .filter(item => item.key && item.value)
+        : [],
+    };
+  } catch {
+    return {};
+  }
 }
 
 // Clear all memory (for reset)

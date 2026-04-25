@@ -2,7 +2,7 @@
 
 import { kvGet } from './puterService';
 
-export type VideoProvider = 'ltx23';
+export type VideoProvider = 'ltx23' | 'ltx23-open';
 
 export interface VideoGenerationOptions {
   prompt: string;
@@ -12,6 +12,10 @@ export interface VideoGenerationOptions {
   durationSeconds?: number;
   seed?: number;
   imageUrl?: string;
+  cameraAngle?: string;
+  cameraMotion?: string;
+  shotStyle?: string;
+  qualityProfile?: 'social' | 'cinematic';
 }
 
 export interface GeneratedVideo {
@@ -25,6 +29,7 @@ export interface GeneratedVideo {
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1500;
 const DEFAULT_LTX_MODEL = 'fal-ai/ltx-video-v2.3';
+const DEFAULT_LTX_OPEN_ENDPOINT = 'http://127.0.0.1:8000/generate';
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -156,6 +161,10 @@ async function generateWithLtx23(options: VideoGenerationOptions): Promise<Gener
     durationSeconds = 5,
     seed,
     imageUrl,
+    cameraAngle,
+    cameraMotion,
+    shotStyle,
+    qualityProfile = 'cinematic',
   } = options;
 
   return withRetry(async () => {
@@ -172,6 +181,10 @@ async function generateWithLtx23(options: VideoGenerationOptions): Promise<Gener
         duration: durationSeconds,
         seed,
         image_url: imageUrl,
+        camera_angle: cameraAngle,
+        camera_motion: cameraMotion,
+        shot_style: shotStyle,
+        quality_profile: qualityProfile,
       }),
     });
 
@@ -198,6 +211,62 @@ async function generateWithLtx23(options: VideoGenerationOptions): Promise<Gener
   });
 }
 
+async function generateWithOpenLtx23(options: VideoGenerationOptions): Promise<GeneratedVideo> {
+  const configuredEndpoint =
+    await kvGet('ltx_open_endpoint') || process.env.NEXT_PUBLIC_LTX_OPEN_ENDPOINT;
+  const endpoint = String(configuredEndpoint || DEFAULT_LTX_OPEN_ENDPOINT).trim();
+
+  const {
+    prompt,
+    negativePrompt,
+    aspectRatio = '16:9',
+    durationSeconds = 5,
+    seed,
+    imageUrl,
+    cameraAngle,
+    cameraMotion,
+    shotStyle,
+    qualityProfile = 'cinematic',
+  } = options;
+
+  return withRetry(async () => {
+    const response = await safeFetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        negative_prompt: negativePrompt,
+        aspect_ratio: aspectRatio,
+        duration: durationSeconds,
+        seed,
+        image_url: imageUrl,
+        camera_angle: cameraAngle,
+        camera_motion: cameraMotion,
+        shot_style: shotStyle,
+        quality_profile: qualityProfile,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      throw new Error(`Open LTX video error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    const parsed = extractVideoPayload(data);
+    if (!parsed) {
+      throw new Error('Open LTX provider did not return a playable video URL');
+    }
+
+    return {
+      ...parsed,
+      provider: 'ltx23-open',
+    };
+  });
+}
+
 export async function generateVideo(options: VideoGenerationOptions): Promise<GeneratedVideo> {
   const prompt = options.prompt?.trim();
   if (!prompt) {
@@ -208,12 +277,29 @@ export async function generateVideo(options: VideoGenerationOptions): Promise<Ge
     ...options,
     prompt: prompt.substring(0, 1500),
     provider: options.provider || 'ltx23',
-    durationSeconds: Math.min(Math.max(options.durationSeconds || 5, 3), 12),
+    durationSeconds: Math.min(Math.max(options.durationSeconds || 5, 3), 120),
   };
 
-  switch (cleanOptions.provider) {
-    case 'ltx23':
-    default:
-      return generateWithLtx23(cleanOptions);
+  const attempts: VideoProvider[] = cleanOptions.provider === 'ltx23-open'
+    ? ['ltx23-open', 'ltx23']
+    : ['ltx23', 'ltx23-open'];
+
+  let lastError: Error | null = null;
+
+  for (const provider of attempts) {
+    try {
+      switch (provider) {
+        case 'ltx23-open':
+          return await generateWithOpenLtx23({ ...cleanOptions, provider });
+        case 'ltx23':
+        default:
+          return await generateWithLtx23({ ...cleanOptions, provider });
+      }
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`Video generation failed on ${provider}, trying fallback`, lastError);
+    }
   }
+
+  throw lastError || new Error('All video providers failed');
 }

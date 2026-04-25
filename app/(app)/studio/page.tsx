@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { LoadingPulse } from '@/components/nexus/LoadingPulse';
@@ -8,7 +8,8 @@ import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { ContentCard } from '@/components/content/ContentCard';
 import { ApprovalGate } from '@/components/content/ApprovalGate';
 import { runContentPipeline, getContentSuggestions } from '@/lib/services/contentEngine';
-import { listDrafts } from '@/lib/services/memoryService';
+import { listDrafts, loadDraft } from '@/lib/services/memoryService';
+import { kvGet, kvSet } from '@/lib/services/puterService';
 import { useAuth } from '@/lib/context/AuthContext';
 import { PLATFORMS } from '@/lib/constants/platforms';
 import type { ContentDraft, Platform } from '@/lib/types';
@@ -26,6 +27,17 @@ import useSWR from 'swr';
 
 type GenerationTab = 'text' | 'image' | 'full';
 
+const STUDIO_SESSION_KEY = 'studio_session_v1';
+
+interface StudioSessionSnapshot {
+  activeTab: GenerationTab;
+  idea: string;
+  selectedPlatforms: Platform[];
+  includeImage: boolean;
+  generatedDraftId: string | null;
+  showApproval: boolean;
+}
+
 export default function ContentStudioPage() {
   const { brandKit } = useAuth();
   const [activeTab, setActiveTab] = useState<GenerationTab>('full');
@@ -37,6 +49,7 @@ export default function ContentStudioPage() {
   const [generatedDraft, setGeneratedDraft] = useState<ContentDraft | null>(null);
   const [showApproval, setShowApproval] = useState(false);
   const [showPlatformDropdown, setShowPlatformDropdown] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
 
   // Fetch drafts
   const { data: drafts, mutate: mutateDrafts } = useSWR('drafts', listDrafts);
@@ -46,6 +59,56 @@ export default function ContentStudioPage() {
     brandKit ? 'suggestions' : null,
     () => getContentSuggestions(5)
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreSession = async () => {
+      const snapshot = await kvGet<StudioSessionSnapshot>(STUDIO_SESSION_KEY, true);
+      if (!snapshot || cancelled) {
+        setSessionReady(true);
+        return;
+      }
+
+      setActiveTab(snapshot.activeTab ?? 'full');
+      setIdea(snapshot.idea ?? '');
+      setSelectedPlatforms(snapshot.selectedPlatforms?.length ? snapshot.selectedPlatforms : ['twitter', 'instagram']);
+      setIncludeImage(snapshot.includeImage ?? true);
+      setShowApproval(Boolean(snapshot.showApproval && snapshot.generatedDraftId));
+
+      if (snapshot.generatedDraftId) {
+        const draft = await loadDraft(snapshot.generatedDraftId);
+        if (!cancelled && draft) {
+          setGeneratedDraft(draft);
+        }
+      }
+
+      if (!cancelled) {
+        setSessionReady(true);
+      }
+    };
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+
+    const snapshot: StudioSessionSnapshot = {
+      activeTab,
+      idea,
+      selectedPlatforms,
+      includeImage,
+      generatedDraftId: generatedDraft?.id ?? null,
+      showApproval,
+    };
+
+    void kvSet(STUDIO_SESSION_KEY, JSON.stringify(snapshot));
+  }, [activeTab, generatedDraft?.id, idea, includeImage, selectedPlatforms, sessionReady, showApproval]);
 
   const handleGenerate = async () => {
     if (!idea.trim()) return;
@@ -273,6 +336,7 @@ export default function ContentStudioPage() {
           draft={generatedDraft}
           onApprove={() => {
             setShowApproval(false);
+            setGeneratedDraft(null);
             setIdea('');
             mutateDrafts();
           }}

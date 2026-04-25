@@ -1,9 +1,10 @@
 // Agent Creator Service
 // Create, configure, and deploy custom AI agents with self-modification capabilities
 
-import { kvGet, kvSet, writeFile, readFile } from './puterService';
+import { kvGet, kvSet, writeFile, readFile, PATHS } from './puterService';
 import { generateId } from './memoryService';
 import { chat } from './aiService';
+import { validateContent } from './governorService';
 import { 
   loadAgents, 
   saveAgents, 
@@ -50,11 +51,17 @@ export interface AgentCodeModule {
   name: string;
   description: string;
   code: string;
+  filePath?: string;
   language: 'typescript' | 'javascript' | 'json';
   isActive: boolean;
   version: number;
   lastModified: string;
   modifiedBy: 'user' | 'agent' | 'evolution';
+  validation?: {
+    passed: boolean;
+    errors: string[];
+    validatedAt: string;
+  };
 }
 
 export interface AgentTrigger {
@@ -98,6 +105,119 @@ export interface SelfModificationEntry {
 // Storage Keys
 const CREATED_AGENTS_KEY = 'nexus_created_agents';
 const AGENT_BLUEPRINTS_KEY = 'nexus_agent_blueprints';
+
+function slugifyName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'module';
+}
+
+function getModuleExtension(language: AgentCodeModule['language']): string {
+  switch (language) {
+    case 'javascript':
+      return 'js';
+    case 'json':
+      return 'json';
+    case 'typescript':
+    default:
+      return 'ts';
+  }
+}
+
+function getModulePath(agentId: string, module: Pick<AgentCodeModule, 'name' | 'language'>): string {
+  const extension = getModuleExtension(module.language);
+  return `${PATHS.system}/agents/${agentId}/modules/${slugifyName(module.name)}.${extension}`;
+}
+
+async function validatePromptLikeContent(content: string, label: string): Promise<{ passed: boolean; errors: string[] }> {
+  const validation = await validateContent(content, { isRegeneration: false });
+  const errors = validation.issues
+    .filter(issue => issue.severity === 'critical' || issue.severity === 'error')
+    .map(issue => `${label}: ${issue.message}`);
+
+  return {
+    passed: validation.isValid && errors.length === 0,
+    errors,
+  };
+}
+
+function validateCodeModule(module: Pick<AgentCodeModule, 'name' | 'code' | 'language'>): { passed: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const code = module.code?.trim() || '';
+
+  if (!code) {
+    errors.push('Module code is empty.');
+  }
+
+  if (code.length < 40) {
+    errors.push('Module code is too short to be a valid implementation.');
+  }
+
+  if (module.language !== 'json' && !/\bexport\b/.test(code)) {
+    errors.push('Module must export at least one symbol.');
+  }
+
+  const blockedPatterns = [
+    { pattern: /\beval\s*\(/, message: 'Use of eval is not allowed.' },
+    { pattern: /\bnew Function\s*\(/, message: 'Dynamic Function construction is not allowed.' },
+    { pattern: /\bdocument\.write\s*\(/, message: 'document.write is not allowed.' },
+    { pattern: /\blocalStorage\.clear\s*\(/, message: 'Clearing localStorage is not allowed.' },
+  ];
+
+  for (const blocked of blockedPatterns) {
+    if (blocked.pattern.test(code)) {
+      errors.push(blocked.message);
+    }
+  }
+
+  const delimiterPairs: Array<[string, string]> = [
+    ['{', '}'],
+    ['(', ')'],
+    ['[', ']'],
+  ];
+
+  for (const [open, close] of delimiterPairs) {
+    const opens = code.split(open).length - 1;
+    const closes = code.split(close).length - 1;
+    if (opens !== closes) {
+      errors.push(`Unbalanced ${open}${close} delimiters.`);
+    }
+  }
+
+  return {
+    passed: errors.length === 0,
+    errors,
+  };
+}
+
+async function persistModuleFile(agentId: string, module: AgentCodeModule): Promise<AgentCodeModule> {
+  const filePath = getModulePath(agentId, module);
+  const saved = await writeFile(filePath, module.code);
+  if (!saved) {
+    throw new Error(`Failed to persist module file at ${filePath}`);
+  }
+
+  return {
+    ...module,
+    filePath,
+  };
+}
+
+async function persistAgentModules(agent: CreatedAgent): Promise<CreatedAgent> {
+  const nextModules: AgentCodeModule[] = [];
+
+  for (const module of agent.codeModules) {
+    const persisted = await persistModuleFile(agent.id, module);
+    nextModules.push(persisted);
+  }
+
+  return {
+    ...agent,
+    codeModules: nextModules,
+  };
+}
 
 // Load created agents
 export async function loadCreatedAgents(): Promise<CreatedAgent[]> {
@@ -152,30 +272,56 @@ export async function createAgentFromBlueprint(blueprint: AgentBlueprint): Promi
     },
   };
   
+  const promptValidation = await validatePromptLikeContent(agent.promptTemplate, 'Prompt template');
+  if (!promptValidation.passed) {
+    throw new Error(promptValidation.errors.join(' '));
+  }
+
+  if (agent.blueprint.systemInstructions?.trim()) {
+    const instructionValidation = await validatePromptLikeContent(agent.blueprint.systemInstructions, 'System instructions');
+    if (!instructionValidation.passed) {
+      throw new Error(instructionValidation.errors.join(' '));
+    }
+  }
+
+  for (const module of agent.codeModules) {
+    const validation = validateCodeModule(module);
+    if (!validation.passed) {
+      throw new Error(`Invalid module "${module.name}": ${validation.errors.join(' ')}`);
+    }
+    module.validation = {
+      passed: true,
+      errors: [],
+      validatedAt: now,
+    };
+  }
+
+  const persistedAgent = await persistAgentModules(agent);
+
   // Save to created agents
   const agents = await loadCreatedAgents();
-  agents.push(agent);
+  agents.push(persistedAgent);
   await saveCreatedAgents(agents);
   
   // Also register with main agent system
   const mainAgents = await loadAgents();
   mainAgents.push({
-    id: agent.id,
-    name: agent.name,
-    role: agent.role,
-    capabilities: agent.capabilities,
-    promptTemplate: agent.promptTemplate,
-    scoringWeights: agent.scoringWeights,
-    performanceScore: agent.performanceScore,
-    taskHistory: agent.taskHistory,
-    evolutionState: agent.evolutionState,
-    version: agent.version,
-    createdAt: agent.createdAt,
-    updatedAt: agent.updatedAt,
+    id: persistedAgent.id,
+    name: persistedAgent.name,
+    role: persistedAgent.role,
+    capabilities: persistedAgent.capabilities,
+    promptTemplate: persistedAgent.promptTemplate,
+    scoringWeights: persistedAgent.scoringWeights,
+    performanceScore: persistedAgent.performanceScore,
+    taskHistory: persistedAgent.taskHistory,
+    evolutionState: persistedAgent.evolutionState,
+    version: persistedAgent.version,
+    createdAt: persistedAgent.createdAt,
+    updatedAt: persistedAgent.updatedAt,
   });
   await saveAgents(mainAgents);
   
-  return agent;
+  return persistedAgent;
 }
 
 // God Mode: Generate agent from natural language
@@ -359,6 +505,13 @@ ${agent.blueprint.selfModificationLevel === 'full' ? 'You can modify anything in
     if (!jsonMatch) return null;
     
     const parsed = JSON.parse(jsonMatch[0]);
+
+    if (parsed.type === 'prompt' || parsed.type === 'behavior') {
+      const validation = await validatePromptLikeContent(parsed.proposed || '', 'Self-modification proposal');
+      if (!validation.passed) {
+        return null;
+      }
+    }
     
     const modification: SelfModificationEntry = {
       id: generateId(),
@@ -399,6 +552,14 @@ export async function applySelfModification(
   try {
     switch (modification.type) {
       case 'prompt':
+        {
+          const validation = await validatePromptLikeContent(modification.after, 'Prompt template');
+          if (!validation.passed) {
+            modification.impact = 'negative';
+            await saveCreatedAgent(agent);
+            return false;
+          }
+        }
         agent.promptTemplate = modification.after;
         agent.blueprint.promptTemplate = modification.after;
         break;
@@ -408,17 +569,39 @@ export async function applySelfModification(
         agent.blueprint.scoringWeights = { ...agent.blueprint.scoringWeights, ...weights };
         break;
       case 'code':
-        // Find and update the code module
-        const codeUpdate = JSON.parse(modification.after);
-        const moduleIndex = agent.codeModules.findIndex(m => m.name === codeUpdate.name);
-        if (moduleIndex >= 0) {
-          agent.codeModules[moduleIndex] = {
+        {
+          const codeUpdate = JSON.parse(modification.after);
+          const moduleIndex = agent.codeModules.findIndex(m => m.name === codeUpdate.name);
+          if (moduleIndex < 0) {
+            modification.impact = 'negative';
+            await saveCreatedAgent(agent);
+            return false;
+          }
+
+          const validation = validateCodeModule({
+            name: codeUpdate.name,
+            code: codeUpdate.code,
+            language: agent.codeModules[moduleIndex].language,
+          });
+
+          if (!validation.passed) {
+            modification.impact = 'negative';
+            await saveCreatedAgent(agent);
+            return false;
+          }
+
+          agent.codeModules[moduleIndex] = await persistModuleFile(agent.id, {
             ...agent.codeModules[moduleIndex],
             code: codeUpdate.code,
             version: agent.codeModules[moduleIndex].version + 1,
             lastModified: new Date().toISOString(),
             modifiedBy: 'agent',
-          };
+            validation: {
+              passed: true,
+              errors: [],
+              validatedAt: new Date().toISOString(),
+            },
+          });
         }
         break;
       case 'capability':
@@ -429,6 +612,14 @@ export async function applySelfModification(
         }
         break;
       case 'behavior':
+        {
+          const validation = await validatePromptLikeContent(modification.after, 'System instructions');
+          if (!validation.passed) {
+            modification.impact = 'negative';
+            await saveCreatedAgent(agent);
+            return false;
+          }
+        }
         agent.blueprint.systemInstructions = modification.after;
         break;
     }
@@ -551,9 +742,23 @@ The code must:
       lastModified: new Date().toISOString(),
       modifiedBy: 'agent',
     };
+
+    const validation = validateCodeModule(module);
+    if (!validation.passed) {
+      throw new Error(`Generated module failed validation: ${validation.errors.join(' ')}`);
+    }
+
+    const persistedModule = await persistModuleFile(agent.id, {
+      ...module,
+      validation: {
+        passed: true,
+        errors: [],
+        validatedAt: new Date().toISOString(),
+      },
+    });
     
     // Add to agent's code modules
-    agent.codeModules.push(module);
+    agent.codeModules.push(persistedModule);
     
     // Log the modification
     agent.selfModificationLog.push({
@@ -561,7 +766,7 @@ The code must:
       timestamp: new Date().toISOString(),
       type: 'code',
       before: '',
-      after: JSON.stringify({ name: module.name, code: module.code }),
+      after: JSON.stringify({ name: persistedModule.name, code: persistedModule.code }),
       reasoning: `Created new code module for: ${request.purpose}`,
       impact: 'unknown',
       approved: true,
@@ -574,7 +779,7 @@ The code must:
     
     await saveCreatedAgent(agent);
     
-    return module;
+    return persistedModule;
   } catch (error) {
     console.error('Agent code writing error:', error);
     return null;
@@ -624,6 +829,15 @@ Provide the improved code. Return JSON:
     
     const parsed = JSON.parse(jsonMatch[0]);
     
+    const validation = validateCodeModule({
+      name: module.name,
+      code: parsed.code,
+      language: module.language,
+    });
+    if (!validation.passed) {
+      throw new Error(`Edited module failed validation: ${validation.errors.join(' ')}`);
+    }
+
     const oldCode = module.code;
     
     // Update the module
@@ -631,6 +845,13 @@ Provide the improved code. Return JSON:
     module.version++;
     module.lastModified = new Date().toISOString();
     module.modifiedBy = 'agent';
+    module.validation = {
+      passed: true,
+      errors: [],
+      validatedAt: new Date().toISOString(),
+    };
+    const persisted = await persistModuleFile(agent.id, module);
+    Object.assign(module, persisted);
     
     // Log the modification
     agent.selfModificationLog.push({

@@ -84,6 +84,10 @@ export interface AgentState {
   evolutionVersion: number;
   lastOptimization: string | null;
   optimizationHistory: OptimizationEvent[];
+  heartbeatAt: string | null;
+  brainState: 'idle' | 'thinking' | 'executing' | 'recovering' | 'healthy' | 'degraded';
+  lastDecision: string | null;
+  decisionHistory: DecisionEvent[];
 }
 
 export interface OptimizationEvent {
@@ -92,6 +96,14 @@ export interface OptimizationEvent {
   action: string;
   beforeScore: number;
   afterScore: number;
+}
+
+export interface DecisionEvent {
+  timestamp: string;
+  summary: string;
+  selectedProvider?: string;
+  retries?: number;
+  outcome: 'started' | 'success' | 'failure' | 'fallback';
 }
 
 /**
@@ -115,6 +127,10 @@ export abstract class BaseAgent {
       evolutionVersion: 1,
       lastOptimization: null,
       optimizationHistory: [],
+      heartbeatAt: null,
+      brainState: 'idle',
+      lastDecision: null,
+      decisionHistory: [],
     };
   }
 
@@ -157,16 +173,24 @@ export abstract class BaseAgent {
     
     const startTime = Date.now();
     this.state.totalExecutions++;
+    await this.updateHeartbeat('thinking', `Preparing ${this.config.role} decision`);
 
     try {
       // Build the prompt
       const prompt = this.buildPrompt(context);
+      await this.recordDecision({
+        timestamp: new Date().toISOString(),
+        summary: `Built prompt for ${this.config.role} using provider ${context.provider.id}`,
+        selectedProvider: context.provider.id,
+        outcome: 'started',
+      });
 
       // Execute with provider
-      const rawOutput = await this.executeProvider(prompt, context.provider);
+      await this.updateHeartbeat('executing', `Executing with ${context.provider.id}`);
+      const execution = await this.executeProvider(prompt, context.provider);
 
       // Process output
-      const content = this.processOutput(rawOutput, context);
+      const content = this.processOutput(execution.content, context);
 
       // Validate output
       if (!content || content.length === 0) {
@@ -174,6 +198,14 @@ export abstract class BaseAgent {
       }
 
       this.state.successfulExecutions++;
+      await this.updateHeartbeat('healthy', `Completed with ${execution.providerId}`);
+      await this.recordDecision({
+        timestamp: new Date().toISOString(),
+        summary: `Completed successfully using ${execution.providerId}`,
+        selectedProvider: execution.providerId,
+        retries: execution.retries,
+        outcome: execution.providerId !== context.provider.id ? 'fallback' : 'success',
+      });
       const duration = Date.now() - startTime;
 
       return {
@@ -187,11 +219,20 @@ export abstract class BaseAgent {
           promptLength: prompt.length,
           outputLength: content.length,
           evolutionVersion: this.state.evolutionVersion,
+          provider: execution.providerId,
+          retries: execution.retries,
         },
       };
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await this.updateHeartbeat('degraded', errorMessage);
+      await this.recordDecision({
+        timestamp: new Date().toISOString(),
+        summary: `Execution failed: ${errorMessage}`,
+        selectedProvider: context.provider.id,
+        outcome: 'failure',
+      });
       
       return {
         agentId: this.id,
@@ -211,11 +252,48 @@ export abstract class BaseAgent {
   /**
    * Execute with provider
    */
-  private async executeProvider(prompt: string, provider: Provider): Promise<string> {
-    // Import dynamically to avoid circular dependency
-    const { universalChat } = await import('../services/aiService');
-    
-    return universalChat(prompt, { model: provider.models[0] });
+  private async executeProvider(
+    prompt: string,
+    provider: Provider
+  ): Promise<{ content: string; providerId: string; retries: number }> {
+    const { ProviderRouter } = await import('../core/ProviderRouter');
+    const router = new ProviderRouter();
+    await router.initialize();
+    const resolvedProvider = router.getProvider(provider.id) || provider;
+    const result = await router.executeWithRetry(resolvedProvider, prompt, {
+      taskType: 'chat',
+      maxRetries: 3,
+    });
+
+    if (!result.success || !result.content) {
+      throw new Error(result.error || 'Provider execution failed');
+    }
+
+    return {
+      content: result.content,
+      providerId: result.provider,
+      retries: result.retries,
+    };
+  }
+
+  private async updateHeartbeat(
+    brainState: AgentState['brainState'],
+    lastDecision: string
+  ): Promise<void> {
+    this.state.heartbeatAt = new Date().toISOString();
+    this.state.brainState = brainState;
+    this.state.lastDecision = lastDecision;
+    await this.saveState();
+  }
+
+  private async recordDecision(event: DecisionEvent): Promise<void> {
+    this.state.decisionHistory.push(event);
+    if (this.state.decisionHistory.length > 25) {
+      this.state.decisionHistory = this.state.decisionHistory.slice(-25);
+    }
+    this.state.lastDecision = event.summary;
+    this.state.heartbeatAt = event.timestamp;
+    await this.saveState();
   }
 
   // ==================== PERFORMANCE TRACKING ====================
@@ -504,6 +582,9 @@ export abstract class BaseAgent {
     successRate: number;
     trend: string;
     evolutionVersion: number;
+    heartbeatAt: string | null;
+    brainState: AgentState['brainState'];
+    lastDecision: string | null;
   } {
     return {
       id: this.id,
@@ -516,6 +597,9 @@ export abstract class BaseAgent {
         : 100,
       trend: this.getPerformanceTrend(),
       evolutionVersion: this.state.evolutionVersion,
+      heartbeatAt: this.state.heartbeatAt,
+      brainState: this.state.brainState,
+      lastDecision: this.state.lastDecision,
     };
   }
 

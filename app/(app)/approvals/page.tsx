@@ -117,6 +117,20 @@ export default function ApprovalsPage() {
               Scheduled: {new Date(request.scheduledTime).toLocaleString()}
             </div>
           )}
+
+          {request.profileSnapshot && (
+            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+              {request.profileSnapshot.niche && (
+                <div>Niche: {request.profileSnapshot.niche}</div>
+              )}
+              {request.profileSnapshot.targetAudience && (
+                <div>Audience: {request.profileSnapshot.targetAudience}</div>
+              )}
+              {request.profileSnapshot.monetizationGoals && request.profileSnapshot.monetizationGoals.length > 0 && (
+                <div>Monetization: {request.profileSnapshot.monetizationGoals.join(', ')}</div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col items-end gap-2">
@@ -153,6 +167,26 @@ export default function ApprovalsPage() {
             ))}
           </div>
 
+          {request.profileSnapshot && (
+            <div className="mb-4 p-3 bg-muted/30 rounded-lg text-sm space-y-1">
+              <div className="font-semibold">Locked Profile Snapshot</div>
+              {request.profileSnapshot.niche && <div>Niche: {request.profileSnapshot.niche}</div>}
+              {request.profileSnapshot.targetAudience && <div>Audience: {request.profileSnapshot.targetAudience}</div>}
+              {request.profileSnapshot.targetPlatforms && request.profileSnapshot.targetPlatforms.length > 0 && (
+                <div>Platforms: {request.profileSnapshot.targetPlatforms.join(', ')}</div>
+              )}
+              {request.profileSnapshot.monetizationGoals && request.profileSnapshot.monetizationGoals.length > 0 && (
+                <div>Monetization Goals: {request.profileSnapshot.monetizationGoals.join(', ')}</div>
+              )}
+              {request.profileSnapshot.contentPillars && request.profileSnapshot.contentPillars.length > 0 && (
+                <div>Content Pillars: {request.profileSnapshot.contentPillars.join(', ')}</div>
+              )}
+              {request.profileSnapshot.contentIdea && (
+                <div>Seed Idea: {request.profileSnapshot.contentIdea}</div>
+              )}
+            </div>
+          )}
+
           {!isHistory && request.status === 'pending' && (
             <div className="space-y-3">
               <textarea
@@ -185,6 +219,16 @@ export default function ApprovalsPage() {
           {isHistory && request.notes && (
             <div className="mt-2 p-2 bg-muted/30 rounded text-sm">
               <span className="font-semibold">Notes:</span> {request.notes}
+            </div>
+          )}
+
+          {isHistory && request.publishResult && (
+            <div className="mt-2 p-2 bg-muted/30 rounded text-sm">
+              <span className="font-semibold">Publish Result:</span>{' '}
+              <span className={request.publishResult.success ? 'text-green-400' : 'text-red-400'}>
+                {request.publishResult.success ? 'Success' : 'Blocked/Failed'}
+              </span>
+              {request.publishResult.message ? ` - ${request.publishResult.message}` : ''}
             </div>
           )}
         </div>

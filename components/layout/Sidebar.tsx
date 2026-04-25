@@ -31,6 +31,7 @@ import {
   Clapperboard,
   Zap,
   Radio,
+  Database,
 } from 'lucide-react';
 
 const navItems = [
@@ -50,6 +51,7 @@ const navItems = [
   { href: '/agent-creator', label: 'Agent Creator', icon: Zap },
   { href: '/media-providers', label: 'Media Providers', icon: Radio },
   { href: '/skills', label: 'AI Skills', icon: Sparkles },
+  { href: '/memory', label: 'Agent Memory', icon: Database },
   { href: '/providers', label: 'AI Providers', icon: Cpu },
   { href: '/agents', label: 'Agent Control', icon: Brain },
   { href: '/diagnostics', label: 'Diagnostics', icon: Activity },

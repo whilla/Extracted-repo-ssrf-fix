@@ -13,36 +13,47 @@ export type NotificationType =
   | 'post_published'
   | 'post_failed'
   | 'content_ready'
+  | 'content_failed'
   | 'analytics_summary'
   | 'trend_alert'
-  | 'scheduled_reminder';
+  | 'scheduled_reminder'
+  | 'system_status';
 
 // Notification presets
 const NOTIFICATION_PRESETS: Record<NotificationType, Partial<NotificationOptions>> = {
   post_published: {
-    icon: '/icons/icon-192x192.png',
+    icon: '/icon.svg',
     tag: 'publish',
   },
   post_failed: {
-    icon: '/icons/icon-192x192.png',
+    icon: '/icon.svg',
     tag: 'error',
     requireInteraction: true,
   },
   content_ready: {
-    icon: '/icons/icon-192x192.png',
+    icon: '/icon.svg',
     tag: 'content',
   },
+  content_failed: {
+    icon: '/icon.svg',
+    tag: 'content-failed',
+    requireInteraction: true,
+  },
   analytics_summary: {
-    icon: '/icons/icon-192x192.png',
+    icon: '/icon.svg',
     tag: 'analytics',
   },
   trend_alert: {
-    icon: '/icons/icon-192x192.png',
+    icon: '/icon.svg',
     tag: 'trend',
   },
   scheduled_reminder: {
-    icon: '/icons/icon-192x192.png',
+    icon: '/icon.svg',
     tag: 'schedule',
+  },
+  system_status: {
+    icon: '/icon.svg',
+    tag: 'system',
   },
 };
 
@@ -102,6 +113,20 @@ class NotificationService {
     };
 
     try {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration) {
+          await registration.showNotification(mergedOptions.title, {
+            body: mergedOptions.body,
+            icon: mergedOptions.icon,
+            tag: mergedOptions.tag,
+            data: { type, ...mergedOptions.data },
+            requireInteraction: mergedOptions.requireInteraction,
+          });
+          return null;
+        }
+      }
+
       const notification = new Notification(mergedOptions.title, {
         body: mergedOptions.body,
         icon: mergedOptions.icon,
@@ -154,6 +179,14 @@ class NotificationService {
     });
   }
 
+  async notifyContentFailed(contentType: string, error: string): Promise<void> {
+    await this.show('content_failed', {
+      title: 'Generation Failed',
+      body: `${contentType} could not be completed: ${error}`,
+      data: { contentType, error },
+    });
+  }
+
   async notifyAnalyticsSummary(summary: string): Promise<void> {
     await this.show('analytics_summary', {
       title: 'Weekly Analytics Summary',
@@ -174,6 +207,14 @@ class NotificationService {
       title: 'Upcoming Scheduled Post',
       body: `"${postTitle}" will be published at ${scheduledTime.toLocaleTimeString()}`,
       data: { postTitle, scheduledTime: scheduledTime.toISOString() },
+    });
+  }
+
+  async notifySystemStatus(status: 'online' | 'offline', message: string): Promise<void> {
+    await this.show('system_status', {
+      title: status === 'offline' ? 'Offline Mode Enabled' : 'Back Online',
+      body: message,
+      data: { status },
     });
   }
 

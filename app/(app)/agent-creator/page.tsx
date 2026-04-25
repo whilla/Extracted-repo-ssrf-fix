@@ -902,6 +902,11 @@ function CodeModuleCard({
             <span>Modified by {module.modifiedBy}</span>
             <span>{new Date(module.lastModified).toLocaleDateString()}</span>
           </div>
+          {module.filePath && (
+            <p className="mt-2 text-xs text-muted-foreground break-all">
+              Stored at {module.filePath}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={() => setShowCode(!showCode)}>

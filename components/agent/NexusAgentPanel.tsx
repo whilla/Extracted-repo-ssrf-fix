@@ -12,6 +12,7 @@ import {
 import type { AttachedFile, ChatMessage } from '@/lib/types';
 import { downloadContent } from '@/lib/services/voiceConversation';
 import { voiceConversation } from '@/lib/services/voiceConversation';
+import { PATHS } from '@/lib/services/puterService';
 
 // Message component with download option
 function AgentMessage({ 
@@ -238,6 +239,12 @@ export function NexusAgentPanel() {
     currentModel,
     availableModels,
     setModel,
+    currentImageProvider,
+    availableImageProviders,
+    setImageProvider,
+    currentVideoProvider,
+    availableVideoProviders,
+    setVideoProvider,
     automationEnabled,
     toggleAutomation,
     isVoiceMode,
@@ -391,11 +398,12 @@ export function NexusAgentPanel() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-3">
             <div className={cn(
-              "w-10 h-10 rounded-full flex items-center justify-center transition-all",
+              "relative w-10 h-10 rounded-full flex items-center justify-center transition-all",
               godModeEnabled 
                 ? "bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500 animate-pulse shadow-[0_0_20px_rgba(255,165,0,0.5)]"
                 : "bg-gradient-to-br from-[var(--nexus-cyan)] to-[var(--nexus-violet)]"
             )}>
+              <span className="absolute inset-0 rounded-full border border-[var(--nexus-cyan)]/40 animate-ping" />
               {godModeEnabled ? (
                 <Brain className="w-5 h-5 text-background" />
               ) : (
@@ -468,6 +476,18 @@ export function NexusAgentPanel() {
               models={availableModels}
               onSelect={setModel}
             />
+
+            <ModelSelector
+              currentModel={currentImageProvider}
+              models={availableImageProviders as unknown as { model: string; name: string }[]}
+              onSelect={(provider) => setImageProvider(provider as 'puter' | 'stability' | 'leonardo' | 'ideogram')}
+            />
+
+            <ModelSelector
+              currentModel={currentVideoProvider}
+              models={availableVideoProviders as unknown as { model: string; name: string }[]}
+              onSelect={(provider) => setVideoProvider(provider as 'ltx23' | 'ltx23-open')}
+            />
             
             {/* Automation Toggle */}
             <button
@@ -496,6 +516,10 @@ export function NexusAgentPanel() {
               <Volume2 className="w-3.5 h-3.5" />
               <span>Voice</span>
             </button>
+
+            <span className="text-[10px] text-muted-foreground">
+              Skills: {PATHS.skills}
+            </span>
           </div>
         )}
 
@@ -521,8 +545,11 @@ export function NexusAgentPanel() {
               <p className="text-sm text-muted-foreground mb-4">
                 {godModeEnabled 
                   ? 'Multi-model synthesis with expert perspectives. Ask for content ideas to unlock full power.'
-                  : 'Create content, generate images, schedule posts. Tell me what you need!'
+                  : 'Create content, generate images, make cinematic videos, or drop in a PDF and I will extract usable ideas.'
                 }
+              </p>
+              <p className="text-xs text-muted-foreground/80 mb-4">
+                Skills and learned playbooks are stored in {PATHS.skills}.
               </p>
               {godModeEnabled && (
                 <div className="flex flex-wrap gap-2 justify-center text-xs">

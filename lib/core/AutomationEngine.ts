@@ -11,8 +11,32 @@
  */
 
 import { kvGet, kvSet } from '../services/puterService';
+import { publishPost } from '../services/publishService';
 import { nexusCore, type NexusRequest, type NexusResult } from './NexusCore';
 import { memoryManager } from './MemoryManager';
+import { loadAgentMemory, markIdeaUsed, type ContentIdea } from '../services/agentMemoryService';
+import { learningSystem } from './LearningSystem';
+import type { Platform } from '@/lib/types';
+import { generateContent } from '../services/contentEngine';
+import {
+  trackGenerationFailure,
+  trackGenerationStart,
+  trackGenerationSuccess,
+} from '../services/generationTrackerService';
+import { notificationService } from '../services/notificationService';
+import { listPublishedContent, loadBrandKit } from '../services/memoryService';
+import { runSafetyChecks } from '../services/publishSafetyService';
+
+const VALID_PLATFORMS: Platform[] = [
+  'twitter',
+  'instagram',
+  'tiktok',
+  'linkedin',
+  'facebook',
+  'threads',
+  'youtube',
+  'pinterest',
+];
 
 // Automation Types
 export interface AutomationConfig {
@@ -60,6 +84,8 @@ export interface AutomationStats {
   isRunning: boolean;
 }
 
+type ContentStrategyPhase = 'audience_building' | 'transition' | 'monetization';
+
 // Storage keys
 const KEYS = {
   config: 'nexus_automation_config',
@@ -79,6 +105,17 @@ export class AutomationEngine {
   private queue: NexusRequest[] = [];
   private intervalId: NodeJS.Timeout | null = null;
   private initialized = false;
+
+  private async syncConfigWithMemoryProfile(): Promise<void> {
+    const memory = await loadAgentMemory();
+    const savedPlatforms = memory.targetPlatforms.filter(
+      (platform): platform is Platform => VALID_PLATFORMS.includes(platform as Platform)
+    );
+
+    if (savedPlatforms.length > 0) {
+      this.config.platforms = savedPlatforms;
+    }
+  }
 
   constructor() {
     this.config = {
@@ -121,6 +158,8 @@ export class AutomationEngine {
     if (savedConfig) {
       this.config = { ...this.config, ...savedConfig };
     }
+
+    await this.syncConfigWithMemoryProfile();
 
     const savedState = await this.loadState();
     if (savedState) {
@@ -244,6 +283,7 @@ export class AutomationEngine {
     if (!this.state.isRunning) return;
 
     console.log('[AutomationEngine] Running cycle...');
+    let trackedGenerationId: string | null = null;
 
     // Check hourly limit
     this.checkHourlyReset();
@@ -258,21 +298,82 @@ export class AutomationEngine {
 
     try {
       // Get request from queue or generate one
-      const request = this.queue.shift() || this.generateRequest();
+      const request = this.queue.shift() || await this.generateRequest();
+      const tracked = await trackGenerationStart({
+        source: 'automation',
+        taskType: request.taskType,
+        idea: `${request.userInput}\n${request.customInstructions || ''}`,
+        platforms: request.platform ? [request.platform] : [],
+        allowRetryFailed: true,
+      });
+      trackedGenerationId = tracked.record.id;
 
-      // Execute via NexusCore
-      const result = await nexusCore.execute(request);
+      if (tracked.duplicate) {
+        console.log('[AutomationEngine] Skipping duplicate generation', tracked.record.id);
+        this.state.successfulRuns++;
+        this.state.consecutiveFailures = 0;
+        await this.saveState();
+        if (this.state.isRunning) {
+          this.scheduleNextRun();
+        }
+        return;
+      }
+
+      // Execute via NexusCore or local offline fallback
+      let result: NexusResult;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        const platform = (request.platform as Platform) || 'twitter';
+        const offlineContent = await generateContent({
+          idea: request.userInput,
+          platforms: [platform],
+          customInstructions: request.customInstructions,
+          includeImage: false,
+        });
+
+        result = {
+          success: true,
+          output: offlineContent.text,
+          score: 72,
+          allOutputs: [],
+          selectedAgent: 'offline-local',
+          provider: 'offline-local',
+          governorValidation: {
+            approved: true,
+            score: 72,
+            issues: [],
+            feedback: 'Approved via offline fallback mode.',
+          },
+          memoryContext: await memoryManager.buildContext(request.userInput),
+          metadata: {
+            totalDuration: 0,
+            agentsSpawned: 0,
+            agentsSucceeded: 1,
+            providersAttempted: ['offline-local'],
+            regenerations: 0,
+            learningUpdated: false,
+          },
+        };
+      } else {
+        result = await nexusCore.execute(request);
+      }
 
       // Process result
       await this.processResult(result, request);
+      await trackGenerationSuccess(tracked.record.id, {
+        artifactId: result.success ? this.outputs[this.outputs.length - 1]?.id : undefined,
+        artifactType: result.success ? 'automation_output' : undefined,
+      });
 
       // Update state
       if (result.success) {
         this.state.successfulRuns++;
         this.state.consecutiveFailures = 0;
+        void notificationService.notifyContentReady('automation run', tracked.record.id);
       } else {
         this.state.failedRuns++;
         this.state.consecutiveFailures++;
+        await trackGenerationFailure(tracked.record.id, 'Automation run did not produce a successful result');
+        void notificationService.notifyContentFailed('automation run', 'The generation did not pass validation.');
 
         // Check for pause condition
         if (this.config.pauseOnFailure && 
@@ -289,6 +390,16 @@ export class AutomationEngine {
       console.error('[AutomationEngine] Cycle error:', error);
       this.state.failedRuns++;
       this.state.consecutiveFailures++;
+      if (trackedGenerationId) {
+        await trackGenerationFailure(
+          trackedGenerationId,
+          error instanceof Error ? error.message : 'Unexpected automation error'
+        );
+      }
+      void notificationService.notifyContentFailed(
+        'automation run',
+        error instanceof Error ? error.message : 'Unexpected automation error'
+      );
     }
 
     await this.saveState();
@@ -303,15 +414,137 @@ export class AutomationEngine {
   /**
    * Generate a request based on config
    */
-  private generateRequest(): NexusRequest {
+  private buildAutopilotBrief(
+    memory: Awaited<ReturnType<typeof loadAgentMemory>>,
+    adaptiveStrategy: Awaited<ReturnType<typeof learningSystem.getAdaptiveContentStrategy>>,
+    strategyPhase: ContentStrategyPhase,
+    selectedIdea?: ContentIdea
+  ): string {
+    const segments: string[] = [];
+
+    if (memory.niche) {
+      segments.push(`Primary niche: ${memory.niche}`);
+    }
+    if (memory.targetAudience) {
+      segments.push(`Target audience: ${memory.targetAudience}`);
+    }
+    if (memory.targetPlatforms.length > 0) {
+      segments.push(`Target platforms: ${memory.targetPlatforms.join(', ')}`);
+    }
+    if (memory.monetizationGoals.length > 0) {
+      segments.push(`Monetization goals: ${memory.monetizationGoals.join(', ')}`);
+    }
+    if (memory.contentPillars.length > 0) {
+      segments.push(`Content pillars: ${memory.contentPillars.join(', ')}`);
+    }
+    if (selectedIdea?.idea) {
+      segments.push(`Priority content idea: ${selectedIdea.idea}`);
+    } else if (memory.contentIdeas.length > 0) {
+      const fallbackIdeas = memory.contentIdeas
+        .filter(idea => idea.status === 'new')
+        .slice(-3)
+        .map(idea => idea.idea);
+      if (fallbackIdeas.length > 0) {
+        segments.push(`Saved content ideas: ${fallbackIdeas.join(' | ')}`);
+      }
+    }
+    if (adaptiveStrategy.recommendedContentType) {
+      segments.push(`Best-performing content type right now: ${adaptiveStrategy.recommendedContentType}`);
+    }
+    if (adaptiveStrategy.recommendedHookPattern) {
+      segments.push(`Best hook pattern: ${adaptiveStrategy.recommendedHookPattern}`);
+    }
+    if (adaptiveStrategy.recommendedCTA) {
+      segments.push(`Best CTA pattern: ${adaptiveStrategy.recommendedCTA}`);
+    }
+    if (adaptiveStrategy.recommendedStructure) {
+      segments.push(`Best structure: ${adaptiveStrategy.recommendedStructure}`);
+    }
+    if (adaptiveStrategy.emotionalTriggers.length > 0) {
+      segments.push(`Winning emotional triggers: ${adaptiveStrategy.emotionalTriggers.join(', ')}`);
+    }
+    segments.push(`Current content strategy phase: ${strategyPhase}`);
+    if (strategyPhase === 'audience_building') {
+      segments.push('Primary goal: build trust, attention, saves, shares, and repeat engagement before selling');
+    } else if (strategyPhase === 'transition') {
+      segments.push('Primary goal: keep leading with value while introducing soft commercial intent naturally');
+    } else {
+      segments.push('Primary goal: monetize through value-first offers without sounding pushy or low-trust');
+    }
+
+    if (segments.length === 0) {
+      return 'Generate engaging content for my audience.';
+    }
+
+    return `Create platform-native content using this locked operating profile.\n${segments.map(segment => `- ${segment}`).join('\n')}`;
+  }
+
+  private async determineContentStrategyPhase(): Promise<ContentStrategyPhase> {
+    const [memory, published] = await Promise.all([
+      loadAgentMemory(),
+      listPublishedContent(),
+    ]);
+
+    const monetizationReady = memory.monetizationGoals.length > 0;
+    const publishedCount = published.length;
+
+    if (!monetizationReady || publishedCount < 12) {
+      return 'audience_building';
+    }
+
+    if (publishedCount < 24) {
+      return 'transition';
+    }
+
+    return 'monetization';
+  }
+
+  private async generateRequest(): Promise<NexusRequest> {
+    const memory = await loadAgentMemory();
+    const memoryPlatforms = memory.targetPlatforms.filter(
+      (platform): platform is Platform => VALID_PLATFORMS.includes(platform as Platform)
+    );
+    const configuredPlatforms = this.config.platforms.filter(
+      (platform): platform is Platform => VALID_PLATFORMS.includes(platform as Platform)
+    );
+    const effectivePlatforms = memoryPlatforms.length > 0
+      ? memoryPlatforms
+      : configuredPlatforms;
+
+    const sanitizedPlatforms = effectivePlatforms.length > 0 ? effectivePlatforms : ['twitter'];
+
     // Rotate through platforms and task types
-    const platformIndex = this.state.totalRuns % this.config.platforms.length;
+    const platformIndex = this.state.totalRuns % sanitizedPlatforms.length;
     const taskIndex = this.state.totalRuns % this.config.taskTypes.length;
+    const selectedIdea = memory.contentIdeas.find(idea => idea.status === 'new');
+    const ideaText = selectedIdea?.idea || memory.niche || 'high-conviction platform-native content';
+    const platform = sanitizedPlatforms[platformIndex];
+    const adaptiveStrategy = await learningSystem.getAdaptiveContentStrategy(platform);
+    const strategyPhase = await this.determineContentStrategyPhase();
 
     return {
-      userInput: 'Generate engaging content for my audience',
+      userInput: this.buildAutopilotBrief(memory, adaptiveStrategy, strategyPhase, selectedIdea),
       taskType: this.config.taskTypes[taskIndex] as 'content' | 'hook',
-      platform: this.config.platforms[platformIndex],
+      platform,
+      customInstructions: [
+        `Focus the deliverable around: ${ideaText}.`,
+        'Keep the tone human, direct, and non-robotic.',
+        'Optimize for monetizable but policy-safe content.',
+        'Do not generate anything harmful, exploitative, unsafe, deceptive, or likely to violate social platform policies.',
+        `Target the selected platform first: ${platform}.`,
+        `Favor this content type if it fits: ${adaptiveStrategy.recommendedContentType}.`,
+        'Open with a stop-scroll hook built on curiosity, tension, or a sharp knowledge gap.',
+        strategyPhase === 'audience_building'
+          ? 'Prioritize audience growth content only: education, story, proof of understanding, or trust-building. Do not sell yet.'
+          : strategyPhase === 'transition'
+          ? 'Lead with audience-building value first, then use a light monetization bridge only if it feels natural.'
+          : 'Lead with value first, then bridge into monetization with a clear but non-pushy CTA that fits the saved monetization goals.',
+        adaptiveStrategy.recommendedHookPattern ? `Use a ${adaptiveStrategy.recommendedHookPattern} hook pattern.` : '',
+        adaptiveStrategy.recommendedCTA ? `Prefer a ${adaptiveStrategy.recommendedCTA} CTA style.` : '',
+        adaptiveStrategy.recommendedStructure ? `Structure it as ${adaptiveStrategy.recommendedStructure}.` : '',
+        adaptiveStrategy.emotionalTriggers.length > 0 ? `Lean into ${adaptiveStrategy.emotionalTriggers.join(', ')} emotional triggers.` : '',
+        ...adaptiveStrategy.guidance,
+      ].join(' '),
     };
   }
 
@@ -319,6 +552,17 @@ export class AutomationEngine {
    * Process generation result
    */
   private async processResult(result: NexusResult, request: NexusRequest): Promise<void> {
+    if (!result.success) {
+      throw new Error('Automation result was not successful');
+    }
+
+    const brandKit = await loadBrandKit();
+    const safety = await runSafetyChecks(result.output, request.platform ? [request.platform] : [], brandKit);
+
+    if (!safety.passed) {
+      throw new Error(`Safety check failed: ${safety.blockedReasons.join(', ') || 'platform policy risk detected'}`);
+    }
+
     // Only store if meets minimum score
     if (result.success && result.score >= this.config.minScoreToStore) {
       const output: AutomationOutput = {
@@ -345,6 +589,11 @@ export class AutomationEngine {
         platform: request.platform || 'general',
         wasPublished: false,
       });
+
+      const matchedIdea = await this.findMatchingIdea(request.customInstructions);
+      if (matchedIdea) {
+        await markIdeaUsed(matchedIdea.id);
+      }
 
       // Auto-publish if enabled and approved
       if (this.config.autoPublish && !this.config.requireApproval) {
@@ -443,7 +692,16 @@ export class AutomationEngine {
     const output = this.outputs.find(o => o.id === outputId);
     if (!output || output.status !== 'approved') return false;
 
-    // TODO: Integrate with actual publishing service
+    const platform = (output.request.platform || 'twitter') as Platform;
+    const publishResult = await publishPost({
+      text: output.result.output,
+      platforms: [platform],
+    });
+
+    if (!publishResult.success) {
+      return false;
+    }
+
     output.status = 'published';
     output.publishedAt = new Date().toISOString();
 
@@ -458,6 +716,7 @@ export class AutomationEngine {
    */
   async updateConfig(updates: Partial<AutomationConfig>): Promise<void> {
     this.config = { ...this.config, ...updates };
+    await this.syncConfigWithMemoryProfile();
     await this.saveConfig();
 
     // Restart if running and interval changed
@@ -585,6 +844,14 @@ export class AutomationEngine {
     } catch {
       console.error('[AutomationEngine] Failed to save queue');
     }
+  }
+
+  private async findMatchingIdea(customInstructions?: string): Promise<ContentIdea | null> {
+    if (!customInstructions) return null;
+
+    const memory = await loadAgentMemory();
+    const normalizedInstructions = customInstructions.toLowerCase();
+    return memory.contentIdeas.find(idea => normalizedInstructions.includes(idea.idea.toLowerCase())) || null;
   }
 }
 

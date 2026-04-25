@@ -13,6 +13,7 @@ import { kvGet, kvSet } from '../services/puterService';
 import { universalChat } from '../services/aiService';
 import { generateImage as generateImageAsset } from '../services/imageGenerationService';
 import { generateVideo as generateVideoAsset } from '../services/videoGenerationService';
+import { synthesizeVoice } from '../services/voiceService';
 
 // Provider Types
 export type ProviderType = 'llm' | 'image' | 'audio' | 'video';
@@ -124,12 +125,12 @@ const PROVIDER_CONFIGS: Omit<Provider, 'status' | 'lastSuccess' | 'lastFailure'>
     ],
   },
   {
-    id: 'simulated-audio',
-    name: 'Audio Generator (Simulated)',
+    id: 'browser-audio',
+    name: 'Voice Synthesis',
     type: 'audio',
-    models: ['audio-gen-v1'],
+    models: ['speech-synthesis'],
     latency: 0,
-    failureRate: 0.1,
+    failureRate: 0,
     priority: 1,
     capabilities: [
       { name: 'audio_generation', supported: true, quality: 80 },
@@ -353,15 +354,6 @@ export class ProviderRouter {
     prompt: string,
     taskType: string
   ): Promise<string> {
-    // Simulate latency for testing
-    const simulatedLatency = 500 + Math.random() * 1500;
-    
-    // Simulate failure chance
-    if (Math.random() < provider.failureRate) {
-      await this.sleep(simulatedLatency);
-      throw new Error('Simulated provider failure');
-    }
-
     switch (provider.type) {
       case 'llm':
         return await universalChat(prompt, { model: provider.models[0] });
@@ -371,12 +363,12 @@ export class ProviderRouter {
         return image.url;
       
       case 'audio':
-        // Simulated audio generation
-        await this.sleep(simulatedLatency);
+        const audioUrl = await synthesizeVoice(prompt);
         return JSON.stringify({
           type: 'audio',
-          url: `simulated-audio-${Date.now()}.mp3`,
-          duration: Math.floor(Math.random() * 60) + 10,
+          url: audioUrl,
+          duration: Math.max(3, Math.ceil(prompt.trim().split(/\s+/).length / 2.5)),
+          provider: provider.id,
         });
       
       case 'video':
@@ -469,20 +461,19 @@ export class ProviderRouter {
   private async healthCheck(provider: Provider): Promise<boolean> {
     provider.status.lastCheck = new Date().toISOString();
 
-    // For simulated providers, always return healthy
-    if (provider.id.startsWith('simulated')) {
-      provider.status.healthy = true;
-      return true;
-    }
-
     // For real providers, do a lightweight test
     try {
       if (provider.type === 'llm') {
         await universalChat('test', { model: provider.models[0] });
+      } else if (provider.type === 'audio') {
+        provider.status.healthy = typeof window !== 'undefined'
+          && ('speechSynthesis' in window);
       }
-      provider.status.healthy = true;
+      if (provider.type !== 'audio') {
+        provider.status.healthy = true;
+      }
       provider.status.consecutiveFailures = 0;
-      return true;
+      return provider.status.healthy;
     } catch {
       provider.status.healthy = false;
       return false;

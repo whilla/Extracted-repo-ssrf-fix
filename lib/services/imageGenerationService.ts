@@ -2,7 +2,7 @@
 
 import { kvGet, waitForPuter } from './puterService';
 
-export type ImageProvider = 'puter' | 'stability' | 'leonardo' | 'ideogram' | 'replicate';
+export type ImageProvider = 'puter' | 'stability' | 'leonardo' | 'ideogram';
 
 export interface ImageGenerationOptions {
   prompt: string;
@@ -85,6 +85,11 @@ async function generateWithPuter(options: ImageGenerationOptions): Promise<Gener
       height: 1024,
     };
   });
+}
+
+async function canUsePuter(): Promise<boolean> {
+  const ready = await waitForPuter();
+  return typeof window !== 'undefined' && ready && !!window.puter;
 }
 
 /**
@@ -294,27 +299,22 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
     prompt: prompt.trim().substring(0, 1000), // Limit prompt length
   };
 
-  // If provider specified, use it with fallback
+  const providerMap: Record<ImageProvider, () => Promise<GeneratedImage>> = {
+    puter: () => generateWithPuter(cleanOptions),
+    stability: () => generateWithStability(cleanOptions),
+    leonardo: () => generateWithLeonardo(cleanOptions),
+    ideogram: () => generateWithIdeogram(cleanOptions),
+  };
+
+  // If provider specified, use only that provider.
   if (provider) {
-    try {
-      switch (provider) {
-        case 'stability':
-          return await generateWithStability(cleanOptions);
-        case 'leonardo':
-          return await generateWithLeonardo(cleanOptions);
-        case 'ideogram':
-          return await generateWithIdeogram(cleanOptions);
-        case 'puter':
-        default:
-          return await generateWithPuter(cleanOptions);
-      }
-    } catch (error) {
-      console.warn(`Provider ${provider} failed, falling back to Puter:`, error);
-      // Fall through to auto-select
+    if (!providerMap[provider]) {
+      throw new Error(`Unsupported image provider: ${provider}`);
     }
+    return providerMap[provider]();
   }
 
-  // Auto-select best available provider with fallback
+  // Auto-select best available configured provider with real fallback.
   const providerAttempts: Array<{ check: () => Promise<boolean>; generate: () => Promise<GeneratedImage> }> = [
     { 
       check: async () => !!(await kvGet('stability_key')), 
@@ -329,7 +329,7 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
       generate: () => generateWithIdeogram(cleanOptions) 
     },
     { 
-      check: async () => true, // Puter is always available
+      check: async () => canUsePuter(),
       generate: () => generateWithPuter(cleanOptions) 
     },
   ];
@@ -345,8 +345,7 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
     }
   }
 
-  // Final fallback - should always work
-  return generateWithPuter(cleanOptions);
+  throw new Error('No configured image provider is available. Add Stability, Leonardo, Ideogram, or enable Puter AI in this environment.');
 }
 
 /**
@@ -381,7 +380,7 @@ export async function generateImageVariations(
  * Get available image providers
  */
 export async function getAvailableProviders(): Promise<ImageProvider[]> {
-  const providers: ImageProvider[] = ['puter']; // Always available
+  const providers: ImageProvider[] = [];
 
   const [stability, leonardo, ideogram] = await Promise.all([
     kvGet('stability_key'),
@@ -389,6 +388,7 @@ export async function getAvailableProviders(): Promise<ImageProvider[]> {
     kvGet('ideogram_key'),
   ]);
 
+  if (await canUsePuter()) providers.push('puter');
   if (stability) providers.push('stability');
   if (leonardo) providers.push('leonardo');
   if (ideogram) providers.push('ideogram');

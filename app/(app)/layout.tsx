@@ -11,6 +11,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { FullPageLoading } from '@/components/nexus/LoadingPulse';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 import { CommandPaletteWrapper } from '@/components/CommandPalette';
+import { NotificationBootstrap } from '@/components/NotificationBootstrap';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -58,6 +59,7 @@ export default function AppLayout({
         <AgentProvider>
           <AppShell>{children}</AppShell>
           <CommandPaletteWrapper />
+          <NotificationBootstrap />
         </AgentProvider>
       </BrandKitProvider>
       <ServiceWorkerRegister />

@@ -276,44 +276,36 @@ export function exportPDF(data: ReportData): void {
   }
 }
 
-// Generate mock report data for demo
+// Generate a zero-state report scaffold until live analytics are available
 export function generateMockReport(): ReportData {
+  const now = new Date();
+  const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
   return {
     title: 'Social Media Performance Report',
     dateRange: {
-      start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-      end: new Date().toLocaleDateString(),
+      start: start.toLocaleDateString(),
+      end: now.toLocaleDateString(),
     },
     summary: {
-      totalPosts: 45,
-      totalEngagement: 12500,
-      avgEngagementRate: 4.2,
-      totalReach: 85000,
-      followerGrowth: 320,
+      totalPosts: 0,
+      totalEngagement: 0,
+      avgEngagementRate: 0,
+      totalReach: 0,
+      followerGrowth: 0,
       bestPerformingPlatform: 'instagram',
     },
-    platforms: [
-      { platform: 'instagram', posts: 15, engagement: 5200, reach: 35000, engagementRate: 5.1, topPost: 'Behind the scenes post', growth: 12 },
-      { platform: 'twitter', posts: 20, engagement: 3800, reach: 28000, engagementRate: 3.8, topPost: 'Industry insight thread', growth: 8 },
-      { platform: 'linkedin', posts: 8, engagement: 2500, reach: 18000, engagementRate: 4.5, topPost: 'Thought leadership article', growth: 15 },
-      { platform: 'tiktok', posts: 2, engagement: 1000, reach: 4000, engagementRate: 6.2, topPost: 'Tutorial video', growth: 25 },
-    ],
-    topContent: [
-      { content: 'Behind the scenes look at our creative process...', platform: 'instagram', engagement: 1250, reach: 8500, date: '2024-01-15' },
-      { content: 'Thread: 10 things I wish I knew when starting...', platform: 'twitter', engagement: 980, reach: 7200, date: '2024-01-12' },
-      { content: 'The future of our industry is changing. Here is why...', platform: 'linkedin', engagement: 750, reach: 5500, date: '2024-01-18' },
-    ],
+    platforms: [],
+    topContent: [],
     growth: {
-      followers: { current: 15320, previous: 15000, change: 2.1 },
-      engagement: { current: 12500, previous: 10200, change: 22.5 },
-      reach: { current: 85000, previous: 72000, change: 18.1 },
+      followers: { current: 0, previous: 0, change: 0 },
+      engagement: { current: 0, previous: 0, change: 0 },
+      reach: { current: 0, previous: 0, change: 0 },
     },
     recommendations: [
-      'Increase posting frequency on Instagram - your engagement rate is highest there',
-      'Consider more video content - your TikTok posts have 6.2% engagement rate',
-      'Best times to post: Weekdays 9-11 AM and 7-9 PM based on your audience activity',
-      'Hashtag strategy is working well - continue using niche-specific tags',
-      'Try more interactive content (polls, questions) to boost comments',
+      'Publish content consistently to start building an analytics baseline.',
+      'Connect a publishing provider to sync platform metrics into future reports.',
+      'Use hashtag and posting-time analytics after your first published campaigns.',
     ],
   };
 }

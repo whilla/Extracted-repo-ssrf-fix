@@ -33,7 +33,8 @@ export type PatternType =
   | 'structure_pattern'
   | 'emotional_trigger'
   | 'word_choice'
-  | 'format_pattern';
+  | 'format_pattern'
+  | 'content_type';
 
 export interface SuccessRecord {
   id: string;
@@ -60,6 +61,17 @@ export interface PatternAnalysis {
   ctaPatterns: string[];
   emotionalTriggers: string[];
   effectiveStructures: string[];
+  contentTypes: string[];
+}
+
+export interface AdaptiveContentStrategy {
+  platform?: string;
+  recommendedContentType: string;
+  recommendedHookPattern?: string;
+  recommendedCTA?: string;
+  recommendedStructure?: string;
+  emotionalTriggers: string[];
+  guidance: string[];
 }
 
 // Storage keys
@@ -167,6 +179,10 @@ export class LearningSystem {
     const structurePattern = this.categorizeStructure(lines);
     patterns.push(`structure:${structurePattern}`);
 
+    // Content type / archetype
+    const contentType = this.categorizeContentType(content);
+    patterns.push(`content_type:${contentType}`);
+
     // Emotional triggers
     const emotions = this.extractEmotionalTriggers(content);
     emotions.forEach(e => patterns.push(`emotion:${e}`));
@@ -235,6 +251,38 @@ export class LearningSystem {
     if (lines.length <= 3) return 'short';
     if (lines.length <= 6) return 'medium';
     return 'long';
+  }
+
+  /**
+   * Categorize overall content archetype
+   */
+  private categorizeContentType(content: string): string {
+    const normalized = content.toLowerCase();
+    const firstLine = content.split('\n').find(line => line.trim())?.toLowerCase() || '';
+
+    if (/^\d+\s+(things?|ways?|lessons?|tips?|mistakes?|reasons?)/.test(firstLine)) {
+      return 'listicle';
+    }
+    if (/(how to|step by step|here's how|do this)/.test(normalized)) {
+      return 'tutorial';
+    }
+    if (/(i learned|i used to|i was wrong|my story|when i|i realized)/.test(normalized)) {
+      return 'storytelling';
+    }
+    if (/(unpopular opinion|hot take|most people are wrong|stop doing)/.test(normalized)) {
+      return 'contrarian';
+    }
+    if (/(mistake|avoid this|don't do this|warning)/.test(normalized)) {
+      return 'mistake_avoidance';
+    }
+    if (/(myth|truth|what nobody tells you|secret)/.test(normalized)) {
+      return 'myth_busting';
+    }
+    if (/\?/.test(firstLine)) {
+      return 'question_led';
+    }
+
+    return 'insight';
   }
 
   /**
@@ -464,6 +512,73 @@ export class LearningSystem {
         .sort((a, b) => b.avgScore - a.avgScore)
         .slice(0, 3)
         .map(p => p.pattern),
+      contentTypes: patterns
+        .filter(p => p.type === 'content_type')
+        .sort((a, b) => b.avgScore - a.avgScore)
+        .slice(0, 5)
+        .map(p => p.pattern),
+    };
+  }
+
+  /**
+   * Build an adaptive strategy from learned viral and high-engagement patterns
+   */
+  async getAdaptiveContentStrategy(platform?: string): Promise<AdaptiveContentStrategy> {
+    if (!this.initialized) await this.initialize();
+
+    const analysis = this.getPatternAnalysis(platform);
+    const topPatterns = Array.from(this.patterns.values())
+      .filter(pattern => {
+        if (!platform) return true;
+        return (pattern.platformSuccess[platform] || 0) > 0;
+      })
+      .sort((a, b) => b.avgScore - a.avgScore);
+
+    const topContentType = analysis.contentTypes[0] || 'insight';
+    const topHook = analysis.hookPatterns[0];
+    const topCTA = analysis.ctaPatterns[0];
+    const topStructure = analysis.effectiveStructures[0];
+    const emotionalTriggers = analysis.emotionalTriggers.slice(0, 3);
+
+    const guidance: string[] = [
+      `Bias toward ${topContentType} content because it has the strongest recent engagement profile.`,
+    ];
+
+    if (topHook) {
+      guidance.push(`Open with a ${topHook} hook.`);
+    }
+    if (topStructure) {
+      guidance.push(`Use a ${topStructure} structure.`);
+    }
+    if (topCTA) {
+      guidance.push(`End with a ${topCTA} style CTA when natural.`);
+    }
+    if (emotionalTriggers.length > 0) {
+      guidance.push(`Lean on these emotional triggers: ${emotionalTriggers.join(', ')}.`);
+    }
+
+    const recentWins = this.successes
+      .filter(success => !platform || success.platform === platform)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+
+    if (recentWins.length > 0) {
+      const viralWins = recentWins.filter(win => (win.viralScore?.viralPotential || 'low') === 'viral').length;
+      if (viralWins > 0) {
+        guidance.push(`Recent viral wins on this lane: ${viralWins}; follow the strongest existing pattern instead of inventing a new format.`);
+      }
+    } else {
+      guidance.push('Learning data is still limited, so keep testing fresh angles within the locked niche.');
+    }
+
+    return {
+      platform,
+      recommendedContentType: topContentType,
+      recommendedHookPattern: topHook,
+      recommendedCTA: topCTA,
+      recommendedStructure: topStructure,
+      emotionalTriggers,
+      guidance,
     };
   }
 

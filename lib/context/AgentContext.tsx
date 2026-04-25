@@ -1,9 +1,9 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import type { ChatMessage, AttachedFile, AgentIntent, BrandKit } from '@/lib/types';
 import { universalChat, analyzeImage, getCurrentModel } from '@/lib/services/aiService';
-import { saveChatMessage, loadChatHistory, loadBrandKit, generateId } from '@/lib/services/memoryService';
+import { saveChatMessage, loadChatHistory, loadBrandKit, generateId, clearChatHistory } from '@/lib/services/memoryService';
 import { 
   loadAgentMemory, 
   saveAgentMemory,
@@ -11,10 +11,15 @@ import {
   addContentIdea, 
   addUserFact, 
   addNicheDetail,
+  setPrimaryNiche,
+  setTargetAudienceMemory,
+  addTargetPlatform,
+  addMonetizationGoal,
   addAudienceInsight,
   addConversationSummary,
   syncWithBrandKit,
   extractMemoryFromResponse,
+  extractStructuredMemory,
   type AgentMemory 
 } from '@/lib/services/agentMemoryService';
 import { buildSystemPrompt, INTENT_DETECTION_PROMPT, FILE_ANALYSIS_PROMPT } from '@/lib/constants/prompts';
@@ -32,6 +37,23 @@ import {
 import { validateContent, makeGovernorDecision, getGovernorDashboard } from '@/lib/services/governorService';
 import { getAgentStats, loadAgents, type AgentConfig } from '@/lib/services/multiAgentService';
 import { generateAgentImage, generateAgentVideo } from '@/lib/services/agentMediaService';
+import { fileProcessor } from '@/lib/services/fileProcessor';
+import type { VideoProvider } from '@/lib/services/videoGenerationService';
+import type { ImageProvider } from '@/lib/services/imageGenerationService';
+
+const IMAGE_ENGINE_OPTIONS = [
+  { model: 'puter', name: 'Puter Image' },
+  { model: 'stability', name: 'Stability XL' },
+  { model: 'leonardo', name: 'Leonardo' },
+  { model: 'ideogram', name: 'Ideogram' },
+] as const;
+
+const VIDEO_ENGINE_OPTIONS = [
+  { model: 'ltx23', name: 'LTX 2.3 Cloud' },
+  { model: 'ltx23-open', name: 'LTX 2.3 Open' },
+] as const;
+
+const AGENT_SESSION_KEY = 'agent_session_v1';
 
 interface AgentState {
   isOpen: boolean;
@@ -45,6 +67,10 @@ interface AgentState {
   // New features
   currentModel: string;
   availableModels: typeof AVAILABLE_MODELS;
+  currentImageProvider: ImageProvider;
+  availableImageProviders: typeof IMAGE_ENGINE_OPTIONS;
+  currentVideoProvider: VideoProvider;
+  availableVideoProviders: typeof VIDEO_ENGINE_OPTIONS;
   automationEnabled: boolean;
   isVoiceMode: boolean;
   isListening: boolean;
@@ -70,6 +96,8 @@ interface AgentContextType extends AgentState {
   generateIdeas: (topic: string, count?: number) => Promise<string[]>;
   // New features
   setModel: (model: string) => void;
+  setImageProvider: (provider: ImageProvider) => void;
+  setVideoProvider: (provider: VideoProvider) => void;
   toggleAutomation: () => void;
   toggleVoiceMode: () => void;
   startListening: () => void;
@@ -81,6 +109,19 @@ interface AgentContextType extends AgentState {
   runOrchestration: (request: string, type?: 'content' | 'strategy' | 'full') => Promise<OrchestrationResult | null>;
   getSystemStatus: () => Promise<{ agentsReady: boolean; agentCount: number; governorEnabled: boolean }>;
   triggerEvolution: () => Promise<void>;
+}
+
+interface AgentSessionSnapshot {
+  messages: ChatMessage[];
+  pendingFiles: AttachedFile[];
+  godModeEnabled: boolean;
+  currentModel: string;
+  currentImageProvider: ImageProvider;
+  currentVideoProvider: VideoProvider;
+  automationEnabled: boolean;
+  isVoiceMode: boolean;
+  multiAgentEnabled: boolean;
+  lastOpenedAt: string;
 }
 
 export const AgentContext = createContext<AgentContextType | null>(null);
@@ -98,6 +139,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     // New features
     currentModel: 'gpt-4o',
     availableModels: AVAILABLE_MODELS,
+    currentImageProvider: 'puter',
+    availableImageProviders: IMAGE_ENGINE_OPTIONS,
+    currentVideoProvider: 'ltx23',
+    availableVideoProviders: VIDEO_ENGINE_OPTIONS,
     automationEnabled: false,
     isVoiceMode: false,
     isListening: false,
@@ -111,20 +156,98 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const initializedRef = useRef(false);
 
+  const saveSessionSnapshot = useCallback(async (nextState: AgentState) => {
+    const snapshot: AgentSessionSnapshot = {
+      messages: nextState.messages.slice(-100),
+      pendingFiles: nextState.pendingFiles,
+      godModeEnabled: nextState.godModeEnabled,
+      currentModel: nextState.currentModel,
+      currentImageProvider: nextState.currentImageProvider,
+      currentVideoProvider: nextState.currentVideoProvider,
+      automationEnabled: nextState.automationEnabled,
+      isVoiceMode: nextState.isVoiceMode,
+      multiAgentEnabled: nextState.multiAgentEnabled,
+      lastOpenedAt: new Date().toISOString(),
+    };
+    await kvSet(AGENT_SESSION_KEY, JSON.stringify(snapshot));
+  }, []);
+
+  const restoreSessionSnapshot = useCallback(async () => {
+    try {
+      const raw = await kvGet(AGENT_SESSION_KEY);
+      if (!raw || typeof raw !== 'string') return null;
+      return JSON.parse(raw) as AgentSessionSnapshot;
+    } catch {
+      return null;
+    }
+  }, []);
+
   // Load chat history on first open
   const loadHistory = useCallback(async () => {
     if (initializedRef.current) return;
     initializedRef.current = true;
     
     try {
-      const history = await loadChatHistory();
-      if (history.length > 0) {
-        setState(s => ({ ...s, messages: history }));
-      }
+      const [history, savedModel, savedImageProvider, savedVideoProvider, sessionSnapshot] = await Promise.all([
+        loadChatHistory(),
+        getCurrentModel(),
+        kvGet<ImageProvider>('image_provider'),
+        kvGet<VideoProvider>('video_provider'),
+        restoreSessionSnapshot(),
+      ]);
+
+      setState(s => ({
+        ...s,
+        messages: sessionSnapshot?.messages?.length ? sessionSnapshot.messages : (history.length > 0 ? history : s.messages),
+        pendingFiles: sessionSnapshot?.pendingFiles || s.pendingFiles,
+        godModeEnabled: sessionSnapshot?.godModeEnabled ?? s.godModeEnabled,
+        currentModel: sessionSnapshot?.currentModel || savedModel || s.currentModel,
+        currentImageProvider:
+          sessionSnapshot?.currentImageProvider === 'stability' ||
+          sessionSnapshot?.currentImageProvider === 'leonardo' ||
+          sessionSnapshot?.currentImageProvider === 'ideogram' ||
+          sessionSnapshot?.currentImageProvider === 'puter'
+            ? sessionSnapshot.currentImageProvider
+            : savedImageProvider === 'stability' ||
+              savedImageProvider === 'leonardo' ||
+              savedImageProvider === 'ideogram' ||
+              savedImageProvider === 'puter'
+            ? savedImageProvider
+            : s.currentImageProvider,
+        currentVideoProvider:
+          sessionSnapshot?.currentVideoProvider === 'ltx23-open' || sessionSnapshot?.currentVideoProvider === 'ltx23'
+            ? sessionSnapshot.currentVideoProvider
+            : savedVideoProvider === 'ltx23-open' || savedVideoProvider === 'ltx23'
+            ? savedVideoProvider
+            : s.currentVideoProvider,
+        automationEnabled: sessionSnapshot?.automationEnabled ?? s.automationEnabled,
+        isVoiceMode: sessionSnapshot?.isVoiceMode ?? s.isVoiceMode,
+        multiAgentEnabled: sessionSnapshot?.multiAgentEnabled ?? s.multiAgentEnabled,
+      }));
     } catch (error) {
       console.error('Failed to load chat history:', error);
     }
-  }, []);
+  }, [restoreSessionSnapshot]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    void saveSessionSnapshot(state);
+  }, [
+    state.messages,
+    state.pendingFiles,
+    state.godModeEnabled,
+    state.currentModel,
+    state.currentImageProvider,
+    state.currentVideoProvider,
+    state.automationEnabled,
+    state.isVoiceMode,
+    state.multiAgentEnabled,
+    saveSessionSnapshot,
+  ]);
 
   const openAgent = useCallback(() => {
     loadHistory();
@@ -164,6 +287,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const clearMessages = useCallback(() => {
     setState(s => ({ ...s, messages: [] }));
+    clearChatHistory();
   }, []);
 
   const toggleGodMode = useCallback(() => {
@@ -216,6 +340,16 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     setState(s => ({ ...s, currentModel: model }));
     kvSet('default_model', model);
     kvSet('ai_model', model);
+  }, []);
+
+  const setImageProvider = useCallback((provider: ImageProvider) => {
+    setState(s => ({ ...s, currentImageProvider: provider }));
+    kvSet('image_provider', provider);
+  }, []);
+
+  const setVideoProvider = useCallback((provider: VideoProvider) => {
+    setState(s => ({ ...s, currentVideoProvider: provider }));
+    kvSet('video_provider', provider);
   }, []);
 
   // Automation toggle
@@ -303,15 +437,28 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         if (file.mimeType.startsWith('image/')) {
           const analysis = await analyzeImage(file.data, file.mimeType);
           summaries.push(`[Image: ${file.name}]\n${analysis}`);
-        } else if (file.mimeType === 'application/pdf' || file.mimeType.includes('text')) {
-          // For text files, decode and summarize
-          const text = atob(file.data);
-          const response = await universalChat(
-            FILE_ANALYSIS_PROMPT.replace('{fileType}', 'document') + '\n\nContent:\n' + text.substring(0, 5000)
-          );
-          summaries.push(`[Document: ${file.name}]\n${response}`);
         } else {
-          summaries.push(`[File: ${file.name}] - Unable to process this file type`);
+          const byteCharacters = atob(file.data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+
+          const browserFile = new File(
+            [new Uint8Array(byteNumbers)],
+            file.name,
+            { type: file.mimeType }
+          );
+
+          const result = await fileProcessor.processFile(browserFile, FILE_ANALYSIS_PROMPT.replace('{fileType}', 'file'));
+          const extractedText = result.file.extractedText?.slice(0, 4000);
+          const body = result.aiResponse || result.file.summary || extractedText;
+
+          if (body) {
+            summaries.push(`[File: ${file.name}]\n${body}`);
+          } else {
+            summaries.push(`[File: ${file.name}] Processed successfully, but no summary was returned.`);
+          }
         }
       } catch (error) {
         summaries.push(`[File: ${file.name}] - Error processing: ${error}`);
@@ -325,6 +472,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const extractAndSaveMemory = async (userMessage: string, aiResponse: string, intent: AgentIntent) => {
     try {
       const lowerMessage = userMessage.toLowerCase();
+      const platformMatches = Array.from(new Set(
+        ['instagram', 'tiktok', 'youtube', 'linkedin', 'twitter', 'x', 'facebook', 'threads', 'pinterest']
+          .filter(platform => lowerMessage.includes(platform))
+          .map(platform => platform === 'x' ? 'twitter' : platform)
+      ));
       
       // Check for niche-related statements
       if (lowerMessage.includes('my niche') || lowerMessage.includes('i focus on') || 
@@ -332,7 +484,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         // Extract the niche detail
         const nicheMatch = userMessage.match(/(?:my niche is|i focus on|i specialize in|my business is)\s+(.{10,100})/i);
         if (nicheMatch) {
-          await addNicheDetail(nicheMatch[1].trim());
+          const niche = nicheMatch[1].trim();
+          await setPrimaryNiche(niche);
+          await addNicheDetail(niche);
+        }
+      }
+
+      if (lowerMessage.includes('niche') && !lowerMessage.includes('my niche')) {
+        const generalNicheMatch = userMessage.match(/niche\s*(?:is|=|:)?\s+(.{5,100})/i);
+        if (generalNicheMatch) {
+          const niche = generalNicheMatch[1].trim();
+          await setPrimaryNiche(niche);
+          await addNicheDetail(niche);
         }
       }
       
@@ -341,16 +504,46 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           lowerMessage.includes('my target') || lowerMessage.includes('my followers')) {
         const audienceMatch = userMessage.match(/(?:my audience|my customers|my target|my followers)\s+(?:is|are)\s+(.{10,150})/i);
         if (audienceMatch) {
-          await addAudienceInsight(audienceMatch[1].trim());
+          const audience = audienceMatch[1].trim();
+          await setTargetAudienceMemory(audience);
+          await addAudienceInsight(audience);
         }
+      }
+
+      const audienceIntentMatch = userMessage.match(/(?:target audience|ideal audience)\s*(?:is|=|:)?\s+(.{10,150})/i);
+      if (audienceIntentMatch) {
+        const audience = audienceIntentMatch[1].trim();
+        await setTargetAudienceMemory(audience);
+        await addAudienceInsight(audience);
+      }
+
+      for (const platform of platformMatches) {
+        await addTargetPlatform(platform);
+      }
+
+      if (
+        lowerMessage.includes('monetiz') ||
+        lowerMessage.includes('sponsor') ||
+        lowerMessage.includes('brand deal') ||
+        lowerMessage.includes('affiliate') ||
+        lowerMessage.includes('ad revenue') ||
+        lowerMessage.includes('sell')
+      ) {
+        const monetizationMatch = userMessage.match(/(?:monetiz\w*|sponsor(?:ship)?s?|brand deals?|affiliate sales?|ad revenue|sell)\s+(?:through|with|using|from|via)?\s*(.{8,160})/i);
+        await addMonetizationGoal((monetizationMatch?.[0] || userMessage).trim());
       }
       
       // Check for content ideas the user shares
       if (lowerMessage.includes('content idea') || lowerMessage.includes('post about') || 
-          lowerMessage.includes('create content') || intent.type === 'generate_content') {
+          lowerMessage.includes('create content') || lowerMessage.includes('idea:') ||
+          lowerMessage.includes('make content about') || intent.type === 'generate_content') {
+        const directIdeaMatch = userMessage.match(/(?:content idea|idea|post about|make content about)\s*(?:is|:)?\s+(.{12,200})/i);
+        if (directIdeaMatch) {
+          await addContentIdea(directIdeaMatch[1].trim(), 'user_stated', platformMatches[0]);
+        }
         const extracted = extractMemoryFromResponse(aiResponse);
         for (const idea of extracted.ideas.slice(0, 3)) {
-          await addContentIdea(idea, 'ai_generated');
+          await addContentIdea(idea, 'ai_generated', platformMatches[0]);
         }
       }
       
@@ -368,8 +561,56 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           lowerMessage.includes('i aim to')) {
         const goalMatch = userMessage.match(/(?:my goal is|i want to|i aim to)\s+(.{10,150})/i);
         if (goalMatch) {
-          await addUserFact('business_goal', goalMatch[1].trim(), 'user_stated');
+          const goal = goalMatch[1].trim();
+          await addUserFact('business_goal', goal, 'user_stated');
+          if (
+            goal.toLowerCase().includes('monetiz') ||
+            goal.toLowerCase().includes('revenue') ||
+            goal.toLowerCase().includes('income') ||
+            goal.toLowerCase().includes('sales')
+          ) {
+            await addMonetizationGoal(goal);
+          }
         }
+      }
+
+      const structuredMemory = await extractStructuredMemory(userMessage, aiResponse);
+
+      if (structuredMemory.niche) {
+        await setPrimaryNiche(structuredMemory.niche);
+        await addNicheDetail(structuredMemory.niche);
+      }
+
+      for (const detail of structuredMemory.nicheDetails || []) {
+        await addNicheDetail(detail);
+      }
+
+      if (structuredMemory.targetAudience) {
+        await setTargetAudienceMemory(structuredMemory.targetAudience);
+      }
+
+      for (const insight of structuredMemory.audienceInsights || []) {
+        await addAudienceInsight(insight);
+      }
+
+      for (const platform of structuredMemory.targetPlatforms || []) {
+        await addTargetPlatform(platform);
+      }
+
+      for (const goal of structuredMemory.monetizationGoals || []) {
+        await addMonetizationGoal(goal);
+      }
+
+      for (const goal of structuredMemory.businessGoals || []) {
+        await addUserFact('business_goal', goal, 'inferred');
+      }
+
+      for (const fact of structuredMemory.userFacts || []) {
+        await addUserFact(fact.key, fact.value, 'inferred');
+      }
+
+      for (const idea of structuredMemory.contentIdeas || []) {
+        await addContentIdea(idea, intent.type === 'generate_content' ? 'user_stated' : 'memory_extracted', platformMatches[0]);
       }
       
       // Every 10 messages, create a conversation summary
@@ -420,7 +661,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
       // Load brand kit for context
       const brandKit = await loadBrandKit();
-      const model = await getCurrentModel();
+      const model = state.currentModel;
       
       // Load persistent memory context
       const memoryContext = await buildMemoryContext();
@@ -456,6 +697,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         setState(s => ({ ...s, currentTask: 'Generating image...' }));
         const imageResult = await generateAgentImage(userPrompt, {
           preferredModel: state.currentModel,
+          provider: state.currentImageProvider,
         });
 
         const assistantMessage: ChatMessage = {
@@ -482,6 +724,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         setState(s => ({ ...s, currentTask: 'Generating video...' }));
         const videoResult = await generateAgentVideo(userPrompt, {
           preferredModel: state.currentModel,
+          provider: state.currentVideoProvider,
         });
 
         const assistantMessage: ChatMessage = {
@@ -561,7 +804,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         currentTask: null,
       }));
     }
-  }, [state.currentModel, state.messages, state.pendingFiles]);
+  }, [state.currentModel, state.currentImageProvider, state.currentVideoProvider, state.messages, state.pendingFiles]);
 
   // Multi-agent system methods
   const toggleMultiAgent = useCallback(() => {
@@ -639,6 +882,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         runGodMode,
         generateIdeas,
         setModel,
+        setImageProvider,
+        setVideoProvider,
         toggleAutomation,
         toggleVoiceMode,
         startListening,

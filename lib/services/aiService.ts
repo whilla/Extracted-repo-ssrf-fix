@@ -388,28 +388,41 @@ export async function universalChat(
   } = {}
 ): Promise<string> {
   const { model = 'gpt-4o' } = options;
-  
-  // Find the model config
-  const modelConfig = AVAILABLE_MODELS.find(m => m.model === model);
-  const provider = modelConfig?.provider || 'puter';
-  
-  // Route to appropriate provider
-  switch (provider) {
-    case 'gemini':
-      return chatWithGemini(messages, options);
-    case 'groq':
-      return chatWithGroq(messages, { ...options, model });
-    case 'openrouter':
-      return chatWithOpenRouter(messages, { ...options, model });
-    case 'nvidia':
-      return chatWithNvidia(messages, { ...options, model });
-    case 'ollama':
-      return chatWithOllama(messages, { ...options, model });
-    case 'deepseek':
-      return chatWithDeepSeek(messages, { ...options, model });
-    default:
-      return chat(messages, options);
+  const fallbackModels = Array.from(new Set([
+    model,
+    ...MODEL_PRIORITY.filter(candidate => candidate !== model),
+  ]));
+
+  let lastError: Error | null = null;
+
+  for (const candidateModel of fallbackModels) {
+    try {
+      const modelConfig = AVAILABLE_MODELS.find(m => m.model === candidateModel);
+      const provider = modelConfig?.provider || 'puter';
+
+      switch (provider) {
+        case 'gemini':
+          return await chatWithGemini(messages, options);
+        case 'groq':
+          return await chatWithGroq(messages, { ...options, model: candidateModel });
+        case 'openrouter':
+          return await chatWithOpenRouter(messages, { ...options, model: candidateModel });
+        case 'nvidia':
+          return await chatWithNvidia(messages, { ...options, model: candidateModel });
+        case 'ollama':
+          return await chatWithOllama(messages, { ...options, model: candidateModel });
+        case 'deepseek':
+          return await chatWithDeepSeek(messages, { ...options, model: candidateModel });
+        default:
+          return await chat(messages, { ...options, model: candidateModel });
+      }
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`universalChat failed on ${candidateModel}, trying fallback model`, lastError);
+    }
   }
+
+  throw lastError || new Error('All AI model attempts failed');
 }
 
 // Generate image with DALL-E 3

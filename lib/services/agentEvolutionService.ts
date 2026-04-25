@@ -3,6 +3,7 @@
 
 import { kvGet, kvSet } from './puterService';
 import { generateId } from './memoryService';
+import { loadBrandKit } from './memoryService';
 import {
   loadAgents,
   saveAgents,
@@ -12,6 +13,8 @@ import {
   type AgentConfig,
   type AgentRole,
 } from './multiAgentService';
+import { universalChat } from './aiService';
+import { validateContent, validateEvolutionProposal } from './governorService';
 
 // Evolution Types
 export interface EvolutionProposal {
@@ -317,12 +320,43 @@ export async function testEvolutionProposal(
   return proposal;
 }
 
+async function runDefaultEvolutionTest(agent: AgentConfig, promptTemplate: string): Promise<{ content: string; score: number }> {
+  const brandKit = await loadBrandKit();
+  const candidateInput = 'Create a concise, platform-native social media post about turning one useful idea into a monetizable short-form content series.';
+  const renderedPrompt = promptTemplate.includes('{{input}}')
+    ? promptTemplate.replace('{{input}}', candidateInput)
+    : `${promptTemplate}\n\nInput: ${candidateInput}`;
+
+  const content = await universalChat(renderedPrompt, {
+    model: 'gpt-4o-mini',
+    brandKit,
+  });
+
+  const validation = await validateContent(content, {
+    platform: 'instagram',
+    isRegeneration: false,
+  });
+
+  return {
+    content,
+    score: validation.score,
+  };
+}
+
 // Apply approved evolution
 export async function applyEvolution(proposalId: string): Promise<boolean> {
   const proposals = await loadEvolutionProposals();
   const proposal = proposals.find(p => p.id === proposalId);
   
   if (!proposal || proposal.status !== 'approved') {
+    return false;
+  }
+
+  const governorDecision = await validateEvolutionProposal(proposalId);
+  if (!governorDecision.approved) {
+    proposal.status = 'rejected';
+    proposal.resolvedAt = new Date().toISOString();
+    await saveEvolutionProposals(proposals);
     return false;
   }
   
@@ -423,13 +457,23 @@ export async function runEvolutionCycle(): Promise<{
     if (proposal) {
       proposed++;
     }
-    
-    // Check for pending approved proposals
+
     const proposals = await loadEvolutionProposals();
-    const approved = proposals.filter(
+    const pending = proposals.filter(
+      p => p.agentId === agent.id && p.status === 'pending'
+    );
+
+    for (const p of pending) {
+      await testEvolutionProposal(p.id, (candidatePrompt) =>
+        runDefaultEvolutionTest(agent, candidatePrompt)
+      );
+    }
+
+    const refreshedProposals = await loadEvolutionProposals();
+    const approved = refreshedProposals.filter(
       p => p.agentId === agent.id && p.status === 'approved'
     );
-    
+
     for (const p of approved) {
       const success = await applyEvolution(p.id);
       if (success) applied++;

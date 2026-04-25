@@ -23,8 +23,17 @@ interface MediaPromptPlan {
   negativePrompt?: string;
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5';
   durationSeconds?: number;
+  cameraAngle?: string;
+  cameraMotion?: string;
+  shotStyle?: string;
   reasoning: string;
   agentOutputs: AgentOutput[];
+}
+
+interface VideoIntentProfile {
+  format: 'reel' | 'short' | 'long';
+  aspectRatio: '16:9' | '9:16' | '1:1' | '4:5';
+  durationSeconds: number;
 }
 
 export interface MediaGenerationResult {
@@ -39,6 +48,32 @@ function clampAspectRatio(input?: string): '16:9' | '9:16' | '1:1' | '4:5' {
   return '16:9';
 }
 
+function inferVideoIntentProfile(request: string): VideoIntentProfile {
+  const lower = request.toLowerCase();
+
+  if (/\b(reel|reels|shorts|short video|tiktok|vertical)\b/.test(lower)) {
+    return {
+      format: /reel/.test(lower) ? 'reel' : 'short',
+      aspectRatio: '9:16',
+      durationSeconds: /\b(60|one minute)\b/.test(lower) ? 60 : 20,
+    };
+  }
+
+  if (/\b(long video|long-form|youtube video|episode|deep dive|explainer)\b/.test(lower)) {
+    return {
+      format: 'long',
+      aspectRatio: '16:9',
+      durationSeconds: /\b(90|120|two minutes)\b/.test(lower) ? 120 : 60,
+    };
+  }
+
+  return {
+    format: 'short',
+    aspectRatio: '16:9',
+    durationSeconds: 15,
+  };
+}
+
 async function buildMediaPrompt(
   request: string,
   kind: MediaKind,
@@ -51,6 +86,7 @@ async function buildMediaPrompt(
 
   const visualAgent = agents.find(a => a.role === 'visual' && a.evolutionState !== 'deprecated');
   const strategistAgent = agents.find(a => a.role === 'strategist' && a.evolutionState !== 'deprecated');
+  const videoIntent = kind === 'video' ? inferVideoIntentProfile(request) : null;
 
   const aiProvider = async (prompt: string): Promise<string> =>
     universalChat(prompt, { model: preferredModel || 'gpt-4o', brandKit });
@@ -88,7 +124,13 @@ Build a production-ready ${kind} generation plan that can be sent directly to a 
 - Do not ask for confirmation.
 - The prompt must target final asset generation.
 - The negative prompt should aggressively avoid low quality, distorted anatomy, watermarks, text overlays, and extra limbs.
-- For video, optimize for motion, shot continuity, and a short social clip.
+- For video, optimize for motion, shot continuity, and the requested runtime format.
+- For video, default to premium cinematic output with natural human performance, controlled camera language, realistic lighting, and no robotic or AI-looking motion.
+- For video, respect the requested format:
+  - reel/shorts/tiktok => vertical 9:16 social-first pacing
+  - long-form/youtube/explainer => 16:9 with longer narrative continuity
+- For video, target this inferred format: ${videoIntent ? `${videoIntent.format}, ${videoIntent.aspectRatio}, ${videoIntent.durationSeconds}s` : 'n/a'}
+- Generated outputs must stay brand-safe, monetizable, and avoid platform policy violations, unsafe claims, spam language, and generic AI phrasing.
 
 Return strict JSON:
 {
@@ -96,6 +138,9 @@ Return strict JSON:
   "negativePrompt": "negative prompt",
   "aspectRatio": "16:9 | 9:16 | 1:1 | 4:5",
   "durationSeconds": 5,
+  "cameraAngle": "eye-level",
+  "cameraMotion": "slow push-in",
+  "shotStyle": "cinematic close-up",
   "reasoning": "one short sentence"
 }`;
 
@@ -130,8 +175,11 @@ Return strict JSON:
   return {
     prompt,
     negativePrompt: String(parsed.negativePrompt || '').trim() || undefined,
-    aspectRatio: clampAspectRatio(parsed.aspectRatio),
-    durationSeconds: Number(parsed.durationSeconds) || 5,
+    aspectRatio: clampAspectRatio(parsed.aspectRatio || videoIntent?.aspectRatio),
+    durationSeconds: Number(parsed.durationSeconds) || videoIntent?.durationSeconds || 5,
+    cameraAngle: String(parsed.cameraAngle || '').trim() || undefined,
+    cameraMotion: String(parsed.cameraMotion || '').trim() || undefined,
+    shotStyle: String(parsed.shotStyle || '').trim() || undefined,
     reasoning: String(parsed.reasoning || '').trim() || 'Prompt synthesized by the media agent system.',
     agentOutputs,
   };
@@ -145,13 +193,32 @@ export async function generateAgentImage(
   } = {}
 ): Promise<MediaGenerationResult> {
   const plan = await buildMediaPrompt(request, 'image', options.preferredModel);
-  const result = await generateImageAsset({
-    prompt: plan.prompt,
-    negativePrompt: plan.negativePrompt,
-    provider: options.provider,
-    width: plan.aspectRatio === '9:16' ? 1024 : 1024,
-    height: plan.aspectRatio === '9:16' ? 1792 : 1024,
-  });
+  const providerAttempts: Array<ImageProvider | undefined> = options.provider
+    ? [options.provider, undefined]
+    : [undefined];
+
+  let result: Awaited<ReturnType<typeof generateImageAsset>> | null = null;
+  let lastError: Error | null = null;
+
+  for (const provider of providerAttempts) {
+    try {
+      result = await generateImageAsset({
+        prompt: plan.prompt,
+        negativePrompt: plan.negativePrompt,
+        provider,
+        width: plan.aspectRatio === '9:16' ? 1024 : 1024,
+        height: plan.aspectRatio === '9:16' ? 1792 : 1024,
+      });
+      break;
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`Agent image generation failed on ${provider || 'auto'}, retrying with fallback`, lastError);
+    }
+  }
+
+  if (!result) {
+    throw lastError || new Error('Image generation failed across providers');
+  }
 
   const quickValidation = quickValidateImage(result.url);
   if (!quickValidation.valid) {
@@ -194,13 +261,36 @@ export async function generateAgentVideo(
   } = {}
 ): Promise<MediaGenerationResult> {
   const plan = await buildMediaPrompt(request, 'video', options.preferredModel);
-  const result = await generateVideoAsset({
-    prompt: plan.prompt,
-    negativePrompt: plan.negativePrompt,
-    provider: options.provider || 'ltx23',
-    aspectRatio: plan.aspectRatio,
-    durationSeconds: plan.durationSeconds,
-  });
+  const providerAttempts: VideoProvider[] = options.provider
+    ? [options.provider, options.provider === 'ltx23' ? 'ltx23-open' : 'ltx23']
+    : ['ltx23', 'ltx23-open'];
+
+  let result: Awaited<ReturnType<typeof generateVideoAsset>> | null = null;
+  let lastError: Error | null = null;
+
+  for (const provider of providerAttempts) {
+    try {
+      result = await generateVideoAsset({
+        prompt: plan.prompt,
+        negativePrompt: plan.negativePrompt,
+        provider,
+        aspectRatio: plan.aspectRatio,
+        durationSeconds: plan.durationSeconds,
+        cameraAngle: plan.cameraAngle,
+        cameraMotion: plan.cameraMotion,
+        shotStyle: plan.shotStyle,
+        qualityProfile: 'cinematic',
+      });
+      break;
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`Agent video generation failed on ${provider}, retrying with fallback`, lastError);
+    }
+  }
+
+  if (!result) {
+    throw lastError || new Error('Video generation failed across providers');
+  }
 
   await recordCost({
     provider: result.provider,

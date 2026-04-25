@@ -6,7 +6,10 @@
 import { kvGet, kvSet, readFile, writeFile, PATHS } from './puterService';
 import { loadBrandKit } from './memoryService';
 import { universalChat } from './aiService';
+import { loadAgentMemory } from './agentMemoryService';
 import type { BrandKit } from '@/lib/types';
+import { publishPost, schedulePost } from './publishService';
+import { validateContent } from './governorService';
 
 export interface PublishSafetyConfig {
   requireApproval: boolean;
@@ -38,6 +41,7 @@ export interface ApprovalRequest {
   contentId: string;
   content: string;
   platforms: string[];
+  mediaUrl?: string;
   scheduledTime?: string;
   safetyCheck: SafetyCheckResult;
   status: 'pending' | 'approved' | 'rejected';
@@ -45,6 +49,18 @@ export interface ApprovalRequest {
   reviewedAt?: string;
   reviewedBy?: string;
   notes?: string;
+  profileSnapshot?: {
+    niche?: string;
+    targetAudience?: string;
+    targetPlatforms?: string[];
+    monetizationGoals?: string[];
+    contentPillars?: string[];
+    contentIdea?: string;
+  };
+  publishResult?: {
+    success: boolean;
+    message?: string;
+  };
 }
 
 const DEFAULT_CONFIG: PublishSafetyConfig = {
@@ -58,6 +74,21 @@ const DEFAULT_CONFIG: PublishSafetyConfig = {
   allowAutoPublish: false,
   safeModeEnabled: true,
 };
+
+const PLATFORM_POLICY_PATTERNS = [
+  { pattern: /\bguaranteed?\s+(income|earnings|results|followers|views|sales)\b/i, message: 'Contains guaranteed outcome claims.' },
+  { pattern: /\bget rich quick\b/i, message: 'Contains get-rich-quick language.' },
+  { pattern: /\b(before|after)\b.*\b(cure|healed|fixed)\b/i, message: 'Contains risky before/after or miracle-claim framing.' },
+  { pattern: /\b(no risk|risk[- ]free|effortless|instant results?)\b/i, message: 'Contains misleading low-risk or instant-result claims.' },
+  { pattern: /\b(comment|tag|share).*\b(comment|tag|share)\b/i, message: 'Contains engagement-bait phrasing.' },
+];
+
+const MONETIZATION_RISK_PATTERNS = [
+  { pattern: /\b(shocking|you won.t believe|secret trick|hack)\b/i, message: 'Uses low-trust clickbait language.' },
+  { pattern: /\bmedical advice\b|\bdiagnose\b|\bcure\b/i, message: 'Contains potentially sensitive medical-style claims.' },
+  { pattern: /\bbetting\b|\bgambling\b|\bcasino\b/i, message: 'Contains restricted monetization topic language.' },
+  { pattern: /\bpolitical\s+endorsement\b|\bvote for\b/i, message: 'Contains politically sensitive monetization risk.' },
+];
 
 // Load safety configuration
 export async function loadSafetyConfig(): Promise<PublishSafetyConfig> {
@@ -273,6 +304,142 @@ Respond in JSON format: { "score": number, "issues": string[], "suggestions": st
     });
   }
 
+  // 8. Platform policy patterns
+  const platformPolicyHits = PLATFORM_POLICY_PATTERNS
+    .filter(rule => rule.pattern.test(content))
+    .map(rule => rule.message);
+
+  if (platformPolicyHits.length > 0) {
+    checks.push({
+      name: 'Platform Policy',
+      passed: false,
+      message: platformPolicyHits.join(' '),
+      severity: 'error',
+    });
+    totalScore -= 35;
+    blockedReasons.push('Likely platform policy violation');
+  } else {
+    checks.push({
+      name: 'Platform Policy',
+      passed: true,
+      message: 'No obvious platform policy violations detected',
+      severity: 'info',
+    });
+  }
+
+  // 9. Monetization safety
+  const monetizationHits = MONETIZATION_RISK_PATTERNS
+    .filter(rule => rule.pattern.test(content))
+    .map(rule => rule.message);
+
+  if (monetizationHits.length > 0) {
+    checks.push({
+      name: 'Monetization Safety',
+      passed: false,
+      message: monetizationHits.join(' '),
+      severity: 'warning',
+    });
+    totalScore -= 20;
+  } else {
+    checks.push({
+      name: 'Monetization Safety',
+      passed: true,
+      message: 'No obvious advertiser-safety risks detected',
+      severity: 'info',
+    });
+  }
+
+  // 10. AI moderation pass for nuanced risks
+  try {
+    const moderationPrompt = `Review this social content for platform compliance and advertiser safety.
+
+Content:
+"""${content}"""
+
+Platforms: ${platforms.join(', ')}
+
+Return strict JSON:
+{
+  "platformSafe": true,
+  "monetizationSafe": true,
+  "riskLevel": "low|medium|high",
+  "flags": ["..."]
+}`;
+
+    const response = await universalChat(moderationPrompt, { model: 'gpt-4o-mini', brandKit });
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const moderation = JSON.parse(jsonMatch[0]);
+      const flags = Array.isArray(moderation.flags) ? moderation.flags : [];
+
+      if (moderation.platformSafe === false) {
+        checks.push({
+          name: 'AI Policy Review',
+          passed: false,
+          message: flags.join(', ') || 'AI review flagged platform policy risk',
+          severity: 'error',
+        });
+        totalScore -= 25;
+        blockedReasons.push('AI review flagged platform policy risk');
+      } else if (moderation.monetizationSafe === false || moderation.riskLevel === 'high') {
+        checks.push({
+          name: 'AI Policy Review',
+          passed: false,
+          message: flags.join(', ') || 'AI review flagged monetization risk',
+          severity: 'warning',
+        });
+        totalScore -= 15;
+      } else {
+        checks.push({
+          name: 'AI Policy Review',
+          passed: true,
+          message: 'AI review found low policy risk',
+          severity: 'info',
+        });
+      }
+    }
+  } catch {
+    checks.push({
+      name: 'AI Policy Review',
+      passed: true,
+      message: 'AI policy review unavailable',
+      severity: 'warning',
+    });
+  }
+
+  // 11. Governor-aligned validation so publish safety and chat quality use the same base gate
+  try {
+    const governorValidation = await validateContent(content, {
+      platform: platforms[0],
+      isRegeneration: false,
+    });
+
+    if (!governorValidation.governorApproved) {
+      checks.push({
+        name: 'Governor Validation',
+        passed: false,
+        message: governorValidation.rejectionReason || 'Governor rejected this content',
+        severity: 'error',
+      });
+      totalScore -= Math.max(10, 100 - governorValidation.score);
+      blockedReasons.push('Governor validation failed');
+    } else {
+      checks.push({
+        name: 'Governor Validation',
+        passed: true,
+        message: `Governor approved with score ${governorValidation.score}`,
+        severity: 'info',
+      });
+    }
+  } catch {
+    checks.push({
+      name: 'Governor Validation',
+      passed: true,
+      message: 'Governor validation unavailable',
+      severity: 'warning',
+    });
+  }
+
   const finalScore = Math.max(0, Math.min(100, totalScore)) / 100;
   const hasErrors = checks.some(c => c.severity === 'error' && !c.passed);
   const hasWarnings = checks.some(c => c.severity === 'warning' && !c.passed);
@@ -305,9 +472,12 @@ export async function createApprovalRequest(
   contentId: string,
   content: string,
   platforms: string[],
-  scheduledTime?: string
+  scheduledTime?: string,
+  mediaUrl?: string,
+  contentIdea?: string
 ): Promise<ApprovalRequest> {
   const brandKit = await loadBrandKit();
+  const agentMemory = await loadAgentMemory();
   const safetyCheck = await runSafetyChecks(content, platforms, brandKit);
   
   const request: ApprovalRequest = {
@@ -315,10 +485,19 @@ export async function createApprovalRequest(
     contentId,
     content,
     platforms,
+    mediaUrl,
     scheduledTime,
     safetyCheck,
     status: 'pending',
     createdAt: new Date().toISOString(),
+    profileSnapshot: {
+      niche: agentMemory.niche || brandKit?.niche || undefined,
+      targetAudience: agentMemory.targetAudience || brandKit?.targetAudience || undefined,
+      targetPlatforms: agentMemory.targetPlatforms.length > 0 ? agentMemory.targetPlatforms : platforms,
+      monetizationGoals: agentMemory.monetizationGoals,
+      contentPillars: agentMemory.contentPillars,
+      contentIdea: contentIdea || agentMemory.contentIdeas.find(idea => idea.status === 'new')?.idea,
+    },
   };
 
   // Save to pending approvals
@@ -350,22 +529,71 @@ export async function approveContent(
   
   if (index === -1) return null;
 
-  pending[index] = {
+  const request = {
     ...pending[index],
     status: 'approved',
     reviewedAt: new Date().toISOString(),
     reviewedBy,
     notes,
   };
-
-  await writeFile(`${PATHS.settings}/pending-approvals.json`, pending);
   
+  let publishResult: ApprovalRequest['publishResult'] = {
+    success: false,
+    message: 'Publishing was not attempted',
+  };
+
+  if (!request.safetyCheck.passed) {
+    publishResult = {
+      success: false,
+      message: `Blocked by safety checks: ${request.safetyCheck.blockedReasons.join(', ') || 'manual review required'}`,
+    };
+  } else {
+    try {
+      if (request.scheduledTime) {
+        const result = await schedulePost({
+          text: request.content,
+          platforms: request.platforms as any,
+          scheduledDate: request.scheduledTime,
+          mediaUrl: request.mediaUrl,
+        });
+        publishResult = {
+          success: result.success,
+          message: result.success ? 'Scheduled successfully' : result.error || 'Scheduling failed',
+        };
+      } else {
+        const result = await publishPost({
+          text: request.content,
+          platforms: request.platforms as any,
+          mediaUrl: request.mediaUrl,
+        });
+        publishResult = {
+          success: result.success,
+          message: result.success ? 'Published successfully' : Object.values(result.errors || {}).join(', '),
+        };
+      }
+    } catch (error) {
+      publishResult = {
+        success: false,
+        message: (error as Error).message,
+      };
+    }
+  }
+
+  request.publishResult = publishResult;
+
+  if (publishResult.success) {
+    await incrementPostCount();
+  }
+
+  pending.splice(index, 1);
+  await writeFile(`${PATHS.settings}/pending-approvals.json`, pending);
+
   // Move to approved history
   const history = await loadApprovalHistory();
-  history.push(pending[index]);
+  history.push(request);
   await writeFile(`${PATHS.settings}/approval-history.json`, history);
 
-  return pending[index];
+  return request;
 }
 
 // Reject content

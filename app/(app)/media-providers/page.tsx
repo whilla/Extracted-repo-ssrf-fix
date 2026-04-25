@@ -10,6 +10,8 @@ import {
   Settings, 
   Volume2, 
   Music, 
+  Clapperboard,
+  Link2,
   Check, 
   ExternalLink,
   AlertCircle,
@@ -20,17 +22,20 @@ import {
 import { kvGet, kvSet } from '@/lib/services/puterService';
 
 type VoiceProvider = 'web-speech' | 'google' | 'speechify' | 'elevenlabs' | 'azure' | 'piper' | 'coqui';
-type MusicProvider = 'musicfy' | 'dadabots' | 'soundraw' | 'jukebox' | 'amper' | 'suno' | 'beatoven' | 'aiva';
+type MusicProvider = 'soundraw' | 'jukebox' | 'amper' | 'suno' | 'beatoven' | 'aiva';
+type VideoProvider = 'ltx23' | 'ltx23-open';
 
 interface ProviderConfig {
   id: string;
   name: string;
-  provider: VoiceProvider | MusicProvider;
+  provider: VoiceProvider | MusicProvider | VideoProvider;
   description: string;
   signupUrl: string;
   keyName: string;
   freeInfo: string;
   requiresKey: boolean;
+  endpointKey?: string;
+  endpointPlaceholder?: string;
 }
 
 const VOICE_PROVIDERS: ProviderConfig[] = [
@@ -98,26 +103,6 @@ const VOICE_PROVIDERS: ProviderConfig[] = [
 
 const MUSIC_PROVIDERS: ProviderConfig[] = [
   {
-    id: 'musicfy',
-    name: 'Musicfy',
-    provider: 'musicfy',
-    description: 'AI music generation with free tier. No key required for basic use.',
-    signupUrl: 'https://musicfy.ai',
-    keyName: '',
-    freeInfo: 'Free tier available - no signup needed for basic',
-    requiresKey: false,
-  },
-  {
-    id: 'dadabots',
-    name: 'Dadabots',
-    provider: 'dadabots',
-    description: 'Free AI-generated experimental music. Always streaming.',
-    signupUrl: 'https://dadabots.com',
-    keyName: '',
-    freeInfo: '100% free - no signup required',
-    requiresKey: false,
-  },
-  {
     id: 'beatoven',
     name: 'Beatoven.ai',
     provider: 'beatoven',
@@ -159,11 +144,39 @@ const MUSIC_PROVIDERS: ProviderConfig[] = [
   },
 ];
 
+const VIDEO_PROVIDERS: ProviderConfig[] = [
+  {
+    id: 'ltx23',
+    name: 'LTX 2.3 Cloud',
+    provider: 'ltx23',
+    description: 'Fal-hosted LTX 2.3 video generation for production rendering.',
+    signupUrl: 'https://fal.ai/models/fal-ai/ltx-video-v2.3',
+    keyName: 'fal_key',
+    freeInfo: 'Requires Fal or LTX API credits',
+    requiresKey: true,
+    endpointKey: 'ltx_endpoint',
+    endpointPlaceholder: 'fal-ai/ltx-video-v2.3',
+  },
+  {
+    id: 'ltx23-open',
+    name: 'LTX 2.3 Open',
+    provider: 'ltx23-open',
+    description: 'Self-hosted LTX 2.3 endpoint for local or private video generation.',
+    signupUrl: 'https://github.com/Lightricks/LTX-Video',
+    keyName: '',
+    freeInfo: 'Open source - requires your own running endpoint',
+    requiresKey: false,
+    endpointKey: 'ltx_open_endpoint',
+    endpointPlaceholder: 'http://127.0.0.1:8000/generate',
+  },
+];
+
 export default function MediaProvidersPage() {
   const [loading, setLoading] = useState(true);
   const [configuredProviders, setConfiguredProviders] = useState<Set<string>>(new Set());
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [endpointInput, setEndpointInput] = useState('');
   const [saveStatus, setSaveStatus] = useState<{ provider: string; status: 'saving' | 'saved' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -176,15 +189,30 @@ export default function MediaProvidersPage() {
       const configured = new Set<string>();
       
       // Check which providers have keys configured
-      const allProviders = [...VOICE_PROVIDERS, ...MUSIC_PROVIDERS];
+      const allProviders = [...VOICE_PROVIDERS, ...MUSIC_PROVIDERS, ...VIDEO_PROVIDERS];
       for (const provider of allProviders) {
-        if (!provider.requiresKey) {
-          configured.add(provider.id);
-        } else if (provider.keyName) {
+        let isConfigured = false;
+
+        if (provider.keyName) {
           const key = await kvGet(provider.keyName);
           if (key && key.length > 5) {
-            configured.add(provider.id);
+            isConfigured = true;
           }
+        }
+
+        if (provider.endpointKey) {
+          const endpoint = await kvGet(provider.endpointKey);
+          if (endpoint && String(endpoint).trim().length > 0) {
+            isConfigured = true;
+          }
+        }
+
+        if (!provider.requiresKey && !provider.endpointKey) {
+          isConfigured = true;
+        }
+
+        if (isConfigured) {
+          configured.add(provider.id);
         }
       }
       
@@ -197,15 +225,23 @@ export default function MediaProvidersPage() {
   };
 
   const handleSaveKey = async (provider: ProviderConfig) => {
-    if (!apiKeyInput.trim() || !provider.keyName) return;
+    if (!provider.keyName && !provider.endpointKey) return;
+    if (provider.keyName && !apiKeyInput.trim()) return;
+    if (provider.endpointKey && !endpointInput.trim()) return;
     
     setSaveStatus({ provider: provider.id, status: 'saving' });
     
     try {
-      await kvSet(provider.keyName, apiKeyInput.trim());
+      if (provider.keyName) {
+        await kvSet(provider.keyName, apiKeyInput.trim());
+      }
+      if (provider.endpointKey) {
+        await kvSet(provider.endpointKey, endpointInput.trim());
+      }
       setConfiguredProviders(prev => new Set([...prev, provider.id]));
       setSaveStatus({ provider: provider.id, status: 'saved' });
       setApiKeyInput('');
+      setEndpointInput('');
       setEditingProvider(null);
       
       // Clear status after 2 seconds
@@ -223,6 +259,8 @@ export default function MediaProvidersPage() {
     }
     // Show the API key input
     setEditingProvider(provider.id);
+    setApiKeyInput('');
+    setEndpointInput('');
   };
 
   const renderProviderCard = (provider: ProviderConfig) => {
@@ -249,29 +287,56 @@ export default function MediaProvidersPage() {
           </div>
         </div>
 
-        {provider.requiresKey && (
+        {(provider.requiresKey || provider.endpointKey) && (
           <div className="mt-4 pt-4 border-t border-border">
             {isEditing ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <KeyRound className="w-4 h-4" />
-                  <span>Paste your API key after signing up:</span>
+                  <span>
+                    {provider.requiresKey && provider.endpointKey
+                      ? 'Enter the API key and endpoint:'
+                      : provider.requiresKey
+                        ? 'Paste your API key after signing up:'
+                        : 'Enter the endpoint URL:'}
+                  </span>
                 </div>
-                <Input
-                  type="password"
-                  placeholder="Paste API key here"
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  className="bg-background/50"
-                />
+                {provider.requiresKey && (
+                  <Input
+                    type="password"
+                    placeholder="Paste API key here"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    className="bg-background/50"
+                  />
+                )}
+                {provider.endpointKey && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Link2 className="w-4 h-4" />
+                      <span>Endpoint</span>
+                    </div>
+                    <Input
+                      type="url"
+                      placeholder={provider.endpointPlaceholder || 'https://example.com'}
+                      value={endpointInput}
+                      onChange={(e) => setEndpointInput(e.target.value)}
+                      className="bg-background/50"
+                    />
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Button
                     size="sm"
                     onClick={() => handleSaveKey(provider)}
-                    disabled={!apiKeyInput.trim() || isSaving}
+                    disabled={
+                      isSaving ||
+                      (provider.requiresKey && !apiKeyInput.trim()) ||
+                      (!!provider.endpointKey && !endpointInput.trim())
+                    }
                     className="flex-1"
                   >
-                    {isSaving ? 'Saving...' : isSaved ? 'Saved!' : 'Save Key'}
+                    {isSaving ? 'Saving...' : isSaved ? 'Saved!' : provider.endpointKey && !provider.keyName ? 'Save Endpoint' : 'Save Key'}
                     {isSaved && <Check className="w-4 h-4 ml-1" />}
                   </Button>
                   <Button
@@ -280,6 +345,7 @@ export default function MediaProvidersPage() {
                     onClick={() => {
                       setEditingProvider(null);
                       setApiKeyInput('');
+                      setEndpointInput('');
                     }}
                   >
                     Cancel
@@ -295,9 +361,13 @@ export default function MediaProvidersPage() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setEditingProvider(provider.id)}
+                  onClick={() => {
+                    setEditingProvider(provider.id);
+                    setApiKeyInput('');
+                    setEndpointInput('');
+                  }}
                 >
-                  Update Key
+                  Update
                 </Button>
               </div>
             ) : (
@@ -314,7 +384,7 @@ export default function MediaProvidersPage() {
           </div>
         )}
 
-        {!provider.requiresKey && (
+        {!provider.requiresKey && !provider.endpointKey && (
           <div className="mt-4 pt-4 border-t border-border">
             <span className="text-sm text-green-500 flex items-center gap-1">
               <Check className="w-4 h-4" />
@@ -338,7 +408,7 @@ export default function MediaProvidersPage() {
     <div className="min-h-screen p-6">
       <PageHeader
         title="Media Providers"
-        description="Configure voice and music generation services"
+        description="Configure voice, music, and video generation services"
         icon={<Settings className="w-8 h-8" />}
       />
 
@@ -349,15 +419,14 @@ export default function MediaProvidersPage() {
           <div>
             <p className="font-medium text-foreground">Free Alternatives Available</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Web Speech API and Piper TTS are free ElevenLabs alternatives. 
-              Musicfy and Dadabots are free Suno AI alternatives. 
-              Click &quot;Sign up and configure&quot; to get started - your API keys will be saved automatically.
+              Web Speech API and Piper TTS work immediately. Production music and video generation require a configured provider.
+              For cinematic video, configure Fal-hosted LTX 2.3 or point the app at your self-hosted LTX endpoint.
             </p>
           </div>
         </div>
       </GlassCard>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6">
         {/* Voice Providers */}
         <div>
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -379,10 +448,23 @@ export default function MediaProvidersPage() {
             Music Providers
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Suno AI alternatives: Beatoven.ai, AIVA, Musicfy
+            Production music providers for soundtrack generation
           </p>
           <div className="space-y-3">
             {MUSIC_PROVIDERS.map(renderProviderCard)}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Clapperboard className="w-5 h-5 text-emerald-500" />
+            Video Providers
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Switch between cloud LTX and self-hosted open LTX in the Nexus agent settings
+          </p>
+          <div className="space-y-3">
+            {VIDEO_PROVIDERS.map(renderProviderCard)}
           </div>
         </div>
       </div>
@@ -390,7 +472,7 @@ export default function MediaProvidersPage() {
       {/* Setup Guide */}
       <GlassCard className="mt-8 p-6">
         <h3 className="text-lg font-bold mb-4">Quick Setup Guide</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
           <div>
             <h4 className="font-semibold text-cyan-400 mb-2">Voice (ElevenLabs Alternatives)</h4>
             <ul className="space-y-2 text-muted-foreground">
@@ -413,15 +495,28 @@ export default function MediaProvidersPage() {
             <ul className="space-y-2 text-muted-foreground">
               <li className="flex items-start gap-2">
                 <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                <span><strong>Musicfy</strong> - Free tier, no signup needed</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
                 <span><strong>Beatoven.ai</strong> - 5 free downloads/month, great for content</span>
               </li>
               <li className="flex items-start gap-2">
                 <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                <span><strong>Dadabots</strong> - 100% free, unique experimental music</span>
+                <span><strong>Suno</strong> - Best full-song generation if you need vocals</span>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold text-emerald-400 mb-2">Video (LTX 2.3)</h4>
+            <ul className="space-y-2 text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                <span><strong>LTX 2.3 Cloud</strong> - quickest path to production rendering through Fal</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                <span><strong>LTX 2.3 Open</strong> - self-hosted endpoint for private rendering and model control</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                <span><strong>Agent Switcher</strong> - choose the active video engine directly in the Nexus chat settings</span>
               </li>
             </ul>
           </div>

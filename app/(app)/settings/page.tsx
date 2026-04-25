@@ -102,6 +102,8 @@ export default function SettingsPage() {
   const { user, logout } = useAuth();
   const [settings, setSettings] = useState({
     aiModel: 'gpt-4o',
+    imageProvider: 'puter',
+    videoProvider: 'ltx23',
     elevenLabsKey: '',
     speechifyKey: '',
     playhtKey: '',
@@ -126,6 +128,7 @@ export default function SettingsPage() {
     ideogramKey: '',
     falKey: '',
     ltxEndpoint: 'fal-ai/ltx-video-v2.3',
+    ltxOpenEndpoint: 'http://127.0.0.1:8000/generate',
   });
   const [saving, setSaving] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -136,6 +139,8 @@ export default function SettingsPage() {
       try {
         const [
           aiModel,
+          imageProvider,
+          videoProvider,
           ayrshareKey,
           elevenLabsKey,
           speechifyKey,
@@ -158,8 +163,11 @@ export default function SettingsPage() {
           ideogramKey,
           falKey,
           ltxEndpoint,
+          ltxOpenEndpoint,
         ] = await Promise.all([
           kvGet('ai_model'),
+          kvGet('image_provider'),
+          kvGet('video_provider'),
           kvGet('ayrshare_key'),
           kvGet('elevenlabs_key'),
           kvGet('speechify_key'),
@@ -182,10 +190,13 @@ export default function SettingsPage() {
           kvGet('ideogram_key'),
           kvGet('fal_key'),
           kvGet('ltx_endpoint'),
+          kvGet('ltx_open_endpoint'),
         ]);
 
         setSettings({
           aiModel: aiModel || 'gpt-4o',
+          imageProvider: imageProvider || 'puter',
+          videoProvider: videoProvider || 'ltx23',
           ayrshareKey: ayrshareKey || '',
           elevenLabsKey: elevenLabsKey || '',
           speechifyKey: speechifyKey || '',
@@ -208,6 +219,7 @@ export default function SettingsPage() {
           ideogramKey: ideogramKey || '',
           falKey: falKey || '',
           ltxEndpoint: ltxEndpoint || 'fal-ai/ltx-video-v2.3',
+          ltxOpenEndpoint: ltxOpenEndpoint || 'http://127.0.0.1:8000/generate',
         });
       } catch (error) {
         console.error('Settings load error:', error);
@@ -223,6 +235,8 @@ export default function SettingsPage() {
       const savePromises = [
         kvSet('ai_model', settings.aiModel),
         kvSet('default_model', settings.aiModel),
+        kvSet('image_provider', settings.imageProvider),
+        kvSet('video_provider', settings.videoProvider),
       ];
       
       // Only save non-empty keys - Voice
@@ -256,6 +270,7 @@ export default function SettingsPage() {
       if (settings.ideogramKey) savePromises.push(kvSet('ideogram_key', settings.ideogramKey));
       if (settings.falKey) savePromises.push(kvSet('fal_key', settings.falKey));
       if (settings.ltxEndpoint) savePromises.push(kvSet('ltx_endpoint', settings.ltxEndpoint));
+      if (settings.ltxOpenEndpoint) savePromises.push(kvSet('ltx_open_endpoint', settings.ltxOpenEndpoint));
       
       await Promise.all(savePromises);
       alert('Settings saved successfully!');
@@ -760,8 +775,48 @@ export default function SettingsPage() {
       {activeTab === 'image' && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground mb-4">
-            Configure image and video generation providers. Puter AI (DALL-E) is built-in for images, and LTX is available for real video generation through your configured endpoint.
+            Configure image and video generation providers. These selections set the default engines used by the Nexus agent unless you switch them inside chat.
           </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <GlassCard className="p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <Sparkles className="w-5 h-5 text-nexus-violet" />
+                <h3 className="text-lg font-semibold text-foreground">Default Image Engine</h3>
+              </div>
+              <select
+                value={settings.imageProvider}
+                onChange={(e) => setSettings(prev => ({ ...prev, imageProvider: e.target.value }))}
+                className="w-full px-4 py-3 rounded-lg bg-background/50 border border-border focus:border-nexus-cyan focus:ring-1 focus:ring-nexus-cyan outline-none transition-colors"
+              >
+                <option value="puter">Puter Image</option>
+                <option value="stability">Stability XL</option>
+                <option value="leonardo">Leonardo</option>
+                <option value="ideogram">Ideogram</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-3">
+                If the selected provider is not configured, image generation will fail instead of silently pretending it worked.
+              </p>
+            </GlassCard>
+
+            <GlassCard className="p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <Cloud className="w-5 h-5 text-nexus-cyan" />
+                <h3 className="text-lg font-semibold text-foreground">Default Video Engine</h3>
+              </div>
+              <select
+                value={settings.videoProvider}
+                onChange={(e) => setSettings(prev => ({ ...prev, videoProvider: e.target.value }))}
+                className="w-full px-4 py-3 rounded-lg bg-background/50 border border-border focus:border-nexus-cyan focus:ring-1 focus:ring-nexus-cyan outline-none transition-colors"
+              >
+                <option value="ltx23">LTX 2.3 Cloud</option>
+                <option value="ltx23-open">LTX 2.3 Open</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-3">
+                Cloud uses Fal-hosted LTX. Open uses your self-hosted endpoint.
+              </p>
+            </GlassCard>
+          </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Puter AI - Built-in */}
@@ -862,34 +917,52 @@ export default function SettingsPage() {
             <GlassCard className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h4 className="font-medium text-foreground">LTX 2.3 Option B</h4>
-                  <p className="text-xs text-muted-foreground">Configurable real video engine</p>
+                  <h4 className="font-medium text-foreground">LTX 2.3 Cloud + Open</h4>
+                  <p className="text-xs text-muted-foreground">Cloud rendering and self-hosted rendering</p>
                 </div>
                 {settings.falKey && <CheckCircle2 className="w-5 h-5 text-nexus-success" />}
               </div>
               <div className="space-y-3">
-                <div className="flex gap-2">
-                  <input
-                    type={showKeys['fal'] ? 'text' : 'password'}
-                    value={settings.falKey}
-                    onChange={(e) => setSettings(prev => ({ ...prev, falKey: e.target.value }))}
-                    placeholder="Fal / LTX API key..."
-                    className="flex-1 px-3 py-2 text-sm rounded-lg bg-background/50 border border-border focus:border-nexus-cyan outline-none"
-                  />
-                  <button onClick={() => toggleKeyVisibility('fal')} className="p-2 text-muted-foreground hover:text-foreground">
-                    {showKeys['fal'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Fal / cloud API key</p>
+                  <div className="flex gap-2">
+                    <input
+                      type={showKeys['fal'] ? 'text' : 'password'}
+                      value={settings.falKey}
+                      onChange={(e) => setSettings(prev => ({ ...prev, falKey: e.target.value }))}
+                      placeholder="Fal / LTX API key..."
+                      className="flex-1 px-3 py-2 text-sm rounded-lg bg-background/50 border border-border focus:border-nexus-cyan outline-none"
+                    />
+                    <button onClick={() => toggleKeyVisibility('fal')} className="p-2 text-muted-foreground hover:text-foreground">
+                      {showKeys['fal'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  value={settings.ltxEndpoint}
-                  onChange={(e) => setSettings(prev => ({ ...prev, ltxEndpoint: e.target.value }))}
-                  placeholder="fal-ai/ltx-video-v2.3"
-                  className="w-full px-3 py-2 text-sm rounded-lg bg-background/50 border border-border focus:border-nexus-cyan outline-none"
-                />
+
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Cloud endpoint or model slug</p>
+                  <input
+                    type="text"
+                    value={settings.ltxEndpoint}
+                    onChange={(e) => setSettings(prev => ({ ...prev, ltxEndpoint: e.target.value }))}
+                    placeholder="fal-ai/ltx-video-v2.3"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-background/50 border border-border focus:border-nexus-cyan outline-none"
+                  />
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Self-hosted open endpoint</p>
+                  <input
+                    type="url"
+                    value={settings.ltxOpenEndpoint}
+                    onChange={(e) => setSettings(prev => ({ ...prev, ltxOpenEndpoint: e.target.value }))}
+                    placeholder="http://127.0.0.1:8000/generate"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-background/50 border border-border focus:border-nexus-cyan outline-none"
+                  />
+                </div>
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                Use a Fal-style endpoint slug such as <code>fal-ai/ltx-video-v2.3</code> or a full queue URL if your account uses a custom deployment.
+                Use a Fal-style endpoint slug such as <code>fal-ai/ltx-video-v2.3</code> for cloud, or point the open endpoint at your running LTX 2.3 server.
               </p>
             </GlassCard>
           </div>

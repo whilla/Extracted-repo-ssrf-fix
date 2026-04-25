@@ -9,6 +9,7 @@ export default function ServiceWorkerRegister() {
         .register('/service-worker.js')
         .then((registration) => {
           console.log('[v0] Service Worker registered:', registration.scope);
+          void registration.update();
         })
         .catch((error) => {
           console.warn('[v0] Service Worker registration failed:', error);

@@ -2,8 +2,18 @@
 import type { BrandKit, ContentDraft, ContentVersion, Platform } from '@/lib/types';
 import { chat, generateImage, generatePromptVariations, getCurrentModel } from './aiService';
 import { validateImageQuality } from './mediaValidator';
-import { generateId, saveDraft, loadBrandKit, getRecentTopics } from './memoryService';
+import { generateId, saveDraft, loadBrandKit, getRecentTopics, loadDraft } from './memoryService';
 import { PLATFORMS } from '@/lib/constants/platforms';
+import { learningSystem } from '@/lib/core/LearningSystem';
+import { getLiveTrendContext } from './trendingService';
+import { generatePlatformCopyPackage, type PlatformCopyPackage } from './hashtagService';
+import { generateOfflineContent, isOfflineMode } from './offlineGenerationService';
+import {
+  trackGenerationFailure,
+  trackGenerationStart,
+  trackGenerationSuccess,
+} from './generationTrackerService';
+import { notificationService } from './notificationService';
 
 const MAX_IMAGE_RETRIES = 3;
 
@@ -22,6 +32,7 @@ interface GeneratedContent {
   hashtags: string[];
   imageUrl?: string;
   imagePrompt?: string;
+  platformPackages?: PlatformCopyPackage[];
 }
 
 // Generate text content
@@ -42,6 +53,13 @@ export async function generateContent(
   }).join(', ');
 
   const model = await getCurrentModel();
+  const adaptiveStrategy = await learningSystem.getAdaptiveContentStrategy(platforms[0]);
+  const offline = isOfflineMode();
+  const liveTrendContext = !offline && brand?.niche ? await getLiveTrendContext(brand.niche, platforms[0]) : null;
+
+  if (offline) {
+    return generateOfflineContent(options, brand);
+  }
 
   const prompt = `Generate engaging ${format} content for social media.
 
@@ -50,13 +68,29 @@ Platforms: ${platformConstraints}
 Format: ${format}
 ${customInstructions ? `Special Instructions: ${customInstructions}` : ''}
 ${recentTopics.length > 0 ? `Avoid repeating these recent topics: ${recentTopics.join('; ')}` : ''}
+${liveTrendContext ? `Live trend keywords: ${liveTrendContext.trendingKeywords.join(', ')}
+Live trend topics: ${liveTrendContext.liveTopics.join(', ')}
+Live trend angles: ${liveTrendContext.suggestedAngles.join(' | ')}
+Current headlines: ${liveTrendContext.headlines.map(item => item.title).join(' | ')}` : ''}
+Adaptive Strategy:
+- Recommended content type: ${adaptiveStrategy.recommendedContentType}
+${adaptiveStrategy.recommendedHookPattern ? `- Recommended hook pattern: ${adaptiveStrategy.recommendedHookPattern}` : ''}
+${adaptiveStrategy.recommendedCTA ? `- Recommended CTA pattern: ${adaptiveStrategy.recommendedCTA}` : ''}
+${adaptiveStrategy.recommendedStructure ? `- Recommended structure: ${adaptiveStrategy.recommendedStructure}` : ''}
+${adaptiveStrategy.emotionalTriggers.length > 0 ? `- Recommended emotional triggers: ${adaptiveStrategy.emotionalTriggers.join(', ')}` : ''}
+${adaptiveStrategy.guidance.length > 0 ? `- Guidance: ${adaptiveStrategy.guidance.join(' ')}` : ''}
 
 Requirements:
-1. Start with a powerful hook that grabs attention in the first line
+1. Start with a stop-scroll hook that uses curiosity, tension, contradiction, or a sharp knowledge gap in the first line
 2. Be authentic, conversational, and engaging - write for humans, not algorithms
 3. Stay within the shortest platform's character limit
 4. Match the brand voice and tone
 5. Include a clear call-to-action where appropriate
+6. Adjust the content type toward the highest-performing learned pattern when it fits the idea
+7. Never sound robotic or templated
+8. If a live trend is genuinely relevant, weave it in without breaking niche consistency
+9. Do not generate anything harmful, deceptive, exploitative, unsafe, or likely to violate social platform rules
+10. Avoid dangerous claims, hate, harassment, scams, manipulative bait, medical/legal/financial guarantees, or misleading promises
 
 Provide:
 1. The main post text
@@ -70,7 +104,13 @@ Format your response as JSON:
   "hashtags": ["hashtag1", "hashtag2", ...]
 }`;
 
-  const response = await chat(prompt, { model, brandKit: brand });
+  let response: string;
+  try {
+    response = await chat(prompt, { model, brandKit: brand });
+  } catch (error) {
+    console.warn('Primary content generation failed, using offline fallback', error);
+    return generateOfflineContent(options, brand);
+  }
   
   // Parse JSON response
   try {
@@ -81,17 +121,25 @@ Format your response as JSON:
     }
     
     const parsed = JSON.parse(jsonMatch[0]);
+    const platformPackages = await Promise.all(
+      platforms.map(platform => generatePlatformCopyPackage(parsed.main || response, platform, brand))
+    );
     return {
       text: parsed.main || response,
       variations: parsed.variations || [],
       hashtags: parsed.hashtags || [],
+      platformPackages,
     };
   } catch {
     // Fallback: treat entire response as the content
+    const platformPackages = await Promise.all(
+      platforms.map(platform => generatePlatformCopyPackage(response, platform, brand))
+    );
     return {
       text: response,
       variations: [],
       hashtags: [],
+      platformPackages,
     };
   }
 }
@@ -141,46 +189,77 @@ export async function runContentPipeline(
 ): Promise<ContentDraft> {
   const { includeImage = true } = options;
   const brandKit = await loadBrandKit();
+  const tracking = await trackGenerationStart({
+    source: 'studio',
+    taskType: 'content',
+    idea: options.idea,
+    platforms: options.platforms,
+    allowRetryFailed: true,
+  });
 
-  // Stage 1: Strategy (already defined by options)
-  onProgress?.('Analyzing strategy...', 10);
+  if (tracking.duplicate) {
+    if (tracking.record.status === 'completed' && tracking.record.artifactId) {
+      const existingDraft = await loadDraft(tracking.record.artifactId);
+      if (existingDraft) {
+        return existingDraft;
+      }
+    }
 
-  // Stage 2: Generate text content
-  onProgress?.('Generating content...', 25);
-  const content = await generateContent(options, brandKit);
-
-  // Stage 3: Generate image if requested
-  let imageResult: { imageUrl: string; imagePrompt: string } | null = null;
-  if (includeImage) {
-    onProgress?.('Creating image...', 50);
-    imageResult = await generateContentImage(options.idea, brandKit);
+    if (tracking.record.status === 'pending') {
+      throw new Error('A matching content generation is already in progress.');
+    }
   }
 
-  // Stage 4: Create draft with version
-  onProgress?.('Saving draft...', 85);
-  const version: ContentVersion = {
-    v: 1,
-    text: content.text,
-    imageUrl: imageResult?.imageUrl,
-    imagePrompt: imageResult?.imagePrompt,
-    createdAt: new Date().toISOString(),
-  };
+  try {
+    // Stage 1: Strategy (already defined by options)
+    onProgress?.('Analyzing strategy...', 10);
 
-  const draft: ContentDraft = {
-    id: generateId(),
-    created: new Date().toISOString(),
-    updated: new Date().toISOString(),
-    versions: [version],
-    currentVersion: 1,
-    status: 'draft',
-    platforms: options.platforms,
-  };
+    // Stage 2: Generate text content
+    onProgress?.('Generating content...', 25);
+    const content = await generateContent(options, brandKit);
 
-  // Save draft
-  await saveDraft(draft);
+    // Stage 3: Generate image if requested
+    let imageResult: { imageUrl: string; imagePrompt: string } | null = null;
+    if (includeImage && !isOfflineMode()) {
+      onProgress?.('Creating image...', 50);
+      imageResult = await generateContentImage(options.idea, brandKit);
+    }
 
-  onProgress?.('Complete!', 100);
-  return draft;
+    // Stage 4: Create draft with version
+    onProgress?.('Saving draft...', 85);
+    const version: ContentVersion = {
+      v: 1,
+      text: content.text,
+      imageUrl: imageResult?.imageUrl,
+      imagePrompt: imageResult?.imagePrompt,
+      createdAt: new Date().toISOString(),
+    };
+
+    const draft: ContentDraft = {
+      id: generateId(),
+      created: new Date().toISOString(),
+      updated: new Date().toISOString(),
+      versions: [version],
+      currentVersion: 1,
+      status: 'draft',
+      platforms: options.platforms,
+    };
+
+    await saveDraft(draft);
+    await trackGenerationSuccess(tracking.record.id, {
+      artifactId: draft.id,
+      artifactType: 'draft',
+    });
+    void notificationService.notifyContentReady('draft', draft.id);
+
+    onProgress?.('Complete!', 100);
+    return draft;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Generation failed';
+    await trackGenerationFailure(tracking.record.id, errorMessage);
+    void notificationService.notifyContentFailed('content draft', errorMessage);
+    throw error;
+  }
 }
 
 // Regenerate content for a draft

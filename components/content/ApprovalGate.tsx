@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
-import { saveDraft, generateId } from '@/lib/services/memoryService';
+import { saveDraft, loadBrandKit } from '@/lib/services/memoryService';
 import { regenerateContent, editContentText } from '@/lib/services/contentEngine';
 import { publishDraft } from '@/lib/services/publishService';
+import { createApprovalRequest, runSafetyChecks } from '@/lib/services/publishSafetyService';
 import type { ContentDraft } from '@/lib/types';
 import { 
   Check, 
@@ -77,14 +78,31 @@ export function ApprovalGate({ draft, onApprove, onEdit, onReject }: ApprovalGat
   const handlePublishNow = async () => {
     setIsPublishing(true);
     try {
-      const result = await publishDraft(draft, true);
-      if (result.success) {
-        draft.status = 'published';
-        draft.publishedAt = new Date().toISOString();
+      const brandKit = await loadBrandKit();
+      const safety = await runSafetyChecks(latestVersion.text, draft.platforms, brandKit);
+      if (!safety.passed || safety.requiresHumanReview) {
+        await createApprovalRequest(
+          draft.id,
+          latestVersion.text,
+          draft.platforms,
+          undefined,
+          latestVersion.imageUrl,
+          latestVersion.imagePrompt || latestVersion.text.slice(0, 160)
+        );
+        draft.status = 'approved';
         await saveDraft(draft);
+        alert('Content was sent to the approval queue before publishing.');
         onApprove();
       } else {
-        alert(`Publishing failed: ${Object.values(result.errors || {}).join(', ')}`);
+        const result = await publishDraft(draft, true);
+        if (result.success) {
+          draft.status = 'published';
+          draft.publishedAt = new Date().toISOString();
+          await saveDraft(draft);
+          onApprove();
+        } else {
+          alert(`Publishing failed: ${Object.values(result.errors || {}).join(', ')}`);
+        }
       }
     } catch (error) {
       console.error('Publish error:', error);
@@ -104,14 +122,32 @@ export function ApprovalGate({ draft, onApprove, onEdit, onReject }: ApprovalGat
     
     setIsPublishing(true);
     try {
-      const result = await publishDraft({ ...draft, scheduledAt }, false);
-      if (result.success) {
-        draft.status = 'scheduled';
+      const brandKit = await loadBrandKit();
+      const safety = await runSafetyChecks(latestVersion.text, draft.platforms, brandKit);
+      if (!safety.passed || safety.requiresHumanReview) {
+        await createApprovalRequest(
+          draft.id,
+          latestVersion.text,
+          draft.platforms,
+          scheduledAt,
+          latestVersion.imageUrl,
+          latestVersion.imagePrompt || latestVersion.text.slice(0, 160)
+        );
+        draft.status = 'approved';
         draft.scheduledAt = scheduledAt;
         await saveDraft(draft);
+        alert('Content was sent to the approval queue before scheduling.');
         onApprove();
       } else {
-        alert(`Scheduling failed: ${Object.values(result.errors || {}).join(', ')}`);
+        const result = await publishDraft({ ...draft, scheduledAt }, false);
+        if (result.success) {
+          draft.status = 'scheduled';
+          draft.scheduledAt = scheduledAt;
+          await saveDraft(draft);
+          onApprove();
+        } else {
+          alert(`Scheduling failed: ${Object.values(result.errors || {}).join(', ')}`);
+        }
       }
     } catch (error) {
       console.error('Schedule error:', error);

@@ -61,24 +61,6 @@ interface MusicModel {
 
 // Available music generation models
 const MUSIC_MODELS: MusicModel[] = [
-  // Musicfy (Free tier available)
-  {
-    id: 'musicfy-free',
-    name: 'Musicfy (Free)',
-    provider: 'musicfy',
-    maxDuration: 30,
-    freeCredit: 5,
-    requiresAuth: false,
-  },
-  // Dadabots (Free, limited)
-  {
-    id: 'dadabots-free',
-    name: 'Dadabots (Free)',
-    provider: 'dadabots',
-    maxDuration: 60,
-    freeCredit: 10,
-    requiresAuth: false,
-  },
   // Jukebox (Meta) - Free API access
   {
     id: 'jukebox-meta',
@@ -117,61 +99,24 @@ const MUSIC_MODELS: MusicModel[] = [
   },
 ];
 
+function unsupportedProviderError(provider: MusicProvider): Error {
+  return new Error(`${provider} is not wired to a production music API in this build`);
+}
+
 /**
  * Generate music using Musicfy API (Free tier available)
  */
 async function generateWithMusicfy(options: MusicGenerationOptions): Promise<string> {
-  try {
-    // Musicfy is free but has a simple interface
-    // For this implementation, we'll create royalty-free placeholder music
-    const { prompt, duration = 30, genre = 'ambient' } = options;
-
-    // In a real implementation, this would call the Musicfy API
-    // For now, return a placeholder with metadata
-    const musicData = {
-      provider: 'musicfy',
-      prompt,
-      duration,
-      genre,
-      generated: new Date().toISOString(),
-      status: 'pending',
-    };
-
-    // Store in kvSet so we can track
-    const trackId = `musicfy_${Date.now()}`;
-    await kvSet(`music_${trackId}`, JSON.stringify(musicData));
-
-    return trackId;
-  } catch (error) {
-    console.error('Musicfy generation error:', error);
-    throw error;
-  }
+  void options;
+  throw unsupportedProviderError('musicfy');
 }
 
 /**
  * Generate music using Dadabots (Free, AI metal/experimental music)
  */
 async function generateWithDadabots(options: MusicGenerationOptions): Promise<string> {
-  try {
-    const { prompt, duration = 60 } = options;
-
-    // Dadabots generates AI music - for this demo, we mock the response
-    const trackId = `dadabots_${Date.now()}`;
-    
-    const musicData = {
-      provider: 'dadabots',
-      prompt,
-      duration,
-      generated: new Date().toISOString(),
-      status: 'pending',
-    };
-
-    await kvSet(`music_${trackId}`, JSON.stringify(musicData));
-    return trackId;
-  } catch (error) {
-    console.error('Dadabots generation error:', error);
-    throw error;
-  }
+  void options;
+  throw unsupportedProviderError('dadabots');
 }
 
 /**
@@ -377,8 +322,7 @@ export async function generateMusic(options: MusicGenerationOptions): Promise<st
         case 'suno':
           return await generateWithSuno(safeOptions);
         default:
-          console.warn(`Unknown provider: ${provider}, falling back to free option`);
-          return await generateWithMusicfy(safeOptions);
+          throw new Error(`Unknown provider: ${provider}`);
       }
     } catch (error) {
       console.warn(`Provider ${provider} failed, falling back:`, error);
@@ -404,10 +348,6 @@ export async function generateMusic(options: MusicGenerationOptions): Promise<st
       check: async () => !!(await kvGet('jukebox_key')), 
       generate: () => generateWithJukebox(safeOptions) 
     },
-    { 
-      check: async () => true, // Always available
-      generate: () => generateWithMusicfy(safeOptions) 
-    },
   ];
 
   for (const attempt of providerAttempts) {
@@ -421,8 +361,7 @@ export async function generateMusic(options: MusicGenerationOptions): Promise<st
     }
   }
 
-  // Final fallback - should never reach here
-  return generateWithMusicfy(safeOptions);
+  throw new Error('No configured production music provider is available');
 }
 
 /**

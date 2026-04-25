@@ -1,7 +1,7 @@
 // Governor Service - System Supervisor
 // Oversees ALL operations, ensures quality, controls costs, and maintains stability
 
-import { kvGet, kvSet } from './puterService';
+import { kvDelete, kvGet, kvSet } from './puterService';
 import { loadBrandKit } from './memoryService';
 import { loadAgents, type AgentOutput } from './multiAgentService';
 import { loadEvolutionProposals } from './agentEvolutionService';
@@ -141,6 +141,15 @@ async function saveGovernorState(state: GovernorState): Promise<void> {
 export async function loadCostRecords(): Promise<CostRecord[]> {
   try {
     const data = await kvGet(COST_RECORDS_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function loadRejectedContent(): Promise<Array<{ timestamp: string } & Record<string, unknown>>> {
+  try {
+    const data = await kvGet(REJECTED_CONTENT_KEY);
     return data ? JSON.parse(data) : [];
   } catch {
     return [];
@@ -603,6 +612,9 @@ export async function getGovernorDashboard(): Promise<{
   const approvalRate = totalValidations > 0 
     ? Math.round((state.approvedToday / totalValidations) * 100) 
     : 100;
+  const avgScore = totalValidations > 0
+    ? Math.max(0, Math.min(100, Math.round((approvalRate * 0.8) + ((100 - Math.min(state.rejectedToday, 20) * 3) * 0.2))))
+    : 100;
   
   // Determine system health
   let systemHealth: 'healthy' | 'warning' | 'critical' = 'healthy';
@@ -627,7 +639,7 @@ export async function getGovernorDashboard(): Promise<{
     recentCosts: recentCosts.slice(-50),
     qualityMetrics: {
       approvalRate,
-      avgScore: 75, // Would need to track this properly
+      avgScore,
       totalValidations,
     },
     systemHealth,
@@ -637,7 +649,31 @@ export async function getGovernorDashboard(): Promise<{
 // Memory aging - clean up old low-value memories
 export async function ageMemory(): Promise<number> {
   const config = await loadGovernorConfig();
-  // This would integrate with the memory service to remove old entries
-  // For now, return 0 as placeholder
-  return 0;
+  const cutoffTime = Date.now() - (config.memoryAgingDays * 24 * 60 * 60 * 1000);
+
+  const costs = await loadCostRecords();
+  const recentCosts = costs.filter(entry => new Date(entry.timestamp).getTime() > cutoffTime);
+  const removedCostCount = costs.length - recentCosts.length;
+
+  const rejectedContent = await loadRejectedContent();
+  const recentRejectedContent = rejectedContent.filter(entry => new Date(entry.timestamp).getTime() > cutoffTime);
+  const removedRejectedCount = rejectedContent.length - recentRejectedContent.length;
+
+  if (removedCostCount > 0) {
+    await kvSet(COST_RECORDS_KEY, JSON.stringify(recentCosts));
+  }
+
+  if (removedRejectedCount > 0) {
+    await kvSet(REJECTED_CONTENT_KEY, JSON.stringify(recentRejectedContent));
+  }
+
+  if (recentCosts.length === 0 && costs.length > 0) {
+    await kvDelete(COST_RECORDS_KEY);
+  }
+
+  if (recentRejectedContent.length === 0 && rejectedContent.length > 0) {
+    await kvDelete(REJECTED_CONTENT_KEY);
+  }
+
+  return removedCostCount + removedRejectedCount;
 }

@@ -45,6 +45,34 @@ import {
   type ScenePlan,
   type Scene,
 } from '@/lib/services/scenePlannerService';
+import { kvGet, kvSet } from '@/lib/services/puterService';
+
+const SCENES_SESSION_KEY = 'scenes_session_v1';
+
+const DEFAULT_NEW_PLAN = {
+  title: '',
+  description: '',
+  platform: 'instagram',
+  contentType: 'reel' as ScenePlan['contentType'],
+  targetDuration: 30,
+};
+
+const DEFAULT_GENERATE_INPUT = {
+  concept: '',
+  platform: 'instagram',
+  contentType: 'reel' as ScenePlan['contentType'],
+  targetDuration: 30,
+  style: '',
+};
+
+interface ScenesSessionSnapshot {
+  selectedPlanId: string | null;
+  showCreateModal: boolean;
+  showGenerateModal: boolean;
+  newPlan: typeof DEFAULT_NEW_PLAN;
+  generateInput: typeof DEFAULT_GENERATE_INPUT;
+  editingScene: string | null;
+}
 
 export default function ScenesPage() {
   const [loading, setLoading] = useState(true);
@@ -55,37 +83,84 @@ export default function ScenesPage() {
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [editingScene, setEditingScene] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [preferredSelectedPlanId, setPreferredSelectedPlanId] = useState<string | null>(null);
 
   // Form state
-  const [newPlan, setNewPlan] = useState({
-    title: '',
-    description: '',
-    platform: 'instagram',
-    contentType: 'reel' as ScenePlan['contentType'],
-    targetDuration: 30,
-  });
+  const [newPlan, setNewPlan] = useState(DEFAULT_NEW_PLAN);
 
-  const [generateInput, setGenerateInput] = useState({
-    concept: '',
-    platform: 'instagram',
-    contentType: 'reel' as ScenePlan['contentType'],
-    targetDuration: 30,
-    style: '',
-  });
+  const [generateInput, setGenerateInput] = useState(DEFAULT_GENERATE_INPUT);
 
   useEffect(() => {
-    loadData();
+    let cancelled = false;
+
+    const restoreSession = async () => {
+      const snapshot = await kvGet<ScenesSessionSnapshot>(SCENES_SESSION_KEY, true);
+      if (!snapshot || cancelled) {
+        setSessionReady(true);
+        return;
+      }
+
+      setShowCreateModal(Boolean(snapshot.showCreateModal));
+      setShowGenerateModal(Boolean(snapshot.showGenerateModal));
+      setNewPlan(snapshot.newPlan ?? DEFAULT_NEW_PLAN);
+      setGenerateInput(snapshot.generateInput ?? DEFAULT_GENERATE_INPUT);
+      setEditingScene(snapshot.editingScene ?? null);
+      setPreferredSelectedPlanId(snapshot.selectedPlanId ?? null);
+
+      if (!cancelled) {
+        setSessionReady(true);
+      }
+    };
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadData = async () => {
+  useEffect(() => {
+    if (!sessionReady) return;
+    void loadData(preferredSelectedPlanId);
+  }, [preferredSelectedPlanId, sessionReady]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+
+    const snapshot: ScenesSessionSnapshot = {
+      selectedPlanId: selectedPlan?.id ?? null,
+      showCreateModal,
+      showGenerateModal,
+      newPlan,
+      generateInput,
+      editingScene,
+    };
+
+    void kvSet(SCENES_SESSION_KEY, JSON.stringify(snapshot));
+  }, [
+    editingScene,
+    generateInput,
+    newPlan,
+    selectedPlan?.id,
+    sessionReady,
+    showCreateModal,
+    showGenerateModal,
+  ]);
+
+  const loadData = async (preferredPlanId?: string | null) => {
     try {
       setLoading(true);
       setError(null);
       const data = await loadScenePlans();
       setPlans(data);
-      if (data.length > 0 && !selectedPlan) {
-        setSelectedPlan(data[0]);
-      }
+      const preservedSelection = preferredPlanId
+        ? data.find((plan) => plan.id === preferredPlanId) ?? null
+        : null;
+      const currentSelection = selectedPlan
+        ? data.find((plan) => plan.id === selectedPlan.id) ?? null
+        : null;
+      setSelectedPlan(preservedSelection ?? currentSelection ?? data[0] ?? null);
     } catch (err) {
       console.error('Failed to load scene plans:', err);
       setError('Failed to load scene plans. Please try again.');
@@ -101,13 +176,8 @@ export default function ScenesPage() {
       setPlans(prev => [...prev, plan]);
       setSelectedPlan(plan);
       setShowCreateModal(false);
-      setNewPlan({
-        title: '',
-        description: '',
-        platform: 'instagram',
-        contentType: 'reel',
-        targetDuration: 30,
-      });
+      setPreferredSelectedPlanId(plan.id);
+      setNewPlan(DEFAULT_NEW_PLAN);
     } catch (error) {
       console.error('Failed to create plan:', error);
     }
@@ -125,13 +195,8 @@ export default function ScenesPage() {
       setPlans(prev => [...prev, plan]);
       setSelectedPlan(plan);
       setShowGenerateModal(false);
-      setGenerateInput({
-        concept: '',
-        platform: 'instagram',
-        contentType: 'reel',
-        targetDuration: 30,
-        style: '',
-      });
+      setPreferredSelectedPlanId(plan.id);
+      setGenerateInput(DEFAULT_GENERATE_INPUT);
     } catch (error) {
       console.error('Failed to generate plan:', error);
     } finally {
@@ -144,7 +209,9 @@ export default function ScenesPage() {
     await deleteScenePlan(id);
     setPlans(prev => prev.filter(p => p.id !== id));
     if (selectedPlan?.id === id) {
-      setSelectedPlan(plans.find(p => p.id !== id) || null);
+      const nextPlan = plans.find(p => p.id !== id) || null;
+      setSelectedPlan(nextPlan);
+      setPreferredSelectedPlanId(nextPlan?.id ?? null);
     }
   };
 
@@ -187,7 +254,7 @@ export default function ScenesPage() {
       status: 'draft',
     });
     if (scene) {
-      await loadData();
+      await loadData(selectedPlan.id);
       const updated = await loadScenePlans();
       setSelectedPlan(updated.find(p => p.id === selectedPlan.id) || null);
     }
@@ -196,7 +263,7 @@ export default function ScenesPage() {
   const handleUpdateScene = async (sceneId: string, updates: Partial<Scene>) => {
     if (!selectedPlan) return;
     await updateScene(selectedPlan.id, sceneId, updates);
-    await loadData();
+    await loadData(selectedPlan.id);
     const updated = await loadScenePlans();
     setSelectedPlan(updated.find(p => p.id === selectedPlan.id) || null);
   };

@@ -5,6 +5,7 @@ import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import type { MusicMood } from '@/lib/types';
 import { analyzeMusicMood } from '@/lib/services/godModeService';
+import { getBrowserMusicGenerator } from '@/lib/services/musicEngine';
 import {
   Music,
   Play,
@@ -25,7 +26,7 @@ interface Track {
   url?: string;
 }
 
-// Built-in mood-based tracks (these would be actual audio URLs in production)
+// Built-in mood-based tracks with browser-generated playback fallback
 const MOOD_TRACKS: Record<string, Track[]> = {
   happy: [
     { id: 'h1', name: 'Sunny Days', mood: 'happy', duration: 120 },
@@ -95,6 +96,7 @@ export function MusicPlayer({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzedMood, setAnalyzedMood] = useState<MusicMood | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const browserMusicRef = useRef(getBrowserMusicGenerator());
 
   // Initialize audio element
   useEffect(() => {
@@ -115,6 +117,7 @@ export function MusicPlayer({
     if (audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume;
     }
+    browserMusicRef.current.setVolume(isMuted ? 0 : volume);
   }, [volume, isMuted]);
 
   // Analyze content to suggest mood
@@ -153,8 +156,31 @@ export function MusicPlayer({
   const playTrack = (track: Track) => {
     setCurrentTrack(track);
     setIsPlaying(true);
-    // In production, audioRef.current.src would be set to actual audio URL
-    // For demo, we just set the state
+    if (track.url && audioRef.current) {
+      browserMusicRef.current.stop();
+      audioRef.current.src = track.url;
+      audioRef.current.loop = true;
+      audioRef.current.play().catch(error => {
+        console.error('Failed to play audio track:', error);
+        setIsPlaying(false);
+      });
+    } else {
+      const fallbackMood: MusicMood = analyzedMood || {
+        primary: (track.mood as MusicMood['primary']) || 'energetic',
+        secondary: 'instrumental',
+        tempo: ['calm', 'sad', 'nostalgic'].includes(track.mood) ? 'slow' : 'medium',
+        energy: ['energetic', 'dramatic', 'happy', 'inspiring'].includes(track.mood) ? 75 : 45,
+        genre: 'ambient electronic',
+        instruments: ['synth', 'piano'],
+        keywords: [track.mood, 'background'],
+      };
+
+      browserMusicRef.current.playAmbient(fallbackMood).catch(error => {
+        console.error('Failed to start generated music:', error);
+        setIsPlaying(false);
+      });
+    }
+
     if (onSelectTrack) {
       onSelectTrack(track);
     }
@@ -162,8 +188,10 @@ export function MusicPlayer({
 
   const stopPlayback = () => {
     setIsPlaying(false);
+    browserMusicRef.current.stop();
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.currentTime = 0;
     }
   };
 
