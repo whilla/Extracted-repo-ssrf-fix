@@ -30,6 +30,16 @@ interface MediaPromptPlan {
   reasoning: string;
   agentOutputs: AgentOutput[];
   scenePlan?: ScenePlan;
+  platform?: string;
+  messageHook?: string;
+  fallbackPrompts?: {
+    primary: string;
+    fallback_stability: string;
+    fallback_midjourney: string;
+    fallback_replicate?: string;
+  };
+  brandFitCheck?: string;
+  expectedPerformance?: string;
 }
 
 interface VideoIntentProfile {
@@ -84,6 +94,70 @@ function wantsHumanStudioRealism(request: string): boolean {
   return /\b(character|portrait|human|person|man|woman|face|facial|skin|realistic person|studio photo|photoreal)\b/i.test(request);
 }
 
+function inferImagePlatform(request: string): {
+  platform: 'Instagram Feed' | 'Instagram Reels' | 'Twitter/X' | 'TikTok' | 'LinkedIn' | 'YouTube Thumbnail';
+  aspectRatio: '16:9' | '9:16' | '4:5';
+  dimensions: string;
+  optimizationNotes: string;
+} {
+  const lower = request.toLowerCase();
+  if (/\b(reel|reels|instagram reels|ig reels)\b/.test(lower)) {
+    return {
+      platform: 'Instagram Reels',
+      aspectRatio: '9:16',
+      dimensions: '1080x1920',
+      optimizationNotes: 'Vertical emphasis, dynamic energy, anticipation for motion, must work as a thumbnail in the first 3 frames.',
+    };
+  }
+  if (/\b(tiktok)\b/.test(lower)) {
+    return {
+      platform: 'TikTok',
+      aspectRatio: '9:16',
+      dimensions: '1080x1920',
+      optimizationNotes: 'Vertical trend-aware composition, punchy focal hierarchy, high thumb-stop contrast.',
+    };
+  }
+  if (/\b(twitter|x.com| x )\b/.test(lower)) {
+    return {
+      platform: 'Twitter/X',
+      aspectRatio: '16:9',
+      dimensions: '1200x675',
+      optimizationNotes: 'Readable at small sizes, bold contrast, clear focal object with space for optional headline text.',
+    };
+  }
+  if (/\b(linkedin)\b/.test(lower)) {
+    return {
+      platform: 'LinkedIn',
+      aspectRatio: '16:9',
+      dimensions: '1200x628',
+      optimizationNotes: 'Professional authority, clean hierarchy, trust-building composition for thought-leadership context.',
+    };
+  }
+  if (/\b(youtube|thumbnail)\b/.test(lower)) {
+    return {
+      platform: 'YouTube Thumbnail',
+      aspectRatio: '16:9',
+      dimensions: '1280x720',
+      optimizationNotes: 'Extreme clarity, high contrast, oversized focal subject, legible at feed preview size.',
+    };
+  }
+
+  return {
+    platform: 'Instagram Feed',
+    aspectRatio: '4:5',
+    dimensions: '1080x1350',
+    optimizationNotes: 'Static scroll-stop composition with one dominant focal point and vibrant premium color grading.',
+  };
+}
+
+function isWeakImageBrief(request: string): boolean {
+  const normalized = request.trim().toLowerCase();
+  if (normalized.length < 24) return true;
+  if (/^(make|create|generate)\s+(an?\s+)?image[.!?]*$/.test(normalized)) return true;
+  const hasConcreteSubject = /\b(person|character|product|dashboard|scene|poster|cover|portrait|studio|campaign|thumbnail|brand)\b/.test(normalized);
+  return !hasConcreteSubject;
+}
+
 function mapVideoContentType(profile: VideoIntentProfile): ScenePlan['contentType'] {
   switch (profile.format) {
     case 'reel':
@@ -118,7 +192,9 @@ async function buildMediaPrompt(
   const visualAgent = agents.find(a => a.role === 'visual' && a.evolutionState !== 'deprecated');
   const strategistAgent = agents.find(a => a.role === 'strategist' && a.evolutionState !== 'deprecated');
   const videoIntent = kind === 'video' ? inferVideoIntentProfile(request) : null;
+  const imageIntent = kind === 'image' ? inferImagePlatform(request) : null;
   const maxFidelity = kind === 'video' && wantsMaxFidelity(request);
+  const humanStudioRealism = kind === 'image' && wantsHumanStudioRealism(request);
   const scenePlan =
     kind === 'video' && videoIntent
       ? await generateSceneBreakdown(request, {
@@ -168,6 +244,10 @@ Build a production-ready ${kind} generation plan that can be sent directly to a 
 - Do not ask for confirmation.
 - The prompt must target final asset generation.
 - The negative prompt should aggressively avoid low quality, distorted anatomy, watermarks, text overlays, and extra limbs.
+- For image, enforce NexusAI brand DNA: dark futuristic, sleek high-tech but human, with cyan (#00F5FF) and violet (#BF5FFF) integrated naturally in lighting/accent elements.
+- For image, output a stop-scroll composition tailored to the target platform and dimensions.
+- For image, avoid cartoon, illustration, game-art, and synthetic plastic skin aesthetics.
+- For image, if the subject is a human/character/portrait, enforce natural live-action studio realism, accurate anatomy, realistic skin texture, and true-to-camera lens behavior.
 - For video, optimize for motion, shot continuity, and the requested runtime format.
 - For video, use the storyboard plan to maintain scene continuity, character consistency, and clear progression from shot to shot.
 - For video, default to premium cinematic output with natural human performance, controlled camera language, realistic lighting, and no robotic or AI-looking motion.
@@ -177,6 +257,8 @@ Build a production-ready ${kind} generation plan that can be sent directly to a 
 - For video, target this inferred format: ${videoIntent ? `${videoIntent.format}, ${videoIntent.aspectRatio}, ${videoIntent.durationSeconds}s` : 'n/a'}
 - For video, if user requests Netflix/Seedance/high-quality output, prioritize prestige-grade realism, coherent character continuity, and physically plausible camera/lighting.
 - Generated outputs must stay brand-safe, monetizable, and avoid platform policy violations, unsafe claims, spam language, and generic AI phrasing.
+${imageIntent ? `- For image, target platform: ${imageIntent.platform}, ${imageIntent.dimensions}, ratio ${imageIntent.aspectRatio}. ${imageIntent.optimizationNotes}` : ''}
+${humanStudioRealism ? '- For image, force an editorial studio photography result and explicitly reject stylized/cartoon outputs.' : ''}
 
 Return strict JSON:
 {
@@ -187,7 +269,17 @@ Return strict JSON:
   "cameraAngle": "eye-level",
   "cameraMotion": "slow push-in",
   "shotStyle": "cinematic close-up",
-  "reasoning": "one short sentence"
+  "reasoning": "one short sentence",
+  "platform": "Instagram Feed",
+  "messageHook": "2-second takeaway",
+  "fallbackPrompts": {
+    "primary": "provider-agnostic production prompt",
+    "fallback_stability": "technical prompt for SDXL/Stability",
+    "fallback_midjourney": "creative prompt for Midjourney with --ar",
+    "fallback_replicate": "simpler focused prompt for Replicate"
+  },
+  "brandFitCheck": "one line about NexusAI visual alignment",
+  "expectedPerformance": "one line about why it should perform on the target platform"
 }`;
 
   const synthesis = await universalChat(synthesisPrompt, {
@@ -221,7 +313,7 @@ Return strict JSON:
   return {
     prompt,
     negativePrompt: String(parsed.negativePrompt || '').trim() || undefined,
-    aspectRatio: clampAspectRatio(parsed.aspectRatio || videoIntent?.aspectRatio),
+    aspectRatio: clampAspectRatio(parsed.aspectRatio || videoIntent?.aspectRatio || imageIntent?.aspectRatio),
     durationSeconds:
       kind === 'video' && maxFidelity
         ? Math.max(Number(parsed.durationSeconds) || videoIntent?.durationSeconds || 8, 8)
@@ -232,6 +324,26 @@ Return strict JSON:
     reasoning: String(parsed.reasoning || '').trim() || 'Prompt synthesized by the media agent system.',
     agentOutputs,
     scenePlan: scenePlan || undefined,
+    platform: String(parsed.platform || imageIntent?.platform || '').trim() || undefined,
+    messageHook: String(parsed.messageHook || '').trim() || undefined,
+    fallbackPrompts:
+      parsed.fallbackPrompts &&
+      typeof parsed.fallbackPrompts === 'object' &&
+      typeof parsed.fallbackPrompts.primary === 'string' &&
+      typeof parsed.fallbackPrompts.fallback_stability === 'string' &&
+      typeof parsed.fallbackPrompts.fallback_midjourney === 'string'
+        ? {
+            primary: String(parsed.fallbackPrompts.primary),
+            fallback_stability: String(parsed.fallbackPrompts.fallback_stability),
+            fallback_midjourney: String(parsed.fallbackPrompts.fallback_midjourney),
+            fallback_replicate:
+              typeof parsed.fallbackPrompts.fallback_replicate === 'string'
+                ? String(parsed.fallbackPrompts.fallback_replicate)
+                : undefined,
+          }
+        : undefined,
+    brandFitCheck: String(parsed.brandFitCheck || '').trim() || undefined,
+    expectedPerformance: String(parsed.expectedPerformance || '').trim() || undefined,
   };
 }
 
@@ -242,20 +354,46 @@ export async function generateAgentImage(
     provider?: ImageProvider;
   } = {}
 ): Promise<MediaGenerationResult> {
+  if (isWeakImageBrief(request)) {
+    const clarifying = `I need a stronger brief before generating. Please confirm:
+1. Target platform (Instagram Feed/Reels, TikTok, Twitter/X, LinkedIn, YouTube Thumbnail)
+2. Core message/hook (2-second takeaway)
+3. Subject details (who/what exactly must appear)
+4. Mood and style (aspirational, educational, social proof, or entertainment)
+5. CTA focus (save, share, comment, click, follow)`;
+    return {
+      content: clarifying,
+      media: [],
+      prompt: request,
+      provider: 'none',
+    };
+  }
+
   const maxFidelity = wantsMaxFidelity(request);
   const humanStudioRealism = wantsHumanStudioRealism(request);
   const useFastPath = !maxFidelity;
+  const inferredImageIntent = inferImagePlatform(request);
   let plan = useFastPath
     ? {
         prompt: humanStudioRealism
-          ? `${request.trim()} Render as a natural live-action studio portrait photo. Real human skin texture, realistic face proportions, natural lighting, 85mm lens look, high-end DSLR quality. Not illustration, not cartoon, not CGI.`
-          : request.trim(),
+          ? `${request.trim()} Render as a natural live-action studio portrait photo for ${inferredImageIntent.platform} ${inferredImageIntent.dimensions}. Real human skin texture, realistic face proportions, natural lighting, premium editorial photography, 85mm lens look, high-end DSLR quality, sharp focus, cinematic but realistic color grade. Integrate subtle cyan (#00F5FF) and violet (#BF5FFF) accents over a dark modern background. Not illustration, not cartoon, not CGI. ${inferredImageIntent.optimizationNotes}`
+          : `${request.trim()} ${inferredImageIntent.optimizationNotes} Integrate NexusAI brand accents: cyan (#00F5FF), violet (#BF5FFF), dark premium backdrop.`,
         negativePrompt: humanStudioRealism
-          ? 'cartoon, anime, illustration, painting, cgi, doll face, plastic skin, stylized face, game art, comic style'
+          ? 'cartoon, anime, illustration, painting, cgi, doll face, plastic skin, stylized face, game art, comic style, extra fingers, distorted hands, deformed anatomy, lowres, blurry, watermark'
           : undefined,
-        aspectRatio: clampAspectRatio(/\b(9:16|vertical|reel|shorts|tiktok)\b/i.test(request) ? '9:16' : '16:9'),
+        aspectRatio: inferredImageIntent.aspectRatio,
         reasoning: 'Fast-path prompt routing for lower latency image generation.',
         agentOutputs: [],
+        platform: inferredImageIntent.platform,
+        messageHook: 'Premium visual that communicates the idea instantly and stops the scroll.',
+        fallbackPrompts: {
+          primary: request.trim(),
+          fallback_stability: `${request.trim()}, photorealistic, professional editorial, dark futuristic environment, cyan and violet accent lighting, highly detailed, no text, no watermark`,
+          fallback_midjourney: `${request.trim()}, ultra realistic editorial photography, dark futuristic, cyan and violet accents, dramatic lighting, sharp focus --ar ${inferredImageIntent.aspectRatio === '9:16' ? '9:16' : inferredImageIntent.aspectRatio === '4:5' ? '4:5' : '16:9'} --stylize 100`,
+          fallback_replicate: `${request.trim()}, realistic photo, dark premium background, cyan violet highlights, sharp focus`,
+        },
+        brandFitCheck: 'Dark futuristic palette with cyan/violet accents and premium human-real output.',
+        expectedPerformance: `${inferredImageIntent.platform}-optimized composition built for fast comprehension and high stop-scroll potential.`,
       }
     : await buildMediaPrompt(request, 'image', options.preferredModel);
   const generationStrategies: Array<{
@@ -338,7 +476,20 @@ export async function generateAgentImage(
   });
 
   return {
-    content: `Generated an image with ${result.provider}.\n\nPrompt used: ${plan.prompt}`,
+    content: `Platform: ${plan.platform || inferredImageIntent.platform}
+Message Hook: ${plan.messageHook || 'Immediate visual payoff with clear subject and high-contrast focal point.'}
+Primary Prompt: ${plan.prompt}
+Fallback Prompts: ${JSON.stringify(
+      plan.fallbackPrompts || {
+        primary: plan.prompt,
+        fallback_stability: `${plan.prompt} photorealistic, high detail, realistic lighting, no text, no watermark`,
+        fallback_midjourney: `${plan.prompt} --ar ${plan.aspectRatio === '9:16' ? '9:16' : plan.aspectRatio === '4:5' ? '4:5' : '16:9'}`,
+      }
+    )}
+Brand Fit Check: ${plan.brandFitCheck || 'Aligned to NexusAI dark futuristic aesthetic with cyan/violet accent language.'}
+Expected Performance: ${plan.expectedPerformance || 'Composed for quick feed readability, strong focal hierarchy, and social save/share potential.'}
+
+Generated image provider: ${result.provider}`,
     media: [
       {
         type: 'image',
