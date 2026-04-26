@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/context/AuthContext';
+import { waitForPuter } from '@/lib/services/puterService';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { GlassCard } from '@/components/nexus/GlassCard';
 
@@ -14,12 +15,23 @@ function LandingContent() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [nextPath, setNextPath] = useState<string | null>(null);
   const [shouldAutoReauth, setShouldAutoReauth] = useState(false);
+  const [puterReady, setPuterReady] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     setNextPath(params.get('next'));
     setShouldAutoReauth(params.get('reauth') === '1');
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void waitForPuter().then((ready) => {
+      if (active) setPuterReady(ready);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Redirect authenticated users - only once
@@ -47,6 +59,15 @@ function LandingContent() {
     setIsSigningIn(true);
     setAuthError(null);
     try {
+      if (!puterReady) {
+        const ready = await waitForPuter();
+        setPuterReady(ready);
+        if (!ready) {
+          setAuthError('Puter failed to load. Check your connection and retry.');
+          return;
+        }
+      }
+
       const success = await login();
       if (success) {
         // Auth context will handle the redirect
@@ -56,7 +77,7 @@ function LandingContent() {
     } finally {
       setIsSigningIn(false);
     }
-  }, [isSigningIn, login]);
+  }, [isSigningIn, login, puterReady]);
 
   useEffect(() => {
     if (!shouldAutoReauth || isAuthenticated || hasRedirected || isSigningIn) return;
@@ -97,7 +118,7 @@ function LandingContent() {
               size="lg"
               className="px-10"
             >
-              {isSigningIn ? 'Signing In...' : 'Get Started with Puter'}
+              {isSigningIn ? 'Signing In...' : !puterReady ? 'Connect Puter' : 'Get Started with Puter'}
             </NeonButton>
             <p className="text-sm text-muted-foreground">
               Free to use - pay only for AI credits

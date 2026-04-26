@@ -2,10 +2,12 @@
 // All Puter operations go through this service
 
 const PUTER_READY_TIMEOUT = 8000;
+const PUTER_SCRIPT_URL = 'https://js.puter.com/v2/';
 const LOCAL_KV_PREFIX = 'nexus:kv:';
 const LOCAL_FILE_PREFIX = 'nexus:file:';
 const LOCAL_AUTH_KEY = 'nexus:auth:user';
 const LOCAL_AUTH_SESSION_KEY = 'nexus:auth:session';
+let puterScriptPromise: Promise<boolean> | null = null;
 
 function hasLocalStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -64,12 +66,42 @@ export function clearCachedAuth(): void {
   cacheUser(null);
 }
 
+function ensurePuterScript(): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false);
+  if (window.puter) return Promise.resolve(true);
+  if (puterScriptPromise) return puterScriptPromise;
+
+  puterScriptPromise = new Promise((resolve) => {
+    const existingScript = document.querySelector(`script[src="${PUTER_SCRIPT_URL}"]`) as HTMLScriptElement | null;
+
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(true), { once: true });
+      existingScript.addEventListener('error', () => resolve(false), { once: true });
+      // In case it already loaded before listeners were attached.
+      setTimeout(() => resolve(!!window.puter), 50);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = PUTER_SCRIPT_URL;
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  }).finally(() => {
+    puterScriptPromise = null;
+  });
+
+  return puterScriptPromise;
+}
+
 // Wait for Puter to be available
 export async function waitForPuter(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
   
   // If already available, return immediately
   if (window.puter) return true;
+  await ensurePuterScript();
   
   const start = Date.now();
   
