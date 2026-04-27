@@ -86,11 +86,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (guestMode) {
-        const [onboarding, brandKit] = await Promise.all([
-          isOnboardingComplete().catch(() => false),
-          loadBrandKit().catch(() => null),
-        ]);
-
         if (!mounted) return;
 
         setState({
@@ -98,8 +93,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isAuthenticated: false,
           isGuest: true,
           user: null,
-          onboardingComplete: onboarding,
-          brandKit,
+          onboardingComplete: false,
+          brandKit: null,
+        });
+
+        void Promise.all([
+          isOnboardingComplete().catch(() => false),
+          loadBrandKit().catch(() => null),
+        ]).then(([onboarding, brandKit]) => {
+          if (!mounted) return;
+          setState((current) => ({
+            ...current,
+            onboardingComplete: onboarding,
+            brandKit,
+          }));
         });
         return;
       }
