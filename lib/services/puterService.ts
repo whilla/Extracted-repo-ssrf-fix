@@ -116,7 +116,8 @@ async function signInThroughManagedPopup(): Promise<void> {
 
   const guiOrigin = puterClient.defaultGUIOrigin || 'https://puter.com';
   const messageId = Math.floor(Date.now() + Math.random() * 1000);
-  const popupUrl = `${guiOrigin}/action/sign-in?embedded_in_popup=true&msg_id=${messageId}${window.crossOriginIsolated ? '&cross_origin_isolated=true' : ''}`;
+  const openerOrigin = encodeURIComponent(window.location.origin);
+  const popupUrl = `${guiOrigin}/action/sign-in?embedded_in_popup=true&msg_id=${messageId}&opener_origin=${openerOrigin}${window.crossOriginIsolated ? '&cross_origin_isolated=true' : ''}`;
   const popup = window.open(popupUrl, 'Puter', buildPuterPopupFeatures());
 
   if (!popup) {
