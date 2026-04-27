@@ -223,29 +223,26 @@ export async function signIn(): Promise<{ username: string } | null> {
 
   let resolvedUser: { username: string } | null = null;
   const authAction = async () => {
-    try {
-      const maybeUser = await window.puter.auth.signIn();
-      if (maybeUser?.username) {
-        resolvedUser = maybeUser;
+    if (typeof window.puter.ui?.authenticateWithPuter === 'function') {
+      await window.puter.ui.authenticateWithPuter();
+      const userAfterDialog = await readAuthenticatedUser();
+      if (userAfterDialog) {
+        resolvedUser = userAfterDialog;
         return;
-      }
-    } catch (primaryError) {
-      if (typeof window.puter.ui?.authenticateWithPuter !== 'function') {
-        throw primaryError;
       }
     }
 
-    if (typeof window.puter.ui?.authenticateWithPuter === 'function') {
-      await window.puter.ui.authenticateWithPuter();
+    const maybeUser = await window.puter.auth.signIn();
+    if (maybeUser?.username) {
+      resolvedUser = maybeUser;
+      return;
     }
   };
 
   let authError: unknown = null;
-  const authAttempt = Promise.resolve()
-    .then(() => authAction())
-    .catch((error) => {
-      authError = error;
-    });
+  const authAttempt = authAction().catch((error) => {
+    authError = error;
+  });
 
   const deadline = Date.now() + PUTER_AUTH_TIMEOUT;
 
