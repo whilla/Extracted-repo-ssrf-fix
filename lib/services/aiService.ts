@@ -4,6 +4,7 @@ import { buildSystemPrompt, IMAGE_QUALITY_PROMPT, IMAGE_NEGATIVE_PROMPT } from '
 import { kvGet } from './puterService';
 import { buildMemoryContext } from './agentMemoryService';
 import { waitForPuter } from './puterService';
+import { buildFallbackProviders, type RoutedProvider } from './providerFallback';
 
 // Available models - including custom provider options
 export const AVAILABLE_MODELS: AIModel[] = [
@@ -44,20 +45,6 @@ const PROVIDER_DEFAULT_MODELS = {
   fireworks: ['accounts/fireworks/models/llama-v3p1-70b-instruct'],
   ollama: ['ollama/llama3.2'],
 } as const;
-
-type RoutedProvider =
-  | 'puter'
-  | 'openrouter'
-  | 'githubmodels'
-  | 'poe'
-  | 'bytez'
-  | 'groq'
-  | 'gemini'
-  | 'deepseek'
-  | 'nvidia'
-  | 'together'
-  | 'fireworks'
-  | 'ollama';
 
 const PROVIDER_KEY_CANDIDATES: Record<Exclude<RoutedProvider, 'puter' | 'ollama'>, string[]> = {
   openrouter: ['openrouter_key', 'provider_openrouter_apiKey'],
@@ -772,10 +759,7 @@ export async function universalChat(
   const configuredProviders = await getConfiguredProviders();
   const preferredConfig = AVAILABLE_MODELS.find((candidate) => candidate.model === model);
   const preferredProvider = (preferredConfig?.provider || 'puter') as RoutedProvider;
-  const fallbackProviders = [
-    preferredProvider,
-    ...configuredProviders.filter((provider) => provider !== preferredProvider),
-  ];
+  const fallbackProviders = buildFallbackProviders(preferredProvider, configuredProviders);
 
   const candidateModels = Array.from(new Set(
     fallbackProviders.flatMap((provider) => {
