@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/context/AuthContext';
 import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
-import { LoadingPulse, FullPageLoading } from '@/components/nexus/LoadingPulse';
+import { LoadingPulse } from '@/components/nexus/LoadingPulse';
 import { saveBrandKit, setOnboardingComplete } from '@/lib/services/memoryService';
 import { kvSet } from '@/lib/services/puterService';
 import type { BrandKit, Platform } from '@/lib/types';
@@ -135,17 +135,6 @@ function OnboardingContent() {
     };
   }, [isLoading]);
 
-  useEffect(() => {
-    if (authBootstrapExpired) {
-      return;
-    }
-
-    if (!isLoading && !isAuthenticated && !canUseGuestFlow) {
-      const nextTarget = encodeURIComponent(routeState.nextPath);
-      router.push(`/?reauth=1&next=${nextTarget}`);
-    }
-  }, [authBootstrapExpired, canUseGuestFlow, isAuthenticated, isLoading, routeState.nextPath, router]);
-
   const handleContinueAsGuest = () => {
     enterGuestMode();
     setRouteState((current) => ({
@@ -252,34 +241,7 @@ function OnboardingContent() {
     }
   };
 
-  if (authBootstrapExpired && !isAuthenticated && !canUseGuestFlow) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-4">
-        <GlassCard variant="elevated" className="w-full max-w-md space-y-4 p-6 text-center">
-          <div className="space-y-2">
-            <h1 className="text-2xl font-bold">Onboarding stalled</h1>
-            <p className="text-sm text-muted-foreground">
-              The auth bootstrap did not finish in time. Continue in guest mode now and connect Puter later from inside the app.
-            </p>
-          </div>
-          <NeonButton onClick={handleContinueAsGuest} className="w-full">
-            Continue In Guest Mode
-          </NeonButton>
-          <NeonButton variant="ghost" onClick={() => router.replace('/')} className="w-full">
-            Back To Home
-          </NeonButton>
-        </GlassCard>
-      </div>
-    );
-  }
-
-  if (isLoading && !routeState.guestRouteRequested) {
-    return <FullPageLoading text="Loading..." />;
-  }
-
-  if (!isAuthenticated && !canUseGuestFlow) {
-    return <FullPageLoading text="Redirecting to login..." />;
-  }
+  const shouldShowAuthFallback = authBootstrapExpired && !isAuthenticated && !canUseGuestFlow;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -348,19 +310,32 @@ function OnboardingContent() {
                   Let&apos;s set up your AI-powered social media assistant. 
                   This will only take a few minutes.
                 </p>
-                {routeState.connectRequested && (
+                {isLoading && !authBootstrapExpired && (
+                  <div className="mt-4">
+                    <LoadingPulse size="sm" text="Checking your session..." />
+                  </div>
+                )}
+                {(routeState.connectRequested || !isAuthenticated) && (
                   <div className="mt-4 space-y-3">
                     <p className="text-sm text-muted-foreground">
-                      Connect Puter from inside the app. This opens the real sign-in flow on your next tap.
+                      Connect Puter now or continue in guest mode. You can switch to a full Puter session later from inside the app.
                     </p>
                     <NeonButton onClick={handleConnectPuter} className="w-full" disabled={isConnectingPuter}>
                       {isConnectingPuter ? 'Connecting Puter...' : 'Connect Puter'}
+                    </NeonButton>
+                    <NeonButton variant="ghost" onClick={handleContinueAsGuest} className="w-full">
+                      Continue In Guest Mode
                     </NeonButton>
                   </div>
                 )}
                 {connectError && (
                   <p className="text-sm text-destructive mt-3">
                     {connectError}
+                  </p>
+                )}
+                {shouldShowAuthFallback && (
+                  <p className="text-sm text-muted-foreground mt-3">
+                    Auth bootstrap stalled, so onboarding is running in recovery mode. Guest mode is safe to use here.
                   </p>
                 )}
               </div>
