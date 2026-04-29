@@ -5,6 +5,7 @@ import Script from 'next/script'
 import './globals.css'
 import { Providers } from './providers'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
+import { Toaster } from '@/components/ui/toaster'
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -52,6 +53,7 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        <Toaster />
         <ServiceWorkerRegister />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

@@ -20,9 +20,16 @@ import {
   ChevronUp,
   TestTube,
   Loader2,
+  ShieldOff,
 } from 'lucide-react';
 import { kvDelete, kvGet, kvSet } from '@/lib/services/puterService';
 import { AI_PROVIDERS, callCustomProvider, type AIProvider } from '@/lib/services/godModeEngine';
+import { AVAILABLE_MODELS } from '@/lib/services/aiService';
+import {
+  isPuterFallbackDisabled,
+  resolveProviderForModel,
+  setPuterFallbackDisabled,
+} from '@/lib/services/providerControl';
 
 interface ProviderStatus {
   provider: AIProvider;
@@ -39,13 +46,20 @@ export default function ProvidersPage() {
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [currentChatModel, setCurrentChatModel] = useState('gpt-4o');
+  const [disablePuterRouting, setDisablePuterRouting] = useState(false);
+  const [routingBusy, setRoutingBusy] = useState(false);
 
   useEffect(() => {
-    loadProviderStatus();
+    void loadProviderStatus();
   }, []);
 
   const loadProviderStatus = async () => {
     setLoading(true);
+    const [savedModel, fallbackDisabled] = await Promise.all([
+      kvGet('ai_model'),
+      isPuterFallbackDisabled(),
+    ]);
     const statuses: ProviderStatus[] = [];
 
     for (const provider of AI_PROVIDERS) {
@@ -69,7 +83,36 @@ export default function ProvidersPage() {
     }
 
     setProviders(statuses);
+    if (typeof savedModel === 'string' && AVAILABLE_MODELS.some((model) => model.model === savedModel)) {
+      setCurrentChatModel(savedModel);
+    } else {
+      setCurrentChatModel('gpt-4o');
+    }
+    setDisablePuterRouting(fallbackDisabled);
     setLoading(false);
+  };
+
+  const handleChatModelChange = async (model: string) => {
+    setCurrentChatModel(model);
+    setRoutingBusy(true);
+    try {
+      await Promise.all([
+        kvSet('ai_model', model),
+        kvSet('default_model', model),
+      ]);
+    } finally {
+      setRoutingBusy(false);
+    }
+  };
+
+  const handleDisablePuterFallbackChange = async (disabled: boolean) => {
+    setDisablePuterRouting(disabled);
+    setRoutingBusy(true);
+    try {
+      await setPuterFallbackDisabled(disabled);
+    } finally {
+      setRoutingBusy(false);
+    }
   };
 
   const saveKey = async (providerId: string) => {
@@ -151,6 +194,85 @@ export default function ProvidersPage() {
           Connect multiple AI providers to power the Nexus Agent with diverse capabilities
         </p>
       </div>
+
+      <GlassCard className="p-5 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Chat Routing</h2>
+            <p className="text-sm text-foreground/60 mt-1">
+              Control which provider drives chat by default and whether Puter can still be used as an automatic fallback.
+            </p>
+          </div>
+          <StatusBadge
+            status={disablePuterRouting ? 'warning' : 'info'}
+            size="sm"
+          >
+            {disablePuterRouting ? 'Puter Fallback Off' : 'Puter Fallback Available'}
+          </StatusBadge>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground/80">
+              Active chat model
+            </label>
+            <select
+              value={currentChatModel}
+              onChange={(e) => void handleChatModelChange(e.target.value)}
+              disabled={routingBusy}
+              className="w-full rounded-lg border border-white/10 bg-background/50 px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-nexus-cyan/50 disabled:opacity-60"
+            >
+              {AVAILABLE_MODELS.map((model) => (
+                <option key={model.model} value={model.model} className="bg-background text-foreground">
+                  {model.name} ({model.provider})
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-foreground/50">
+              Active provider: {resolveProviderForModel(currentChatModel, AVAILABLE_MODELS)}
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-lg bg-yellow-500/15 p-2 text-yellow-300">
+                <ShieldOff className="w-4 h-4" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-foreground">Disable Puter fallback after manual switch</p>
+                <p className="text-xs text-foreground/60 mt-1">
+                  When enabled, chat stays on your selected provider and will not route back into Puter automatically.
+                </p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={disablePuterRouting}
+                  disabled={routingBusy}
+                  onChange={(e) => void handleDisablePuterFallbackChange(e.target.checked)}
+                />
+                <span
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    disablePuterRouting ? 'bg-[var(--nexus-cyan)]' : 'bg-white/15'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                      disablePuterRouting ? 'translate-x-5' : 'translate-x-0.5'
+                    }`}
+                  />
+                </span>
+              </label>
+            </div>
+            <p className="text-xs text-foreground/50">
+              {disablePuterRouting
+                ? 'Manual chat provider choice is locked in until you re-enable Puter fallback.'
+                : 'Chat may still route into Puter if your selected provider fails.'}
+            </p>
+          </div>
+        </div>
+      </GlassCard>
 
       {/* Provider cards */}
       <div className="grid gap-4">

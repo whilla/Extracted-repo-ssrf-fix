@@ -5,6 +5,7 @@ import { kvGet } from './puterService';
 import { buildMemoryContext } from './agentMemoryService';
 import { waitForPuter } from './puterService';
 import { buildFallbackProviders, type RoutedProvider } from './providerFallback';
+import { dispatchProviderEvent, isPuterFallbackDisabled } from './providerControl';
 
 // Available models - including custom provider options
 export const AVAILABLE_MODELS: AIModel[] = [
@@ -759,7 +760,19 @@ export async function universalChat(
   const configuredProviders = await getConfiguredProviders();
   const preferredConfig = AVAILABLE_MODELS.find((candidate) => candidate.model === model);
   const preferredProvider = (preferredConfig?.provider || 'puter') as RoutedProvider;
-  const fallbackProviders = buildFallbackProviders(preferredProvider, configuredProviders);
+  const disablePuterFallback = await isPuterFallbackDisabled();
+  const fallbackProviders = buildFallbackProviders(preferredProvider, configuredProviders, {
+    disablePuterFallback,
+  });
+
+  if (disablePuterFallback && preferredProvider !== 'puter' && configuredProviders.includes('puter')) {
+    dispatchProviderEvent({
+      type: 'puter_fallback_disabled',
+      provider: preferredProvider,
+      model,
+      message: `Puter fallback is disabled while ${preferredProvider} is your active chat provider.`,
+    });
+  }
 
   const candidateModels = Array.from(new Set(
     fallbackProviders.flatMap((provider) => {
@@ -787,29 +800,173 @@ export async function universalChat(
 
       switch (provider) {
         case 'gemini':
-          return await chatWithGemini(messages, options);
+          {
+            const content = await chatWithGemini(messages, options);
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'groq':
-          return await chatWithGroq(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithGroq(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'openrouter':
-          return await chatWithOpenRouter(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithOpenRouter(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'githubmodels':
-          return await chatWithGitHubModels(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithGitHubModels(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'bytez':
-          return await chatWithBytez(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithBytez(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'poe':
-          return await chatWithPoe(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithPoe(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'nvidia':
-          return await chatWithNvidia(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithNvidia(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'together':
-          return await chatWithTogether(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithTogether(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'fireworks':
-          return await chatWithFireworks(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithFireworks(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'ollama':
-          return await chatWithOllama(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithOllama(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         case 'deepseek':
-          return await chatWithDeepSeek(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithDeepSeek(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
         default:
-          return await chatWithPuter(messages, { ...options, model: candidateModel });
+          {
+            const content = await chatWithPuter(messages, { ...options, model: candidateModel });
+            if (provider !== preferredProvider) {
+              dispatchProviderEvent({
+                type: 'provider_switched',
+                from: preferredProvider,
+                to: provider,
+                model: candidateModel,
+                message: `Switched chat provider from ${preferredProvider} to ${provider}.`,
+              });
+            }
+            return content;
+          }
       }
     } catch (error) {
       lastError = error as Error;
@@ -817,6 +974,14 @@ export async function universalChat(
       const failedModelConfig = AVAILABLE_MODELS.find((entry) => entry.model === candidateModel);
       const failedProvider = (failedModelConfig?.provider || 'puter') as RoutedProvider;
       applyProviderCooldown(failedProvider, errorMessage);
+      if (failedProvider === 'puter' && isQuotaOrBillingError(errorMessage)) {
+        dispatchProviderEvent({
+          type: 'puter_credit_exhausted',
+          provider: 'puter',
+          model: candidateModel,
+          message: 'Puter hit a credits or quota limit and has been cooled down for fallback attempts.',
+        });
+      }
       if (isConfigurationError(errorMessage)) {
         console.warn(`universalChat skipped ${candidateModel}: ${errorMessage}`);
         continue;

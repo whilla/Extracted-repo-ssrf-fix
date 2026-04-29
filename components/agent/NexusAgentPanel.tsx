@@ -13,6 +13,7 @@ import type { AttachedFile, ChatMessage } from '@/lib/types';
 import { downloadContent } from '@/lib/services/voiceConversation';
 import { voiceConversation } from '@/lib/services/voiceConversation';
 import { PATHS } from '@/lib/services/puterService';
+import { isPuterFallbackDisabled, resolveProviderForModel } from '@/lib/services/providerControl';
 
 // Message component with download option
 function AgentMessage({ 
@@ -259,6 +260,7 @@ export function NexusAgentPanel() {
 
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [disablePuterFallback, setDisablePuterFallback] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -304,6 +306,23 @@ export function NexusAgentPanel() {
       }
     }
   }, [messages, isVoiceMode, speakResponse]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadFallbackPreference = async () => {
+      const disabled = await isPuterFallbackDisabled();
+      if (mounted) {
+        setDisablePuterFallback(disabled);
+      }
+    };
+
+    void loadFallbackPreference();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentModel]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -375,6 +394,8 @@ export function NexusAgentPanel() {
 
   if (!isOpen) return null;
 
+  const activeChatProvider = resolveProviderForModel(currentModel, availableModels);
+
   return (
     <div className="fixed inset-0 z-[9998] flex items-end justify-center">
       {/* Backdrop */}
@@ -421,6 +442,10 @@ export function NexusAgentPanel() {
               </h2>
               <p className="text-xs text-muted-foreground">
                 {isThinking ? currentTask || 'Thinking...' : isListening ? 'Listening...' : 'Ready'}
+              </p>
+              <p className="text-[11px] text-muted-foreground/80">
+                Chat: {activeChatProvider}{' '}
+                {activeChatProvider !== 'puter' && disablePuterFallback ? '| Puter fallback off' : '| Puter fallback available'}
               </p>
             </div>
           </div>

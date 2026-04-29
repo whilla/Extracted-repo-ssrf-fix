@@ -9,16 +9,23 @@ test('buildFallbackProviders keeps Puter fallback chain when Puter is preferred'
   );
 });
 
-test('buildFallbackProviders excludes Puter after manual switch to another provider', () => {
+test('buildFallbackProviders keeps Puter in the chain by default for non-Puter providers', () => {
   assert.deepEqual(
     buildFallbackProviders('groq', ['puter', 'groq', 'openrouter']),
+    ['groq', 'puter', 'openrouter']
+  );
+});
+
+test('buildFallbackProviders excludes Puter when explicit disable is enabled', () => {
+  assert.deepEqual(
+    buildFallbackProviders('groq', ['puter', 'groq', 'openrouter'], { disablePuterFallback: true }),
     ['groq', 'openrouter']
   );
 });
 
-test('buildFallbackProviders preserves the preferred non-Puter provider when it is the only option', () => {
+test('buildFallbackProviders preserves the preferred non-Puter provider when it is the only routed option', () => {
   assert.deepEqual(
-    buildFallbackProviders('openrouter', ['puter', 'openrouter']),
+    buildFallbackProviders('openrouter', ['puter', 'openrouter'], { disablePuterFallback: true }),
     ['openrouter']
   );
 });
