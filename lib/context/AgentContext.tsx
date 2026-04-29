@@ -87,6 +87,7 @@ const NICHE_CLARIFICATION_PATTERN = /\bwhat niche should i lock before generatin
 const REWRITE_REQUEST_PATTERN = /\b(rewrite|regenerate|redo|rework|fix|improve)\b.*\b(script|scene|story|version|this)\b/i;
 const SCHEDULE_REQUEST_PATTERN = /\b(schedule|queue|plan|slot)\b[\s\S]{0,40}\b(post|content|draft|caption|script|scene|reel|video|image|this|it|scheduler|calendar|later)\b/i;
 const ADMIN_ASSISTANT_MESSAGE_PATTERN = /^(command mode:|locked niche set to:|idea queued in memory:|target platforms updated:|background automation|automation:|engagement sync complete|done\.\s+i scheduled it in your built-in scheduler)/i;
+const CONTINUATION_CUE_PATTERN = /^\s*(continue|go on|proceed|carry on|keep going|do it|do that)\s*[.!?]*$/i;
 const UNIVERSAL_SCENE_DIRECTIVE = [
   'Scene generation constraints:',
   '- Keep mystery over explanation; never explain rituals, lore, or magic systems.',
@@ -286,6 +287,24 @@ function parseScheduledAtFromMessage(message: string, now: Date = new Date()): s
       scheduled.setDate(scheduled.getDate() + 1);
     }
     return scheduled.toISOString();
+  }
+
+  return null;
+}
+
+function findContinuationExecutionRequest(messages: ChatMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'user') continue;
+    const text = message.content.trim();
+    if (!text || CONTINUATION_CUE_PATTERN.test(text)) continue;
+
+    if (
+      /\b(generate|create|make|write|build|produce|render|schedule|queue|analy[sz]e|review|extract)\b/i.test(text) &&
+      /\b(video|clip|reel|shorts?|image|photo|scene|script|post|content|caption|calendar|scheduler|pdf|file|document|brand)\b/i.test(text)
+    ) {
+      return text;
+    }
   }
 
   return null;
@@ -824,6 +843,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
     if (SCHEDULE_REQUEST_PATTERN.test(trimmedMessage) && (!scheduleQuestionPattern.test(trimmedMessage) || scheduleCommandPattern.test(trimmedMessage))) {
       return { type: 'schedule_post', confidence: 0.95, params: {} };
+    }
+
+    if (looksLikeCharacterDescriptor(trimmedMessage)) {
+      return { type: 'manage_brand', confidence: 0.94, params: { characterProfile: true } };
     }
 
     if (explicitGenerationPattern.test(lowerMessage)) {
@@ -1438,17 +1461,23 @@ Rules:
   // Main send message function
   const sendMessage = useCallback(async (content: string, files?: AttachedFile[]) => {
     const attachedFiles = files || state.pendingFiles;
-    const normalizedContent = normalizeIncomingMessage(content, attachedFiles.length > 0);
+    const incomingContent = normalizeIncomingMessage(content, attachedFiles.length > 0);
 
-    if (!normalizedContent) {
+    if (!incomingContent) {
       return;
     }
+
+    const continuationSource =
+      attachedFiles.length === 0 && CONTINUATION_CUE_PATTERN.test(incomingContent)
+        ? findContinuationExecutionRequest(state.messages)
+        : null;
+    const normalizedContent = continuationSource || incomingContent;
     
     // Create user message
     const userMessage: ChatMessage = {
       id: generateId(),
       role: 'user',
-      content: normalizedContent,
+      content: incomingContent,
       timestamp: new Date().toISOString(),
       attachments: attachedFiles.length > 0 ? attachedFiles : undefined,
     };
@@ -1485,7 +1514,7 @@ Rules:
         await saveChatMessage(assistantMessage);
       };
 
-      const command = parseAgentCommand(normalizedContent);
+      const command = parseAgentCommand(incomingContent);
       if (command) {
         if (command.type === 'help') {
           await postCommandResponse(

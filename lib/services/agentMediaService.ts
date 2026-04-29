@@ -411,30 +411,19 @@ export async function generateAgentImage(
     provider?: ImageProvider;
   } = {}
 ): Promise<MediaGenerationResult> {
-  if (isWeakImageBrief(request)) {
-    const clarifying = `I need a stronger brief before generating. Please confirm:
-1. Target platform (Instagram Feed/Reels, TikTok, Twitter/X, LinkedIn, YouTube Thumbnail)
-2. Core message/hook (2-second takeaway)
-3. Subject details (who/what exactly must appear)
-4. Mood and style (aspirational, educational, social proof, or entertainment)
-5. CTA focus (save, share, comment, click, follow)`;
-    return {
-      content: clarifying,
-      media: [],
-      prompt: request,
-      provider: 'none',
-    };
-  }
-
+  const weakBrief = isWeakImageBrief(request);
+  const effectiveRequest = weakBrief
+    ? `${request.trim()} Create a premium, platform-ready image with one clear focal subject, natural realism, strong contrast, and a stop-scroll hook.`
+    : request;
   const maxFidelity = wantsMaxFidelity(request);
   const humanStudioRealism = wantsHumanStudioRealism(request);
   const useFastPath = !maxFidelity;
-  const inferredImageIntent = inferImagePlatform(request);
+  const inferredImageIntent = inferImagePlatform(effectiveRequest);
   let plan = useFastPath
     ? {
         prompt: humanStudioRealism
-          ? `${request.trim()} Render as a natural live-action studio portrait photo for ${inferredImageIntent.platform} ${inferredImageIntent.dimensions}. Real human skin texture, realistic face proportions, natural lighting, premium editorial photography, 85mm lens look, high-end DSLR quality, sharp focus, cinematic but realistic color grade. Integrate subtle cyan (#00F5FF) and violet (#BF5FFF) accents over a dark modern background. Not illustration, not cartoon, not CGI. ${inferredImageIntent.optimizationNotes}`
-          : `${request.trim()} ${inferredImageIntent.optimizationNotes} Integrate NexusAI brand accents: cyan (#00F5FF), violet (#BF5FFF), dark premium backdrop. Camera: ${inferCameraSpecs(request, 'image').focalLength}, ${inferCameraSpecs(request, 'image').aperture}, professional editorial lensing.`,
+          ? `${effectiveRequest.trim()} Render as a natural live-action studio portrait photo for ${inferredImageIntent.platform} ${inferredImageIntent.dimensions}. Real human skin texture, realistic face proportions, natural lighting, premium editorial photography, 85mm lens look, high-end DSLR quality, sharp focus, cinematic but realistic color grade. Integrate subtle cyan (#00F5FF) and violet (#BF5FFF) accents over a dark modern background. Not illustration, not cartoon, not CGI. ${inferredImageIntent.optimizationNotes}`
+          : `${effectiveRequest.trim()} ${inferredImageIntent.optimizationNotes} Integrate NexusAI brand accents: cyan (#00F5FF), violet (#BF5FFF), dark premium backdrop. Camera: ${inferCameraSpecs(effectiveRequest, 'image').focalLength}, ${inferCameraSpecs(effectiveRequest, 'image').aperture}, professional editorial lensing.`,
         negativePrompt: humanStudioRealism
           ? 'cartoon, anime, illustration, painting, cgi, doll face, plastic skin, stylized face, game art, comic style, extra fingers, distorted hands, deformed anatomy, lowres, blurry, watermark'
           : undefined,
@@ -444,16 +433,16 @@ export async function generateAgentImage(
         platform: inferredImageIntent.platform,
         messageHook: 'Premium visual that communicates the idea instantly and stops the scroll.',
         fallbackPrompts: {
-          primary: request.trim(),
-          fallback_stability: `${request.trim()}, photorealistic, professional editorial, dark futuristic environment, cyan and violet accent lighting, highly detailed, no text, no watermark`,
-          fallback_midjourney: `${request.trim()}, ultra realistic editorial photography, dark futuristic, cyan and violet accents, dramatic lighting, sharp focus --ar ${inferredImageIntent.aspectRatio === '9:16' ? '9:16' : inferredImageIntent.aspectRatio === '4:5' ? '4:5' : '16:9'} --stylize 100`,
-          fallback_replicate: `${request.trim()}, realistic photo, dark premium background, cyan violet highlights, sharp focus`,
+          primary: effectiveRequest.trim(),
+          fallback_stability: `${effectiveRequest.trim()}, photorealistic, professional editorial, dark futuristic environment, cyan and violet accent lighting, highly detailed, no text, no watermark`,
+          fallback_midjourney: `${effectiveRequest.trim()}, ultra realistic editorial photography, dark futuristic, cyan and violet accents, dramatic lighting, sharp focus --ar ${inferredImageIntent.aspectRatio === '9:16' ? '9:16' : inferredImageIntent.aspectRatio === '4:5' ? '4:5' : '16:9'} --stylize 100`,
+          fallback_replicate: `${effectiveRequest.trim()}, realistic photo, dark premium background, cyan violet highlights, sharp focus`,
         },
         brandFitCheck: 'Dark futuristic palette with cyan/violet accents and premium human-real output.',
         expectedPerformance: `${inferredImageIntent.platform}-optimized composition built for fast comprehension and high stop-scroll potential.`,
-        cameraSpecs: `${inferCameraSpecs(request, 'image').focalLength}, ${inferCameraSpecs(request, 'image').aperture}, shallow depth cinematic portrait package.`,
+        cameraSpecs: `${inferCameraSpecs(effectiveRequest, 'image').focalLength}, ${inferCameraSpecs(effectiveRequest, 'image').aperture}, shallow depth cinematic portrait package.`,
       }
-    : await buildMediaPrompt(request, 'image', options.preferredModel);
+    : await buildMediaPrompt(effectiveRequest, 'image', options.preferredModel);
   const generationStrategies: Array<{
     provider?: ImageProvider;
     qualityTier: 'netflix' | 'premium';
