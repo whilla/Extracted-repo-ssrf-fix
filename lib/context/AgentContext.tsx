@@ -6,7 +6,6 @@ import { universalChat, analyzeImage, getCurrentModel } from '@/lib/services/aiS
 import { saveChatMessage, loadChatHistory, loadBrandKit, generateId, clearChatHistory } from '@/lib/services/memoryService';
 import { 
   loadAgentMemory, 
-  saveAgentMemory,
   buildMemoryContext, 
   addContentIdea, 
   addUserFact, 
@@ -20,7 +19,6 @@ import {
   syncWithBrandKit,
   extractMemoryFromResponse,
   extractStructuredMemory,
-  type AgentMemory 
 } from '@/lib/services/agentMemoryService';
 import { buildSystemPrompt, INTENT_DETECTION_PROMPT, FILE_ANALYSIS_PROMPT } from '@/lib/constants/prompts';
 import { runGodModeAnalysis, quickIdeate, callCustomProvider, type GodModeResult } from '@/lib/services/godModeEngine';
@@ -53,7 +51,7 @@ import {
   updateGenerationMetadata,
 } from '@/lib/services/generationTrackerService';
 import { syncPostedEngagements } from '@/lib/services/engagementSyncService';
-import { normalizeIncomingMessage, detectExplicitMediaIntent, buildFallbackChatMessages, isExplicitExecutionRequest } from './agentBehavior.mjs';
+import { normalizeIncomingMessage, detectExplicitMediaIntent, buildFallbackChatMessages } from './agentBehavior.mjs';
 import { ensureAgentSkillsInstalled, getEnabledAgentSkills, buildAgentSkillContext } from '@/lib/services/agentSkillService';
 import { CHAT_MODEL_EVENT_NAME, setActiveChatModel, type ChatModelDetail } from '@/lib/services/providerControl';
 
@@ -74,8 +72,6 @@ const PROVIDER_CAPABILITY_CACHE_MS = 90_000;
 
 const AUTOMATION_START_PATTERN = /\b(start|run|launch|begin)\b.*\b(automation|autopilot|background|agent)\b/i;
 const AUTOMATION_STOP_PATTERN = /\b(stop|pause|halt|disable)\b.*\b(automation|autopilot|background|agent)\b/i;
-const WEAK_CONTENT_BRIEF_PATTERN = /^(create|make|generate|write)\s+(content|post|caption|image|video|reel|short|script)\b[.!?]*$/i;
-const GENERIC_IDEA_PATTERN = /\b(something|anything|whatever|random|any niche)\b/i;
 const SIMPLE_GREETING_PATTERN = /^(?:hi|hello|hey|yo|sup|what(?:'| i)?s up|good (?:morning|afternoon|evening))[\s!.?]*$/i;
 const FILE_ANALYSIS_CUE_PATTERN = /\b(analy[sz]e|review|read|extract|summari[sz]e|parse|transcribe|use this (?:pdf|file|document)|from this (?:pdf|file|document)|what(?:'| i)?s in (?:this|the) (?:pdf|file|document))\b/i;
 const DETAIL_HANDOFF_PATTERN = /\b(i(?:\s+am|'m)?\s+(?:going to|gonna)|i(?:'| a)?ll|let me|about to)\s+(?:give|share|send|provide)\b.*\b(detail|description|brief|profile|context|info)\b/i;
@@ -131,72 +127,6 @@ function extractIdeaHint(text: string): string | null {
     text,
     /(?:^|\b)(?:make|create|generate|write)\s+(?:a\s+|an\s+)?(?:post|content|caption|thread|script)\s+(?:about|on)\s+["']?(.{8,240}?)["']?(?:$|[.!?\n])/i
   );
-}
-
-function isWeakBrief(text: string): boolean {
-  const normalized = text.trim();
-  if (REWRITE_REQUEST_PATTERN.test(normalized)) return false;
-  if (normalized.length < 24) return true;
-  if (WEAK_CONTENT_BRIEF_PATTERN.test(normalized)) return true;
-  if (GENERIC_IDEA_PATTERN.test(normalized)) return true;
-  return false;
-}
-
-function resolveLockedNiche(memory: AgentMemory): string {
-  const direct = (memory.niche || '').trim();
-  if (direct) return direct;
-
-  const candidate = memory.nicheDetails.find((detail) => {
-    const value = String(detail || '').trim();
-    if (!value) return false;
-    if (/^(tone|goal|content type|audience intent|character|reference|identity vector)\s*:/i.test(value)) return false;
-    if (value.length < 3 || value.length > 140) return false;
-    return true;
-  });
-  return candidate ? candidate.trim() : '';
-}
-
-function needsExecutionClarification(
-  intentType: AgentIntent['type'],
-  message: string,
-  hasFileContext: boolean,
-  memory: AgentMemory
-): { required: boolean; reasons: string[]; questions: string[] } {
-  if (!['generate_content', 'create_image', 'make_video'].includes(intentType)) {
-    return { required: false, reasons: [], questions: [] };
-  }
-
-  const reasons: string[] = [];
-  const questions: string[] = [];
-  const normalized = message.trim();
-  const nicheHint = extractNicheHint(normalized);
-  const ideaHint = extractIdeaHint(normalized);
-
-  const hasLockedNiche = Boolean(resolveLockedNiche(memory));
-  const hasSavedIdea = memory.contentIdeas.some((idea) => idea.status === 'new');
-  const sceneOrScriptRequest = /\b(scene|script|storyboard|shot list)\b/i.test(normalized);
-
-  if (!hasLockedNiche && !nicheHint) {
-    reasons.push('No locked niche is set yet');
-    questions.push('What niche should I lock before generating?');
-  }
-
-  const canProceedWithLockedContext = hasLockedNiche && (sceneOrScriptRequest || hasSavedIdea);
-
-  if (!hasFileContext && !ideaHint && !hasSavedIdea && isWeakBrief(normalized) && !canProceedWithLockedContext) {
-    reasons.push('The brief is too vague to execute safely');
-    questions.push('What is the exact topic, audience outcome, and platform for this piece?');
-  }
-
-  if (intentType === 'create_image' || intentType === 'make_video') {
-    const hasVisualSpecifics = /\b(subject|scene|style|camera|lighting|mood|platform|duration|shot)\b/i.test(normalized);
-    if (!hasFileContext && !hasVisualSpecifics && isWeakBrief(normalized)) {
-      reasons.push('Media direction is under-specified');
-      questions.push('What should appear on screen, what style/mood, and which platform format?');
-    }
-  }
-
-  return { required: reasons.length > 0, reasons, questions: questions.slice(0, 3) };
 }
 
 function isSimpleGreeting(message: string): boolean {
@@ -757,7 +687,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const detectIntent = async (message: string, hasFiles: boolean): Promise<AgentIntent> => {
     const trimmedMessage = message.trim();
     const lowerMessage = trimmedMessage.toLowerCase();
-    const explicitExecutionRequested = isExplicitExecutionRequest(trimmedMessage);
     const explicitGenerationPattern = /\b(create content|make content|write (a|an)? ?post|write captions?|create posts?|turn this into content|use this pdf|make posts? from|create reels?|create shorts?|generate content|caption for|script for|turn this into posts?|create a caption|make a reel|make a video script|create scenes?|generate scenes?|scene breakdown|storyboard)\b/;
     const softIdeaPattern = /\b(content idea|post idea)\b/;
     const nichePattern = /\b(niche|nich)\s*(is|:|=)\b/;
@@ -811,12 +740,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         const parsedIntent = parsed.intent || 'answer_question';
-        const shouldGateExecution =
-          !explicitExecutionRequested &&
-          ['generate_content', 'create_image', 'make_video'].includes(parsedIntent);
 
         return {
-          type: shouldGateExecution ? 'answer_question' : parsedIntent,
+          type: parsedIntent,
           confidence: parsed.confidence || 0.7,
           params: parsed.params || {},
         };
@@ -1680,46 +1606,6 @@ Rules:
       }
       if (isSceneRequest(normalizedContent)) {
         userPrompt = `${userPrompt}\n\n${UNIVERSAL_SCENE_DIRECTIVE}`;
-      }
-
-      const memorySnapshot = await loadAgentMemory();
-      const executionClarification = needsExecutionClarification(
-        intent.type,
-        normalizedContent,
-        Boolean(fileContext.trim()),
-        memorySnapshot
-      );
-
-      if (executionClarification.required) {
-        const clarificationReply = [
-          'I am pausing execution until these details are explicit:',
-          ...executionClarification.reasons.map((reason) => `- ${reason}`),
-          '',
-          'Reply with:',
-          ...executionClarification.questions.map((question, index) => `${index + 1}. ${question}`),
-        ].join('\n');
-
-        const approvedClarification = await enforceGovernorApproval(clarificationReply, {
-          request: normalizedContent,
-          brandKit,
-        });
-
-        const clarificationMessage: ChatMessage = {
-          id: generateId(),
-          role: 'assistant',
-          content: approvedClarification,
-          timestamp: new Date().toISOString(),
-        };
-
-        setState((s) => ({
-          ...s,
-          messages: [...s.messages, clarificationMessage],
-          isThinking: false,
-          currentTask: null,
-        }));
-
-        await saveChatMessage(clarificationMessage);
-        return;
       }
 
       if (intent.type === 'create_image') {
