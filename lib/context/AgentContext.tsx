@@ -853,8 +853,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     const lowerMessage = trimmedMessage.toLowerCase();
     const directVideoPattern = /\b(generate|create|make|produce|render|build)\b[\s\S]{0,40}\b(video|clip|reel|shorts?|animation|short film)\b/i;
     const directImagePattern = /\b(generate|create|make|produce|render|build)\b[\s\S]{0,40}\b(image|photo|picture|thumbnail|illustration|poster)\b/i;
-    const scheduleQuestionPattern = /^\s*(how|what|why|when|where|which)\b/i;
+    const scheduleQuestionPattern = /^\s*(how|what|why|when|where|which|can|could|would|do|does|is|are|will)\b/i;
+    const scheduleMetaQuestionPattern = /\b(just a question|question only|do not schedule|don't schedule|dont schedule)\b/i;
     const scheduleCommandPattern = /\b(schedule|queue)\s+(it|this)\b/i;
+    const explicitScheduleExecutionPattern = /\b(schedule|queue|run)\b[\s\S]{0,24}\b(now|it|this|immediately|right now|please)\b/i;
     const explicitGenerationPattern = /\b(create content|make content|write (a|an)? ?post|write captions?|create posts?|turn this into content|use this pdf|make posts? from|create reels?|create shorts?|generate content|caption for|script for|turn this into posts?|create a caption|make a reel|make a video script|create scenes?|generate scenes?|scene breakdown|storyboard)\b/;
     const softIdeaPattern = /\b(content idea|post idea)\b/;
     const nichePattern = /\b(niche|nich)\s*(is|:|=)\b/;
@@ -868,7 +870,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       return { type: 'create_image', confidence: 0.95, params: {} };
     }
 
-    if (SCHEDULE_REQUEST_PATTERN.test(trimmedMessage) && (!scheduleQuestionPattern.test(trimmedMessage) || scheduleCommandPattern.test(trimmedMessage))) {
+    if (SCHEDULE_REQUEST_PATTERN.test(trimmedMessage)) {
+      const looksQuestion = scheduleQuestionPattern.test(trimmedMessage) || trimmedMessage.includes('?');
+      const explicitExecution = scheduleCommandPattern.test(trimmedMessage) || explicitScheduleExecutionPattern.test(trimmedMessage);
+      const isMetaQuestion = scheduleMetaQuestionPattern.test(trimmedMessage);
+
+      if ((looksQuestion && !explicitExecution) || isMetaQuestion) {
+        return { type: 'answer_question', confidence: 0.94, params: { scheduleQuestion: true } };
+      }
+
       return { type: 'schedule_post', confidence: 0.95, params: {} };
     }
 
