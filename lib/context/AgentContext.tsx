@@ -84,6 +84,7 @@ const UNIVERSAL_PIPELINE_PATTERN = /\b(multimodal|text\s*\+\s*image|image\s*\+\s
 const FILE_CONTEXT_LIMIT = 12_000;
 const PAGE_BLOCK_PATTERN = /\[Page \d+\][\s\S]*?(?=\n\n\[Page \d+\]|$)/g;
 const NICHE_CLARIFICATION_PATTERN = /\bwhat niche should i lock before generating\??\b/i;
+const REWRITE_REQUEST_PATTERN = /\b(rewrite|regenerate|redo|rework|fix|improve)\b.*\b(script|scene|story|version|this)\b/i;
 const UNIVERSAL_SCENE_DIRECTIVE = [
   'Scene generation constraints:',
   '- Keep mystery over explanation; never explain rituals, lore, or magic systems.',
@@ -134,10 +135,25 @@ function extractIdeaHint(text: string): string | null {
 
 function isWeakBrief(text: string): boolean {
   const normalized = text.trim();
+  if (REWRITE_REQUEST_PATTERN.test(normalized)) return false;
   if (normalized.length < 24) return true;
   if (WEAK_CONTENT_BRIEF_PATTERN.test(normalized)) return true;
   if (GENERIC_IDEA_PATTERN.test(normalized)) return true;
   return false;
+}
+
+function resolveLockedNiche(memory: AgentMemory): string {
+  const direct = (memory.niche || '').trim();
+  if (direct) return direct;
+
+  const candidate = memory.nicheDetails.find((detail) => {
+    const value = String(detail || '').trim();
+    if (!value) return false;
+    if (/^(tone|goal|content type|audience intent|character|reference|identity vector)\s*:/i.test(value)) return false;
+    if (value.length < 3 || value.length > 140) return false;
+    return true;
+  });
+  return candidate ? candidate.trim() : '';
 }
 
 function needsExecutionClarification(
@@ -156,7 +172,7 @@ function needsExecutionClarification(
   const nicheHint = extractNicheHint(normalized);
   const ideaHint = extractIdeaHint(normalized);
 
-  const hasLockedNiche = Boolean((memory.niche || '').trim());
+  const hasLockedNiche = Boolean(resolveLockedNiche(memory));
   const hasSavedIdea = memory.contentIdeas.some((idea) => idea.status === 'new');
   const sceneOrScriptRequest = /\b(scene|script|storyboard|shot list)\b/i.test(normalized);
 
@@ -213,6 +229,18 @@ function isLikelyNicheReply(lastAssistantMessage: string | undefined, message: s
   if (/\b(niche|nich)\b/i.test(candidate)) return true;
   if (candidate.split(/\s+/).length <= 8) return true;
   return false;
+}
+
+function buildRewriteSourceFromHistory(messages: ChatMessage[]): string | null {
+  const assistantCandidates = [...messages]
+    .reverse()
+    .filter((message) => message.role === 'assistant' && message.content.trim().length > 60);
+
+  const scriptLike = assistantCandidates.find((message) =>
+    /\bscene\b|\bscript\b|Scene\s+\d+/i.test(message.content)
+  );
+  if (!scriptLike) return null;
+  return scriptLike.content.trim().slice(0, 3200);
 }
 
 function looksLikeCharacterDescriptor(message: string): boolean {
@@ -1901,10 +1929,16 @@ Rules:
         setState(s => ({ ...s, currentTask: 'Generating content...' }));
         activeModel = await resolveExecutionModel('creative');
         const platforms = await inferPlatformsFromContext(normalizedContent);
+        const rewriteSource = REWRITE_REQUEST_PATTERN.test(normalizedContent)
+          ? buildRewriteSourceFromHistory(state.messages)
+          : null;
+        const effectiveIdea = rewriteSource
+          ? `${normalizedContent}\n\nRewrite source:\n${rewriteSource}`
+          : normalizedContent;
         const tracked = await trackGenerationStart({
           source: 'agent',
           taskType: 'generate_content',
-          idea: normalizedContent,
+          idea: effectiveIdea,
           platforms,
         });
         trackedGenerationId = tracked.record.id;
@@ -1914,7 +1948,7 @@ Rules:
 
         if (shouldRunUniversalPipeline) {
           const pipeline = await runUniversalContentPipeline({
-            prompt: fileContext ? `${normalizedContent}\n\nSource material:\n${fileContext}` : normalizedContent,
+            prompt: fileContext ? `${effectiveIdea}\n\nSource material:\n${fileContext}` : effectiveIdea,
             platforms,
             includeImage: true,
             includeVideo: true,
@@ -1973,7 +2007,7 @@ Rules:
           );
         } else {
           const generated = await generateContent({
-            idea: fileContext ? `${normalizedContent}\n\nSource material:\n${fileContext}` : normalizedContent,
+            idea: fileContext ? `${effectiveIdea}\n\nSource material:\n${fileContext}` : effectiveIdea,
             platforms,
             customInstructions: [
               'Do the work directly. Return finished, platform-native social content instead of advice about what to create.',
