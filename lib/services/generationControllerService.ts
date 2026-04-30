@@ -1,7 +1,7 @@
 'use client';
 
 import { getRecommendedModel, loadProviderCapabilities } from './providerCapabilityService';
-import type { VideoProvider } from './videoGenerationService';
+import { hasConfiguredOpenLtxEndpoint, type VideoProvider } from './videoGenerationService';
 import type { ImageProvider } from './imageGenerationService';
 
 export interface GenerationRoute {
@@ -13,6 +13,7 @@ export interface GenerationRoute {
 
 export async function resolveGenerationRoute(): Promise<GenerationRoute> {
   const capabilities = await loadProviderCapabilities();
+  const hasOpenVideo = await hasConfiguredOpenLtxEndpoint();
   const creative = getRecommendedModel('creative', capabilities);
   const analysis = getRecommendedModel('analysis', capabilities);
 
@@ -30,6 +31,6 @@ export async function resolveGenerationRoute(): Promise<GenerationRoute> {
     textModel,
     fallbackModel,
     imageProvider: hasImageProvider ? 'stability' : 'puter',
-    videoProvider: hasFalVideo ? 'ltx23' : 'ltx23-open',
+    videoProvider: hasFalVideo ? 'ltx23' : hasOpenVideo ? 'ltx23-open' : 'ltx23',
   };
 }

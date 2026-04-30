@@ -1,7 +1,7 @@
 'use client';
 
-import { kvGet } from './puterService';
-import { sanitizeApiKey } from './providerCredentialUtils';
+import { kvGet } from './puterService.ts';
+import { sanitizeApiKey } from './providerCredentialUtils.ts';
 
 export type VideoProvider = 'ltx23' | 'ltx23-open';
 
@@ -9,6 +9,7 @@ export interface VideoGenerationOptions {
   prompt: string;
   negativePrompt?: string;
   provider?: VideoProvider;
+  allowProviderFallback?: boolean;
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5';
   durationSeconds?: number;
   seed?: number;
@@ -30,7 +31,103 @@ export interface GeneratedVideo {
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1500;
 const DEFAULT_LTX_MODEL = 'fal-ai/ltx-video-v2.3';
-const DEFAULT_LTX_OPEN_ENDPOINT = 'http://127.0.0.1:8000/generate';
+
+function normalizeConfiguredValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function isLoopbackHost(hostname: string): boolean {
+  const normalized = hostname.replace(/^\[|\]$/g, '').trim().toLowerCase();
+  return normalized === '127.0.0.1' || normalized === 'localhost' || normalized === '0.0.0.0' || normalized === '::1';
+}
+
+function isLoopbackEndpoint(endpoint: string): boolean {
+  try {
+    return isLoopbackHost(new URL(endpoint).hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function isReachableOpenLtxEndpoint(
+  endpoint: string,
+  appHostname = typeof window !== 'undefined' ? window.location.hostname : ''
+): boolean {
+  const trimmed = endpoint.trim();
+  if (!trimmed) return false;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+
+    if (!isLoopbackHost(parsed.hostname)) {
+      return true;
+    }
+
+    return isLoopbackHost(appHostname);
+  } catch {
+    return false;
+  }
+}
+
+export async function getConfiguredOpenLtxEndpoint(): Promise<string | null> {
+  const configuredEndpoint = normalizeConfiguredValue(
+    (await kvGet('ltx_open_endpoint')) || process.env.NEXT_PUBLIC_LTX_OPEN_ENDPOINT
+  );
+
+  if (!configuredEndpoint) {
+    return null;
+  }
+
+  return isReachableOpenLtxEndpoint(configuredEndpoint) ? configuredEndpoint : null;
+}
+
+export async function hasConfiguredOpenLtxEndpoint(): Promise<boolean> {
+  return Boolean(await getConfiguredOpenLtxEndpoint());
+}
+
+export function buildVideoProviderAttemptOrder(
+  preferredProvider: VideoProvider,
+  allowProviderFallback = true,
+  openEndpointConfigured = false
+): VideoProvider[] {
+  if (!allowProviderFallback) {
+    return [preferredProvider];
+  }
+
+  if (preferredProvider === 'ltx23-open') {
+    return ['ltx23-open', 'ltx23'];
+  }
+
+  return openEndpointConfigured ? ['ltx23', 'ltx23-open'] : ['ltx23'];
+}
+
+function scoreVideoError(error: Error): number {
+  const message = error.message.trim().toLowerCase();
+  if (!message || message === 'failed to fetch') {
+    return 0;
+  }
+
+  if (message.includes('not configured') || message.includes('reachable endpoint') || message.includes('localhost')) {
+    return 3;
+  }
+
+  if (/\b(?:4|5)\d{2}\b/.test(message) || message.includes('timed out') || message.includes('did not return')) {
+    return 2;
+  }
+
+  return 1;
+}
+
+export function pickMoreRelevantVideoError(currentError: Error | null, candidateError: Error): Error {
+  if (!currentError) {
+    return candidateError;
+  }
+
+  return scoreVideoError(candidateError) >= scoreVideoError(currentError) ? candidateError : currentError;
+}
 
 interface VideoPayloadShape {
   video?: unknown;
@@ -316,9 +413,23 @@ async function generateWithLtx23(options: VideoGenerationOptions): Promise<Gener
 }
 
 async function generateWithOpenLtx23(options: VideoGenerationOptions): Promise<GeneratedVideo> {
-  const configuredEndpoint =
-    await kvGet('ltx_open_endpoint') || process.env.NEXT_PUBLIC_LTX_OPEN_ENDPOINT;
-  const endpoint = String(configuredEndpoint || DEFAULT_LTX_OPEN_ENDPOINT).trim();
+  const rawConfiguredEndpoint = normalizeConfiguredValue(
+    (await kvGet('ltx_open_endpoint')) || process.env.NEXT_PUBLIC_LTX_OPEN_ENDPOINT
+  );
+
+  if (!rawConfiguredEndpoint) {
+    throw new Error('LTX 2.3 Open is not configured. Add a reachable endpoint in Settings.');
+  }
+
+  if (!isReachableOpenLtxEndpoint(rawConfiguredEndpoint)) {
+    if (isLoopbackEndpoint(rawConfiguredEndpoint)) {
+      throw new Error('LTX 2.3 Open points at localhost. Run the app locally or save a reachable HTTPS endpoint in Settings.');
+    }
+
+    throw new Error('LTX 2.3 Open is not configured with a reachable endpoint. Update it in Settings.');
+  }
+
+  const endpoint = rawConfiguredEndpoint;
 
   const {
     aspectRatio = '16:9',
@@ -384,9 +495,12 @@ export async function generateVideo(options: VideoGenerationOptions): Promise<Ge
     durationSeconds: Math.min(Math.max(options.durationSeconds || 8, 4), 120),
   };
 
-  const attempts: VideoProvider[] = cleanOptions.provider === 'ltx23-open'
-    ? ['ltx23-open', 'ltx23']
-    : ['ltx23', 'ltx23-open'];
+  const openEndpointConfigured = await hasConfiguredOpenLtxEndpoint();
+  const attempts = buildVideoProviderAttemptOrder(
+    cleanOptions.provider || 'ltx23',
+    cleanOptions.allowProviderFallback !== false,
+    openEndpointConfigured
+  );
 
   let lastError: Error | null = null;
 
@@ -400,7 +514,7 @@ export async function generateVideo(options: VideoGenerationOptions): Promise<Ge
           return await generateWithLtx23({ ...cleanOptions, provider });
       }
     } catch (error) {
-      lastError = error as Error;
+      lastError = pickMoreRelevantVideoError(lastError, error as Error);
       console.warn(`Video generation failed on ${provider}, trying fallback`, lastError);
     }
   }

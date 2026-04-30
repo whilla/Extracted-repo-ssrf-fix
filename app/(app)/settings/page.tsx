@@ -158,7 +158,7 @@ export default function SettingsPage() {
     ideogramKey: '',
     falKey: '',
     ltxEndpoint: 'fal-ai/ltx-video-v2.3',
-    ltxOpenEndpoint: 'http://127.0.0.1:8000/generate',
+    ltxOpenEndpoint: '',
   });
   const [saving, setSaving] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -259,7 +259,7 @@ export default function SettingsPage() {
           ideogramKey: ideogramKey || '',
           falKey: falKey || '',
           ltxEndpoint: ltxEndpoint || 'fal-ai/ltx-video-v2.3',
-          ltxOpenEndpoint: ltxOpenEndpoint || 'http://127.0.0.1:8000/generate',
+          ltxOpenEndpoint: ltxOpenEndpoint || '',
         });
       } catch (error) {
         console.error('Settings load error:', error);

@@ -575,6 +575,7 @@ export async function generateAgentVideo(
           prompt: plan.prompt,
           negativePrompt: plan.negativePrompt,
           provider,
+          allowProviderFallback: false,
           aspectRatio: plan.aspectRatio,
           durationSeconds: plan.durationSeconds,
           cameraAngle: plan.cameraAngle,
