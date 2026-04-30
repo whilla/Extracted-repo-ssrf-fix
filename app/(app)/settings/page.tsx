@@ -7,6 +7,7 @@ import { NeonButton } from '@/components/nexus/NeonButton';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { kvDelete, kvGet, kvSet } from '@/lib/services/puterService';
 import { saveProviderAccount, verifyProviderKey } from '@/lib/services/accountService';
+import { sanitizeApiKey, sanitizeStoredValueForKey } from '@/lib/services/providerCredentialUtils';
 import { setActiveChatModel } from '@/lib/services/providerControl';
 import {
   Brain,
@@ -272,7 +273,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       const syncStoredValue = (key: string, value: string) => {
-        const trimmed = value.trim();
+        const trimmed = sanitizeStoredValueForKey(key, value);
         return trimmed ? kvSet(key, trimmed) : kvDelete(key);
       };
 
@@ -339,14 +340,15 @@ export default function SettingsPage() {
   };
 
   const validateAndPersistProvider = async (providerId: string, apiKey: string) => {
-    if (!apiKey.trim()) return;
+    const sanitizedApiKey = sanitizeApiKey(apiKey);
+    if (!sanitizedApiKey) return;
 
     setProviderValidation(prev => ({
       ...prev,
       [providerId]: { status: 'checking', message: 'Checking key...' },
     }));
 
-    const verification = await verifyProviderKey(providerId, apiKey.trim());
+    const verification = await verifyProviderKey(providerId, sanitizedApiKey);
     if (!verification.valid) {
       setProviderValidation(prev => ({
         ...prev,
@@ -357,7 +359,7 @@ export default function SettingsPage() {
 
     await saveProviderAccount({
       provider: providerId,
-      apiKey: apiKey.trim(),
+      apiKey: sanitizedApiKey,
       status: 'active',
       tier: 'free',
       lastVerified: new Date().toISOString(),

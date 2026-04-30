@@ -3,12 +3,15 @@ import type { Platform, ContentDraft } from '@/lib/types';
 import { kvGet } from './puterService';
 import { validateContent, makeGovernorDecision, evaluateMoodApproval } from './governorService';
 import { logPostingEvent, type GenerationSource } from './generationTrackerService';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 const AYRSHARE_API_BASE = 'https://api.ayrshare.com/api';
 
 // Get Ayrshare API key from storage
 async function getAyrshareKey(): Promise<string | null> {
-  return kvGet('ayrshare_key');
+  const raw = await kvGet('ayrshare_key');
+  const sanitized = sanitizeApiKey(raw);
+  return sanitized || null;
 }
 
 // Check if Ayrshare is configured

@@ -1,6 +1,7 @@
 'use client';
 
 import { kvGet } from './puterService';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 export type VideoProvider = 'ltx23' | 'ltx23-open';
 
@@ -250,7 +251,7 @@ async function pollFalJob(statusUrl: string, apiKey: string): Promise<GeneratedV
 }
 
 async function generateWithLtx23(options: VideoGenerationOptions): Promise<GeneratedVideo> {
-  const apiKey = await kvGet('fal_key') || await kvGet('ltx_key');
+  const apiKey = sanitizeApiKey((await kvGet('fal_key')) || (await kvGet('ltx_key')));
   if (!apiKey) {
     throw new Error('LTX video provider is not configured. Add a Fal/LTX API key in Settings.');
   }

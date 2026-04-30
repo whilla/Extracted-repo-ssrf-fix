@@ -2,6 +2,7 @@
 import { kvGet } from './puterService';
 import { callCustomProvider } from './godModeEngine';
 import type { AIMessage } from '@/lib/types';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 // ============================================
 // MUSIC MOOD ANALYSIS
@@ -94,7 +95,7 @@ export async function generateMubertMusic(
   mood: MusicMood,
   duration = 30
 ): Promise<string | null> {
-  const apiKey = await kvGet('mubert_key');
+  const apiKey = sanitizeApiKey(await kvGet('mubert_key'));
   if (!apiKey) return null;
 
   try {
@@ -135,7 +136,7 @@ export async function generateSunoMusic(
   mood: MusicMood,
   lyrics?: string
 ): Promise<string | null> {
-  const apiKey = await kvGet('suno_key');
+  const apiKey = sanitizeApiKey(await kvGet('suno_key'));
   if (!apiKey) return null;
 
   try {

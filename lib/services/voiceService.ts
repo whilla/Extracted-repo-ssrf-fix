@@ -1,5 +1,6 @@
 // Voice Service - ElevenLabs + Web Speech API fallback
 import { kvGet } from './puterService';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1';
 
@@ -18,8 +19,8 @@ export const ELEVENLABS_VOICES = [
 
 // Check if ElevenLabs is configured
 export async function isElevenLabsConfigured(): Promise<boolean> {
-  const key = await kvGet('elevenlabs_key');
-  return !!key && key.length > 10;
+  const key = sanitizeApiKey(await kvGet('elevenlabs_key'));
+  return key.length > 10;
 }
 
 // Get available voices
@@ -28,7 +29,7 @@ export async function getAvailableVoices(): Promise<Array<{ id: string; name: st
   
   if (hasElevenlabs) {
     try {
-      const key = await kvGet('elevenlabs_key');
+      const key = sanitizeApiKey(await kvGet('elevenlabs_key'));
       const response = await fetch(`${ELEVENLABS_API_BASE}/voices`, {
         headers: { 'xi-api-key': key! },
       });
@@ -83,7 +84,7 @@ async function generateElevenLabsSpeech(
     similarityBoost?: number;
   } = {}
 ): Promise<Blob> {
-  const key = await kvGet('elevenlabs_key');
+  const key = sanitizeApiKey(await kvGet('elevenlabs_key'));
   if (!key) {
     throw new Error('ElevenLabs API key not configured');
   }

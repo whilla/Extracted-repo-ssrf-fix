@@ -9,6 +9,7 @@ import { LoadingPulse } from '@/components/nexus/LoadingPulse';
 import { saveBrandKit, setOnboardingComplete } from '@/lib/services/memoryService';
 import { kvSet } from '@/lib/services/puterService';
 import { setActiveChatModel } from '@/lib/services/providerControl';
+import { sanitizeApiKey } from '@/lib/services/providerCredentialUtils';
 import type { BrandKit, Platform } from '@/lib/types';
 import { 
   Check, 
@@ -226,7 +227,10 @@ function OnboardingContent() {
       
       // Save API keys if provided
       if (ayrshareKey) {
-        await kvSet('ayrshare_key', ayrshareKey);
+        const sanitizedAyrshareKey = sanitizeApiKey(ayrshareKey);
+        if (sanitizedAyrshareKey) {
+          await kvSet('ayrshare_key', sanitizedAyrshareKey);
+        }
       }
       
       // Save selected model

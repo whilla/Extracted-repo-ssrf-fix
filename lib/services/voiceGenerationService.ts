@@ -1,6 +1,7 @@
 'use client';
 
 import { kvGet, kvSet } from './puterService';
+import { hasConfiguredSecret, sanitizeApiKey, sanitizeStoredValueForKey } from './providerCredentialUtils';
 
 export type VoiceProvider = 'elevenlabs' | 'speechify' | 'playht' | 'resemble' | 'google' | 'azure' | 'web-speech' | 'piper' | 'coqui';
 
@@ -140,7 +141,7 @@ async function generateGoogleTranslateTTS(text: string, language = 'en'): Promis
  * Generate speech using Speechify Free Tier (requires free account)
  */
 async function generateSpeechify(text: string, voiceId = 'adam'): Promise<string> {
-  const apiKey = await kvGet('speechify_key');
+  const apiKey = sanitizeApiKey(await kvGet('speechify_key'));
   
   if (!apiKey || apiKey.length < 10) {
     throw new Error('Speechify API key not configured. Get a free key at speechify.com');
@@ -187,8 +188,8 @@ async function generateSpeechify(text: string, voiceId = 'adam'): Promise<string
  * Generate speech using Play.ht (requires free API key)
  */
 async function generatePlayHT(text: string, voiceId = 's3://voice-cloning-zero-shot/775ae416-49bb-4fb6-bd45-740f205d20a1/jennifer/manifest.json'): Promise<string> {
-  const apiKey = await kvGet('playht_key');
-  const userId = await kvGet('playht_user_id');
+  const apiKey = sanitizeApiKey(await kvGet('playht_key'));
+  const userId = sanitizeStoredValueForKey('playht_user_id', await kvGet('playht_user_id'));
   
   if (!apiKey || !userId) {
     throw new Error('Play.ht API key not configured. Get a free key at play.ht');
@@ -237,7 +238,7 @@ async function generatePlayHT(text: string, voiceId = 's3://voice-cloning-zero-s
  * Generate speech using Resemble AI (requires API key)
  */
 async function generateResembleAI(text: string, voiceUuid = 'd1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1'): Promise<string> {
-  const apiKey = await kvGet('resemble_key');
+  const apiKey = sanitizeApiKey(await kvGet('resemble_key'));
   
   if (!apiKey) {
     throw new Error('Resemble AI API key not configured. Get a free key at resemble.ai');
@@ -287,7 +288,7 @@ async function generateResembleAI(text: string, voiceUuid = 'd1d1d1d1-d1d1-d1d1-
  * Generate speech using ElevenLabs (requires API key)
  */
 async function generateElevenLabs(text: string, voiceId = '21m00Tcm4TlvDq8ikWAM'): Promise<string> {
-  const apiKey = await kvGet('elevenlabs_key');
+  const apiKey = sanitizeApiKey(await kvGet('elevenlabs_key'));
   
   if (!apiKey || apiKey.length < 10) {
     throw new Error('ElevenLabs API key not configured. Get a free key at elevenlabs.io');
@@ -338,8 +339,8 @@ async function generateElevenLabs(text: string, voiceId = '21m00Tcm4TlvDq8ikWAM'
  */
 async function generateAzureTTS(text: string, voiceId = 'en-US-AriaNeural'): Promise<string> {
   try {
-    const apiKey = await kvGet('azure_speech_key');
-    const region = await kvGet('azure_speech_region') || 'eastus';
+    const apiKey = sanitizeApiKey(await kvGet('azure_speech_key'));
+    const region = sanitizeStoredValueForKey('azure_speech_region', await kvGet('azure_speech_region')) || 'eastus';
     
     if (!apiKey) {
       throw new Error('Azure Speech API key not configured');
@@ -404,11 +405,11 @@ export async function generateVoice(options: VoiceOptions): Promise<string> {
 
   // Auto-select best available provider (in order of quality)
   const providerAttempts: Array<{ check: () => Promise<boolean>; generate: () => Promise<string>; name: string }> = [
-    { name: 'ElevenLabs', check: async () => !!(await kvGet('elevenlabs_key')), generate: () => generateElevenLabs(text, voiceId) },
-    { name: 'Play.ht', check: async () => !!(await kvGet('playht_key')), generate: () => generatePlayHT(text, voiceId) },
-    { name: 'Speechify', check: async () => !!(await kvGet('speechify_key')), generate: () => generateSpeechify(text, voiceId) },
-    { name: 'Resemble', check: async () => !!(await kvGet('resemble_key')), generate: () => generateResembleAI(text, voiceId) },
-    { name: 'Azure', check: async () => !!(await kvGet('azure_speech_key')), generate: () => generateAzureTTS(text, voiceId) },
+    { name: 'ElevenLabs', check: async () => hasConfiguredSecret(await kvGet('elevenlabs_key')), generate: () => generateElevenLabs(text, voiceId) },
+    { name: 'Play.ht', check: async () => hasConfiguredSecret(await kvGet('playht_key')) && !!sanitizeStoredValueForKey('playht_user_id', await kvGet('playht_user_id')), generate: () => generatePlayHT(text, voiceId) },
+    { name: 'Speechify', check: async () => hasConfiguredSecret(await kvGet('speechify_key')), generate: () => generateSpeechify(text, voiceId) },
+    { name: 'Resemble', check: async () => hasConfiguredSecret(await kvGet('resemble_key')), generate: () => generateResembleAI(text, voiceId) },
+    { name: 'Azure', check: async () => hasConfiguredSecret(await kvGet('azure_speech_key')), generate: () => generateAzureTTS(text, voiceId) },
     { name: 'Web Speech', check: async () => true, generate: () => generateWebSpeech(text, { speed, pitch }) },
   ];
 
@@ -464,17 +465,17 @@ export async function getAvailableVoiceModels(): Promise<VoiceModel[]> {
   const available = [...FREE_VOICE_MODELS];
 
   // Check which premium providers are configured
-  const elevenKey = await kvGet('elevenlabs_key');
+  const elevenKey = sanitizeApiKey(await kvGet('elevenlabs_key'));
   if (elevenKey) {
     available.push(...PREMIUM_VOICE_MODELS.filter(m => m.provider === 'elevenlabs'));
   }
 
-  const azureKey = await kvGet('azure_speech_key');
+  const azureKey = sanitizeApiKey(await kvGet('azure_speech_key'));
   if (azureKey) {
     available.push(...PREMIUM_VOICE_MODELS.filter(m => m.provider === 'azure'));
   }
 
-  const speechifyKey = await kvGet('speechify_key');
+  const speechifyKey = sanitizeApiKey(await kvGet('speechify_key'));
   if (speechifyKey) {
     available.push(...FREE_VOICE_MODELS.filter(m => m.provider === 'speechify'));
   }
@@ -505,12 +506,12 @@ export async function configureVoiceProvider(
   const keyName = keyMap[provider];
   if (!keyName) return; // web-speech doesn't need config
 
-  await kvSet(keyName, apiKey);
+  await kvSet(keyName, sanitizeApiKey(apiKey));
 
   // Save additional config if provided
   if (additionalConfig) {
     for (const [key, value] of Object.entries(additionalConfig)) {
-      await kvSet(`${provider}_${key}`, value);
+      await kvSet(`${provider}_${key}`, sanitizeStoredValueForKey(`${provider}_${key}`, value));
     }
   }
 }

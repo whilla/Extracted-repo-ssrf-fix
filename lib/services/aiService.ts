@@ -5,6 +5,7 @@ import { kvGet } from './puterService';
 import { buildMemoryContext } from './agentMemoryService';
 import { waitForPuter } from './puterService';
 import { buildFallbackProviders, type RoutedProvider } from './providerFallback';
+import { sanitizeApiKey } from './providerCredentialUtils';
 import {
   dispatchProviderEvent,
   isPuterFallbackDisabled,
@@ -77,8 +78,9 @@ function sleep(ms: number): Promise<void> {
 async function getFirstConfiguredValue(keys: string[]): Promise<string | null> {
   for (const key of keys) {
     const value = await kvGet(key);
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim();
+    const sanitized = sanitizeApiKey(value);
+    if (sanitized.length > 0) {
+      return sanitized;
     }
   }
   return null;

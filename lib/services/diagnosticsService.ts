@@ -7,6 +7,7 @@ import { kvGet } from './puterService';
 import { isPuterAvailable } from './puterService';
 import { getWorkerHealthSummary } from './workerHeartbeatService';
 import { getGenerationPerformanceSummary } from './generationTrackerService';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 export interface DiagnosticResult {
   service: string;
@@ -82,7 +83,7 @@ async function testPuter(): Promise<{ success: boolean; latency: number; details
 // Test Ayrshare connection
 async function testAyrshare(): Promise<{ success: boolean; latency: number; details?: Record<string, unknown> }> {
   const start = Date.now();
-  const apiKey = await kvGet('ayrshare_key');
+  const apiKey = sanitizeApiKey(await kvGet('ayrshare_key'));
   
   if (!apiKey) {
     return { success: false, latency: 0, details: { configured: false } };
@@ -121,7 +122,7 @@ async function testAyrshare(): Promise<{ success: boolean; latency: number; deta
 // Test Groq connection
 async function testGroq(): Promise<{ success: boolean; latency: number; details?: Record<string, unknown> }> {
   const start = Date.now();
-  const apiKey = await kvGet('groq_key');
+  const apiKey = sanitizeApiKey(await kvGet('groq_key'));
   
   if (!apiKey) {
     return { success: false, latency: 0, details: { configured: false } };
@@ -158,7 +159,7 @@ async function testGroq(): Promise<{ success: boolean; latency: number; details?
 // Test OpenRouter connection
 async function testOpenRouter(): Promise<{ success: boolean; latency: number; details?: Record<string, unknown> }> {
   const start = Date.now();
-  const apiKey = await kvGet('openrouter_key');
+  const apiKey = sanitizeApiKey(await kvGet('openrouter_key'));
   
   if (!apiKey) {
     return { success: false, latency: 0, details: { configured: false } };
@@ -231,7 +232,7 @@ async function testOllama(): Promise<{ success: boolean; latency: number; detail
 // Test ElevenLabs connection
 async function testElevenLabs(): Promise<{ success: boolean; latency: number; details?: Record<string, unknown> }> {
   const start = Date.now();
-  const apiKey = await kvGet('elevenlabs_key');
+  const apiKey = sanitizeApiKey(await kvGet('elevenlabs_key'));
   
   if (!apiKey) {
     return { success: false, latency: 0, details: { configured: false } };
@@ -406,11 +407,12 @@ export async function quickHealthCheck(): Promise<{
   }
 
   // Check if at least one AI provider is available
-  const groqKey = await kvGet('groq_key');
-  const openrouterKey = await kvGet('openrouter_key');
+  const groqKey = sanitizeApiKey(await kvGet('groq_key'));
+  const openrouterKey = sanitizeApiKey(await kvGet('openrouter_key'));
+  const geminiKey = sanitizeApiKey(await kvGet('gemini_key'));
   const puterAvailable = isPuterAvailable();
 
-  if (!puterAvailable && !groqKey && !openrouterKey) {
+  if (!puterAvailable && !groqKey && !openrouterKey && !geminiKey) {
     issues.push('No AI providers configured');
   }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { kvGet, kvSet } from './puterService';
+import { hasConfiguredSecret, sanitizeApiKey } from './providerCredentialUtils';
 
 export type MusicProvider = 'suno' | 'musicfy' | 'dadabots' | 'jukebox' | 'amper' | 'soundraw' | 'beatoven' | 'aiva';
 
@@ -124,7 +125,7 @@ async function generateWithDadabots(options: MusicGenerationOptions): Promise<st
  */
 async function generateWithJukebox(options: MusicGenerationOptions): Promise<string> {
   try {
-    const apiKey = await kvGet('jukebox_key');
+    const apiKey = sanitizeApiKey(await kvGet('jukebox_key'));
     if (!apiKey) {
       throw new Error('Jukebox API key not configured. Get a free key at huggingface.co');
     }
@@ -167,7 +168,7 @@ async function generateWithJukebox(options: MusicGenerationOptions): Promise<str
  */
 async function generateWithAmper(options: MusicGenerationOptions): Promise<string> {
   try {
-    const apiKey = await kvGet('amper_key');
+    const apiKey = sanitizeApiKey(await kvGet('amper_key'));
     if (!apiKey) {
       throw new Error('Amper Music API key not configured. Get a free trial at ampermusic.com');
     }
@@ -209,7 +210,7 @@ async function generateWithAmper(options: MusicGenerationOptions): Promise<strin
  */
 async function generateWithSoundraw(options: MusicGenerationOptions): Promise<string> {
   try {
-    const apiKey = await kvGet('soundraw_key');
+    const apiKey = sanitizeApiKey(await kvGet('soundraw_key'));
     if (!apiKey) {
       throw new Error('SoundRaw API key not configured. Get a free key at soundraw.io');
     }
@@ -250,7 +251,7 @@ async function generateWithSoundraw(options: MusicGenerationOptions): Promise<st
  * Generate music using Suno AI (Premium, requires API key)
  */
 async function generateWithSuno(options: MusicGenerationOptions): Promise<string> {
-  const apiKey = await kvGet('suno_key');
+  const apiKey = sanitizeApiKey(await kvGet('suno_key'));
   if (!apiKey || apiKey.length < 10) {
     throw new Error('Suno AI API key not configured. Get a key at suno.ai');
   }
@@ -333,19 +334,19 @@ export async function generateMusic(options: MusicGenerationOptions): Promise<st
   // Auto-select best available provider with graceful fallback
   const providerAttempts: Array<{ check: () => Promise<boolean>; generate: () => Promise<string> }> = [
     { 
-      check: async () => !!(await kvGet('suno_key')), 
+      check: async () => hasConfiguredSecret(await kvGet('suno_key')),
       generate: () => generateWithSuno(safeOptions) 
     },
     { 
-      check: async () => !!(await kvGet('amper_key')), 
+      check: async () => hasConfiguredSecret(await kvGet('amper_key')),
       generate: () => generateWithAmper(safeOptions) 
     },
     { 
-      check: async () => !!(await kvGet('soundraw_key')), 
+      check: async () => hasConfiguredSecret(await kvGet('soundraw_key')),
       generate: () => generateWithSoundraw(safeOptions) 
     },
     { 
-      check: async () => !!(await kvGet('jukebox_key')), 
+      check: async () => hasConfiguredSecret(await kvGet('jukebox_key')),
       generate: () => generateWithJukebox(safeOptions) 
     },
   ];
@@ -371,22 +372,22 @@ export async function getAvailableMusicModels(): Promise<MusicModel[]> {
   const available = MUSIC_MODELS.filter(m => !m.requiresAuth);
 
   // Check which premium providers are configured
-  const sunoKey = await kvGet('suno_key');
+  const sunoKey = sanitizeApiKey(await kvGet('suno_key'));
   if (sunoKey) {
     available.push(MUSIC_MODELS.find(m => m.provider === 'suno')!);
   }
 
-  const amperKey = await kvGet('amper_key');
+  const amperKey = sanitizeApiKey(await kvGet('amper_key'));
   if (amperKey) {
     available.push(MUSIC_MODELS.find(m => m.provider === 'amper')!);
   }
 
-  const soundrawKey = await kvGet('soundraw_key');
+  const soundrawKey = sanitizeApiKey(await kvGet('soundraw_key'));
   if (soundrawKey) {
     available.push(MUSIC_MODELS.find(m => m.provider === 'soundraw')!);
   }
 
-  const jukeboxKey = await kvGet('jukebox_key');
+  const jukeboxKey = sanitizeApiKey(await kvGet('jukebox_key'));
   if (jukeboxKey) {
     available.push(MUSIC_MODELS.find(m => m.provider === 'jukebox')!);
   }
@@ -414,7 +415,7 @@ export async function configureMusicProvider(
 
   const keyName = keyMap[provider];
   if (keyName) {
-    await kvSet(keyName, apiKey);
+    await kvSet(keyName, sanitizeApiKey(apiKey));
   }
 }
 

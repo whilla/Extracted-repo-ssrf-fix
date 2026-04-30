@@ -9,14 +9,15 @@
     "build": "sh ./scripts/run-next.sh build --webpack",
     "start": "sh ./scripts/run-next.sh start",
     "lint": "eslint app components hooks lib types *.mjs",
-    "test": "pnpm run test:agent && pnpm run test:behavior-upgrade && pnpm run test:retry && pnpm run test:puter-service && pnpm run test:orchestration && pnpm run test:ai-routing && pnpm run test:media-assets",
+    "test": "pnpm run test:agent && pnpm run test:behavior-upgrade && pnpm run test:retry && pnpm run test:puter-service && pnpm run test:orchestration && pnpm run test:ai-routing && pnpm run test:media-assets && pnpm run test:provider-credentials",
     "test:agent": "node --eval \"import('./tests/agent-behavior.test.mjs')\"",
     "test:behavior-upgrade": "node --eval \"import('./tests/behavior-upgrade.test.mjs')\"",
     "test:retry": "node --eval \"import('./tests/retry.test.mjs')\"",
     "test:puter-service": "node --eval \"import('./tests/puter-service.test.mjs')\"",
     "test:orchestration": "node --eval \"import('./tests/orchestration-pipeline.test.mjs')\"",
     "test:ai-routing": "node --eval \"import('./tests/ai-routing.test.mjs')\"",
-    "test:media-assets": "node --eval \"import('./tests/media-asset-primitives.test.mjs')\""
+    "test:media-assets": "node --eval \"import('./tests/media-asset-primitives.test.mjs')\"",
+    "test:provider-credentials": "node --eval \"import('./tests/provider-credentials.test.mjs')\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

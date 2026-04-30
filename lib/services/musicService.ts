@@ -1,6 +1,7 @@
 // Music Service - Background music generation and management
 import type { MusicMood } from '@/lib/types';
 import { kvGet } from './puterService';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 // Free music sources by mood
 const MUSIC_LIBRARY: Record<string, { url: string; name: string; duration: number }[]> = {
@@ -50,7 +51,7 @@ export async function generateMusic(
   const { useAI = true, customPrompt } = options;
   
   // Check if we have a Suno API key for AI generation
-  const sunoKey = await kvGet('suno_key');
+  const sunoKey = sanitizeApiKey(await kvGet('suno_key'));
   
   if (useAI && sunoKey) {
     try {

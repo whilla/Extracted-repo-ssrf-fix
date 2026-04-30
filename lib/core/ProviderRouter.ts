@@ -112,6 +112,51 @@ const PROVIDER_CONFIGS: Omit<Provider, 'status' | 'lastSuccess' | 'lastFailure'>
     ],
   },
   {
+    id: 'gemini-pro',
+    name: 'Gemini 1.5 Pro',
+    type: 'llm',
+    models: ['gemini-1.5-pro'],
+    latency: 0,
+    failureRate: 0,
+    priority: 4,
+    capabilities: [
+      { name: 'chat', supported: true, quality: 92 },
+      { name: 'vision', supported: true, quality: 90 },
+      { name: 'creative', supported: true, quality: 90 },
+      { name: 'analysis', supported: true, quality: 91 },
+    ],
+  },
+  {
+    id: 'openrouter-auto',
+    name: 'OpenRouter Auto',
+    type: 'llm',
+    models: ['openrouter/auto'],
+    latency: 0,
+    failureRate: 0,
+    priority: 5,
+    capabilities: [
+      { name: 'chat', supported: true, quality: 90 },
+      { name: 'vision', supported: true, quality: 88 },
+      { name: 'creative', supported: true, quality: 91 },
+      { name: 'analysis', supported: true, quality: 90 },
+    ],
+  },
+  {
+    id: 'groq-llama',
+    name: 'Groq Llama 3.3 70B',
+    type: 'llm',
+    models: ['llama-3.3-70b-versatile'],
+    latency: 0,
+    failureRate: 0,
+    priority: 6,
+    capabilities: [
+      { name: 'chat', supported: true, quality: 88 },
+      { name: 'vision', supported: false, quality: 0 },
+      { name: 'creative', supported: true, quality: 85 },
+      { name: 'analysis', supported: true, quality: 86 },
+    ],
+  },
+  {
     id: 'puter-dalle',
     name: 'DALL-E 3 (Puter)',
     type: 'image',
@@ -150,6 +195,30 @@ const PROVIDER_CONFIGS: Omit<Provider, 'status' | 'lastSuccess' | 'lastFailure'>
     ],
   },
 ];
+
+function isCapacityOrRateLimitError(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes('rate') ||
+    text.includes('429') ||
+    text.includes('quota') ||
+    text.includes('out of credits') ||
+    text.includes('insufficient credit') ||
+    text.includes('insufficient balance') ||
+    text.includes('billing') ||
+    text.includes('payment required') ||
+    text.includes('402') ||
+    text.includes('insufficient_quota') ||
+    text.includes('credit balance') ||
+    text.includes('usage limit') ||
+    text.includes('exceeded your current quota')
+  );
+}
+
+function isConfigurationError(message: string): boolean {
+  const text = message.toLowerCase();
+  return text.includes('not configured') || text.includes('api key') || text.includes('missing');
+}
 
 /**
  * ProviderRouter Class
@@ -310,14 +379,15 @@ export class ProviderRouter {
         lastError = error instanceof Error ? error.message : 'Unknown error';
         retries++;
 
-        // Check for rate limiting
-        if (lastError.includes('rate') || lastError.includes('429')) {
-          this.markRateLimited(provider);
-          
-          // Try fallback provider
+        // Capacity, quota, and configuration failures should escape to another provider
+        if (isCapacityOrRateLimitError(lastError) || isConfigurationError(lastError)) {
+          if (isCapacityOrRateLimitError(lastError)) {
+            this.markRateLimited(provider);
+          }
+
           const fallback = await this.getFallbackProvider(provider.id);
           if (fallback) {
-            console.log(`[ProviderRouter] Rate limited, switching to fallback: ${fallback.id}`);
+            console.log(`[ProviderRouter] Switching from ${provider.id} to fallback: ${fallback.id}`);
             provider = fallback;
             continue;
           }

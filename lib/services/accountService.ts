@@ -1,6 +1,7 @@
 'use client';
 
 import { kvGet, kvSet, kvDelete } from './puterService';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 // Provider account types
 export interface ProviderAccount {
@@ -154,6 +155,38 @@ export const PROVIDERS: ProviderConfig[] = [
   },
   // Publishing
   {
+    id: 'gemini',
+    name: 'Google Gemini',
+    category: 'ai',
+    signupUrl: 'https://aistudio.google.com/',
+    apiKeyUrl: 'https://aistudio.google.com/app/apikey',
+    docsUrl: 'https://ai.google.dev/',
+    freeTier: true,
+    freeTierLimits: 'Free-tier quotas vary by model',
+    requiresApiKey: true,
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    category: 'ai',
+    signupUrl: 'https://openrouter.ai/',
+    apiKeyUrl: 'https://openrouter.ai/keys',
+    docsUrl: 'https://openrouter.ai/docs',
+    freeTier: false,
+    requiresApiKey: true,
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    category: 'ai',
+    signupUrl: 'https://console.groq.com/',
+    apiKeyUrl: 'https://console.groq.com/keys',
+    docsUrl: 'https://console.groq.com/docs',
+    freeTier: true,
+    freeTierLimits: 'Free developer-tier quotas vary',
+    requiresApiKey: true,
+  },
+  {
     id: 'ayrshare',
     name: 'Ayrshare',
     category: 'publishing',
@@ -174,10 +207,11 @@ function getStorageKey(providerId: string, field: string): string {
 // Save provider account
 export async function saveProviderAccount(account: ProviderAccount): Promise<void> {
   const { provider, ...data } = account;
+  const sanitizedApiKey = data.apiKey ? sanitizeApiKey(data.apiKey) : '';
   
   // Save each field separately for security
-  if (data.apiKey) {
-    await kvSet(getStorageKey(provider, 'apiKey'), data.apiKey);
+  if (sanitizedApiKey) {
+    await kvSet(getStorageKey(provider, 'apiKey'), sanitizedApiKey);
   }
   if (data.accessToken) {
     await kvSet(getStorageKey(provider, 'accessToken'), data.accessToken);
@@ -204,12 +238,15 @@ export async function saveProviderAccount(account: ProviderAccount): Promise<voi
   await kvSet(getStorageKey(provider, 'metadata'), JSON.stringify(metadata));
   
   // Also save to legacy keys for backwards compatibility
-  if (data.apiKey) {
+  if (sanitizedApiKey) {
     const legacyKeyMap: Record<string, string> = {
       elevenlabs: 'elevenlabs_key',
       speechify: 'speechify_key',
       suno: 'suno_key',
       ayrshare: 'ayrshare_key',
+      gemini: 'gemini_key',
+      openrouter: 'openrouter_key',
+      groq: 'groq_key',
       stability: 'stability_key',
       leonardo: 'leonardo_key',
       playht: 'playht_key',
@@ -221,7 +258,7 @@ export async function saveProviderAccount(account: ProviderAccount): Promise<voi
     };
     const legacyKey = legacyKeyMap[provider];
     if (legacyKey) {
-      await kvSet(legacyKey, data.apiKey);
+      await kvSet(legacyKey, sanitizedApiKey);
     }
   }
 }
@@ -244,15 +281,19 @@ export async function loadProviderAccount(providerId: string): Promise<ProviderA
         speechify: 'speechify_key',
         suno: 'suno_key',
         ayrshare: 'ayrshare_key',
+        gemini: 'gemini_key',
+        openrouter: 'openrouter_key',
+        groq: 'groq_key',
         stability: 'stability_key',
       };
       const legacyKey = legacyKeyMap[providerId];
       if (legacyKey) {
         const legacyApiKey = await kvGet(legacyKey);
-        if (legacyApiKey) {
+        const sanitizedLegacyApiKey = sanitizeApiKey(legacyApiKey);
+        if (sanitizedLegacyApiKey) {
           return {
             provider: providerId,
-            apiKey: legacyApiKey,
+            apiKey: sanitizedLegacyApiKey,
             status: 'active',
             tier: 'free',
           };
@@ -265,7 +306,7 @@ export async function loadProviderAccount(providerId: string): Promise<ProviderA
     
     return {
       provider: providerId,
-      apiKey: apiKey || undefined,
+      apiKey: sanitizeApiKey(apiKey) || undefined,
       accessToken: accessToken || undefined,
       email: email || undefined,
       username: username || undefined,
@@ -318,29 +359,34 @@ export async function getConnectedProviders(): Promise<ProviderAccount[]> {
 // Verify provider API key
 export async function verifyProviderKey(providerId: string, apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
+    const sanitizedApiKey = sanitizeApiKey(apiKey);
+    if (!sanitizedApiKey) {
+      return { valid: false, error: 'API key is empty after sanitization. Remove whitespace or smart quotes and retry.' };
+    }
+
     switch (providerId) {
       case 'openrouter': {
         const response = await fetch('https://openrouter.ai/api/v1/models', {
-          headers: { 'Authorization': `Bearer ${apiKey}` },
+          headers: { 'Authorization': `Bearer ${sanitizedApiKey}` },
         });
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid OpenRouter API key' };
       }
 
       case 'groq': {
         const response = await fetch('https://api.groq.com/openai/v1/models', {
-          headers: { 'Authorization': `Bearer ${apiKey}` },
+          headers: { 'Authorization': `Bearer ${sanitizedApiKey}` },
         });
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid Groq API key' };
       }
 
       case 'gemini': {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${sanitizedApiKey}`);
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid Gemini API key' };
       }
 
       case 'deepseek': {
         const response = await fetch('https://api.deepseek.com/models', {
-          headers: { 'Authorization': `Bearer ${apiKey}` },
+          headers: { 'Authorization': `Bearer ${sanitizedApiKey}` },
         });
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid DeepSeek API key' };
       }
@@ -349,7 +395,7 @@ export async function verifyProviderKey(providerId: string, apiKey: string): Pro
         const response = await fetch('https://api.suno.ai/api/generate', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${apiKey}`,
+            'Authorization': `Bearer ${sanitizedApiKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -363,7 +409,7 @@ export async function verifyProviderKey(providerId: string, apiKey: string): Pro
 
       case 'elevenlabs': {
         const response = await fetch('https://api.elevenlabs.io/v1/user', {
-          headers: { 'xi-api-key': apiKey },
+          headers: { 'xi-api-key': sanitizedApiKey },
         });
         if (response.ok) {
           const data = await response.json();
@@ -375,14 +421,14 @@ export async function verifyProviderKey(providerId: string, apiKey: string): Pro
       case 'speechify': {
         // Speechify verification endpoint
         const response = await fetch('https://api.speechify.com/v1/user', {
-          headers: { 'Authorization': `Bearer ${apiKey}` },
+          headers: { 'Authorization': `Bearer ${sanitizedApiKey}` },
         });
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid API key' };
       }
       
       case 'ayrshare': {
-        const response = await fetch('https://app.ayrshare.com/api/user', {
-          headers: { 'Authorization': `Bearer ${apiKey}` },
+        const response = await fetch('https://api.ayrshare.com/api/user', {
+          headers: { 'Authorization': `Bearer ${sanitizedApiKey}` },
         });
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid API key' };
       }

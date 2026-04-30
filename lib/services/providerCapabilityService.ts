@@ -5,6 +5,7 @@
 
 import { kvGet, kvSet, readFile, writeFile, PATHS } from './puterService';
 import { pickRecommendedModel } from './providerModelSelection.mjs';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 export interface ProviderCapability {
   id: string;
@@ -130,6 +131,26 @@ const PROVIDER_DEFINITIONS: Omit<ProviderCapability, 'status' | 'lastHealthCheck
     ],
     rateLimits: { requestsPerMinute: 60, tokensPerMinute: 200000, tokensPerDay: 2000000 },
     pricing: { inputTokens: 0.25, outputTokens: 0.75 },
+    requiresApiKey: true,
+  },
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    capabilities: {
+      chat: true,
+      vision: true,
+      imageGeneration: false,
+      audioGeneration: false,
+      codeGeneration: true,
+      functionCalling: true,
+      streaming: true,
+      embeddings: true,
+    },
+    models: [
+      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', contextWindow: 1000000, maxOutputTokens: 8192, capabilities: ['chat', 'vision', 'code'], recommended: true, deprecated: false, bestFor: ['multimodal', 'long-context', 'analysis'] },
+    ],
+    rateLimits: { requestsPerMinute: 60, tokensPerMinute: 200000, tokensPerDay: 2000000 },
+    pricing: { inputTokens: 0, outputTokens: 0 },
     requiresApiKey: true,
   },
   {
@@ -294,8 +315,8 @@ async function checkApiKeyConfigured(providerId: string): Promise<boolean> {
   const keyName = keyMap[providerId];
   if (!keyName) return true; // No key required
 
-  const key = await kvGet(keyName);
-  return !!key && key.length > 0;
+  const key = sanitizeApiKey(await kvGet(keyName));
+  return key.length > 0;
 }
 
 // Get provider health status

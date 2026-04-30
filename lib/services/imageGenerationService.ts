@@ -1,6 +1,7 @@
 'use client';
 
 import { kvGet, waitForPuter } from './puterService';
+import { sanitizeApiKey } from './providerCredentialUtils';
 
 export type ImageProvider = 'puter' | 'stability' | 'leonardo' | 'ideogram';
 
@@ -69,8 +70,9 @@ async function getProviderApiKey(provider: ImageProvider): Promise<string | null
   const aliases = keyAliases[provider];
   for (const key of aliases) {
     const value = await kvGet(key);
-    if (value && String(value).trim().length > 0) {
-      return String(value).trim();
+    const sanitized = sanitizeApiKey(value ? String(value) : '');
+    if (sanitized.length > 0) {
+      return sanitized;
     }
   }
 

@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { PLATFORM_LIST } from '@/lib/constants/platforms';
 import { getConnectedPlatforms } from '@/lib/services/publishService';
 import { kvGet, kvSet, kvDelete } from '@/lib/services/puterService';
+import { sanitizeApiKey } from '@/lib/services/providerCredentialUtils';
 import {
   Twitter,
   Instagram,
@@ -113,10 +114,11 @@ export default function SocialHubPage() {
   };
 
   const handleSaveAyrshareKey = async (key: string) => {
-    if (!key.trim()) return;
+    const sanitizedKey = sanitizeApiKey(key);
+    if (!sanitizedKey) return;
     
-    await kvSet('ayrshare_key', key);
-    setAyrshareKey('••••••••' + key.slice(-4));
+    await kvSet('ayrshare_key', sanitizedKey);
+    setAyrshareKey('••••••••' + sanitizedKey.slice(-4));
     setConnectionError(null);
     setShowKeyInput(false);
     await loadConnections();

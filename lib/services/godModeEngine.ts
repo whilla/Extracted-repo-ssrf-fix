@@ -1,6 +1,8 @@
 // God Mode AI Engine - Advanced multi-perspective thinking system
 import type { AIMessage, BrandKit } from '@/lib/types';
 import { kvGet } from './puterService';
+import { universalChat } from './aiService';
+import { hasConfiguredSecret, sanitizeApiKey } from './providerCredentialUtils';
 
 // ============================================
 // CUSTOM AI PROVIDERS
@@ -168,16 +170,12 @@ export async function callCustomProvider(
 
   // Puter native - use window.puter
   if (providerId === 'puter') {
-    if (typeof window === 'undefined' || !window.puter) {
-      throw new Error('Puter not available');
-    }
-    const response = await window.puter.ai.chat(messages, { model });
-    return (response as { message: { content: string } }).message.content;
+    return universalChat(messages, { model });
   }
 
   // Gemini has a special API format
   if (providerId === 'gemini') {
-    const apiKey = await kvGet(provider.keyName);
+    const apiKey = sanitizeApiKey(await kvGet(provider.keyName));
     if (!apiKey) throw new Error(`${provider.name} API key not configured`);
 
     const contents = messages
@@ -208,7 +206,7 @@ export async function callCustomProvider(
   // Get API key if required
   let apiKey = '';
   if (provider.requiresKey) {
-    apiKey = await kvGet(provider.keyName) || '';
+    apiKey = sanitizeApiKey(await kvGet(provider.keyName));
     if (!apiKey) throw new Error(`${provider.name} API key not configured`);
   }
 
@@ -530,10 +528,10 @@ export async function getAvailableProviders(): Promise<{ provider: AIProvider; h
 
   for (const provider of AI_PROVIDERS) {
     if (provider.requiresKey) {
-      const key = await kvGet(provider.keyName);
+      const key = sanitizeApiKey(await kvGet(provider.keyName));
       result.push({
         provider,
-        hasKey: !!key,
+        hasKey: hasConfiguredSecret(key),
         models: provider.models,
       });
     } else {

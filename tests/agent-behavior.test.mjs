@@ -7,6 +7,8 @@ import {
   isContinuationOrRetryCue,
   findContinuationExecutionRequest,
   isFileAnalysisFailure,
+  isMediaGenerationRequest,
+  buildMediaGenerationFailureMessage,
   buildFileAnalysisEmptyResponseMessage,
   buildFileAnalysisFailureMessage,
   getConversationalExecutionTask,
@@ -32,8 +34,16 @@ test('detectExplicitMediaIntent routes short video clip requests to make_video',
   assert.equal(detectExplicitMediaIntent('Generate a short video clip for the brand'), 'make_video');
 });
 
+test('detectExplicitMediaIntent routes execution-style video briefs without explicit create verbs', () => {
+  assert.equal(detectExplicitMediaIntent('cinematic vertical video for a horror channel intro'), 'make_video');
+});
+
 test('detectExplicitMediaIntent routes direct request phrasing for image generation', () => {
   assert.equal(detectExplicitMediaIntent('I want an image of a luxury watch on black velvet'), 'create_image');
+});
+
+test('detectExplicitMediaIntent routes execution-style image briefs without explicit create verbs', () => {
+  assert.equal(detectExplicitMediaIntent('studio product photo for a luxury perfume launch'), 'create_image');
 });
 
 test('detectExplicitMediaIntent keeps media quality discussion as answer mode', () => {
@@ -95,6 +105,23 @@ test('isFileAnalysisFailure detects explicit file-analysis failures', () => {
   assert.equal(isFileAnalysisFailure('analyze this PDF', ''), true);
   assert.equal(isFileAnalysisFailure('help me with this brand plan', 'read_file model timeout'), true);
   assert.equal(isFileAnalysisFailure('make an image ad', 'provider timeout'), false);
+});
+
+test('isMediaGenerationRequest detects explicit video and image generation requests', () => {
+  assert.equal(isMediaGenerationRequest('make a cinematic video ad for my launch'), true);
+  assert.equal(isMediaGenerationRequest('studio product photo for a luxury perfume launch'), true);
+  assert.equal(isMediaGenerationRequest('how do i improve my video quality?'), false);
+});
+
+test('buildMediaGenerationFailureMessage keeps media failures out of generic advice mode', () => {
+  const message = buildMediaGenerationFailureMessage(
+    'make a cinematic video ad for my launch',
+    'LTX video error (402): insufficient balance'
+  );
+
+  assert.match(message, /video generation path/);
+  assert.match(message, /insufficient balance/);
+  assert.match(message, /I did not switch this into generic advice mode/);
 });
 
 test('buildFileAnalysisEmptyResponseMessage includes extracted context when available', () => {

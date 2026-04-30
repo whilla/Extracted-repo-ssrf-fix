@@ -59,6 +59,8 @@ import {
   isContinuationOrRetryCue,
   findContinuationExecutionRequest,
   isFileAnalysisFailure,
+  isMediaGenerationRequest,
+  buildMediaGenerationFailureMessage,
   buildFileAnalysisEmptyResponseMessage,
   buildFileAnalysisFailureMessage,
   getConversationalExecutionTask,
@@ -66,6 +68,7 @@ import {
 import { ensureAgentSkillsInstalled, getEnabledAgentSkills, buildAgentSkillContext } from '@/lib/services/agentSkillService';
 import {
   CHAT_MODEL_EVENT_NAME,
+  isPuterFallbackDisabled,
   setActiveChatModel,
   setPuterFallbackDisabled,
   resolveProviderForModel,
@@ -1102,6 +1105,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     task: 'chat' | 'vision' | 'code' | 'creative' | 'analysis' | 'fast'
   ): Promise<string> => {
     const currentProvider = resolveProviderForModel(state.currentModel, AVAILABLE_MODELS);
+    const disablePuterFallback = await isPuterFallbackDisabled();
     if (currentProvider !== 'puter') {
       // Respect explicit non-Puter model selection instead of silently drifting back to Puter.
       return state.currentModel;
@@ -1128,6 +1132,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
       const match = AVAILABLE_MODELS.find((model) => model.model === recommended.modelId);
       if (!match) return state.currentModel;
+      if (disablePuterFallback && match.provider === 'puter') {
+        const nonPuterMatch = capabilities
+          .filter((provider) => provider.id !== 'puter' && provider.apiKeyConfigured && provider.status !== 'offline')
+          .flatMap((provider) => provider.models.filter((model) => !model.deprecated).map((model) => ({ providerId: provider.id, modelId: model.id })))
+          .map((candidate) => AVAILABLE_MODELS.find((model) => model.model === candidate.modelId))
+          .find(Boolean);
+        if (nonPuterMatch) {
+          await setActiveChatModel(nonPuterMatch.model);
+          setState((s) => ({ ...s, currentModel: nonPuterMatch.model }));
+          return nonPuterMatch.model;
+        }
+      }
       if (match.model === state.currentModel) return state.currentModel;
 
       await setActiveChatModel(match.model);
@@ -1362,6 +1378,10 @@ Rules:
   ): Promise<string> => {
     if (isFileAnalysisFailure(request, errorMessage)) {
       return buildFileAnalysisFailureMessage(extractedFileContext);
+    }
+
+    if (isMediaGenerationRequest(request)) {
+      return buildMediaGenerationFailureMessage(request, errorMessage);
     }
 
     try {
