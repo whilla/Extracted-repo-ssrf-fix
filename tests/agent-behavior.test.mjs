@@ -155,6 +155,18 @@ test('buildMediaGenerationFailureMessage describes audio failures explicitly', (
   assert.match(message, /ElevenLabs API key not configured/);
 });
 
+test('buildMediaGenerationFailureMessage gives ElevenLabs permission recovery', () => {
+  const message = buildMediaGenerationFailureMessage(
+    'Use Elevenlabs to generate a audio story then send me the audio output to listen',
+    'ElevenLabs Error (401): {"detail":{"status":"missing_permissions","message":"The API key you used is missing the permission text_to_speech to execute this operation."}}'
+  );
+
+  assert.match(message, /audio generation path/);
+  assert.match(message, /missing_permissions/);
+  assert.match(message, /Enable the `text_to_speech` permission/);
+  assert.doesNotMatch(message, /tighter prompt/);
+});
+
 test('buildMediaGenerationFailureMessage describes music failures explicitly', () => {
   const message = buildMediaGenerationFailureMessage(
     'Generate background music for the intro',
