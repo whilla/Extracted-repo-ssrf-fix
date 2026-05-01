@@ -94,6 +94,8 @@ export function ApprovalGate({ draft, onApprove, onEdit, onReject }: ApprovalGat
         alert('Content was sent to the approval queue before publishing.');
         onApprove();
       } else {
+        draft.status = 'approved';
+        await saveDraft(draft);
         const result = await publishDraft(draft, true);
         if (result.success) {
           draft.status = 'published';
@@ -139,6 +141,9 @@ export function ApprovalGate({ draft, onApprove, onEdit, onReject }: ApprovalGat
         alert('Content was sent to the approval queue before scheduling.');
         onApprove();
       } else {
+        draft.status = 'approved';
+        draft.scheduledAt = scheduledAt;
+        await saveDraft(draft);
         const result = await publishDraft({ ...draft, scheduledAt }, false);
         if (result.success) {
           draft.status = 'scheduled';

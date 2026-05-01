@@ -28,6 +28,13 @@ import useSWR from 'swr';
 type GenerationTab = 'text' | 'image' | 'full';
 
 const STUDIO_SESSION_KEY = 'studio_session_v1';
+const TODAY_STARTER_IDEAS = [
+  'A behind-the-scenes post showing what you are building today and the specific problem it solves',
+  'A quick myth-versus-truth post that challenges one common belief in your niche',
+  'A before-and-after story showing the shift your audience wants to make',
+  'A short checklist post people can save before they buy, create, or decide',
+  'A founder/operator note about one lesson learned this week and how it changes the offer',
+];
 
 interface StudioSessionSnapshot {
   activeTab: GenerationTab;
@@ -59,6 +66,7 @@ export default function ContentStudioPage() {
     brandKit ? 'suggestions' : null,
     () => getContentSuggestions(5)
   );
+  const displayedSuggestions = (suggestions && suggestions.length > 0 ? suggestions : TODAY_STARTER_IDEAS).slice(0, 5);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,21 +227,23 @@ export default function ContentStudioPage() {
           </div>
 
           {/* Suggestions */}
-          {suggestions && suggestions.length > 0 && (
+          {displayedSuggestions.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Lightbulb className="w-4 h-4 text-[var(--nexus-warning)]" />
-                <span className="text-sm text-muted-foreground">Suggested ideas</span>
-                <button
-                  onClick={() => mutateSuggestions()}
-                  className="p-1 rounded hover:bg-muted/50"
-                  aria-label="Refresh suggestions"
-                >
-                  <RefreshCw className="w-3 h-3 text-muted-foreground" />
-                </button>
+                <span className="text-sm text-muted-foreground">Posting ideas</span>
+                {brandKit && (
+                  <button
+                    onClick={() => mutateSuggestions()}
+                    className="p-1 rounded hover:bg-muted/50"
+                    aria-label="Refresh suggestions"
+                  >
+                    <RefreshCw className="w-3 h-3 text-muted-foreground" />
+                  </button>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
-                {suggestions.map((suggestion, index) => (
+                {displayedSuggestions.map((suggestion, index) => (
                   <button
                     key={index}
                     onClick={() => handleSuggestionClick(suggestion)}

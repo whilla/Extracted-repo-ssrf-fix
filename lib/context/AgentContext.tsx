@@ -68,6 +68,8 @@ import {
   buildFileAnalysisFailureMessage,
   getConversationalExecutionTask,
   shouldAvoidPuterForIntent,
+  isBrainstormingRequest,
+  extractBrainstormTopic,
 } from './agentBehavior.mjs';
 import { buildProcessUpdate, isProcessUpdateMessage } from './agentProgress.mjs';
 import { ensureAgentSkillsInstalled, getEnabledAgentSkills, buildAgentSkillContext } from '@/lib/services/agentSkillService';
@@ -1231,6 +1233,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
     if (wantsFileAnalysis(trimmedMessage)) {
       return { type: 'read_file', confidence: 0.92, params: { missingFiles: true } };
+    }
+
+    if (isBrainstormingRequest(trimmedMessage)) {
+      return { type: 'answer_question', confidence: 0.92, params: { brainstormIdeas: true } };
     }
 
     if (softIdeaPattern.test(lowerMessage)) {
@@ -3198,6 +3204,53 @@ Rules:
           artifactType: 'draft',
         });
         await extractAndSaveMemory(normalizedContent, generatedResponse, { ...intent, type: 'generate_content' });
+        return;
+      }
+
+      if (intent.type === 'answer_question' && intent.params.brainstormIdeas) {
+        setState(s => ({ ...s, currentTask: 'Brainstorming posting ideas...' }));
+        const topic = extractBrainstormTopic(normalizedContent);
+        const platforms = await inferPlatformsFromContext(normalizedContent);
+        const ideas = await quickIdeate(topic, brandKit, 6);
+        const usableIdeas = (ideas.length > 0 ? ideas : Array.from({ length: 6 }, (_, index) => (
+          `${topic} angle ${index + 1}: turn one concrete proof point into a platform-native post with a strong hook and one clear takeaway.`
+        ))).slice(0, 6);
+
+        await Promise.all(
+          usableIdeas.map((idea) => addContentIdea(idea, 'brainstormed', platforms[0]))
+        );
+
+        const brainstormResponse = await enforceGovernorApproval(
+          [
+            `Here are ${usableIdeas.length} posting ideas for ${topic}:`,
+            '',
+            ...usableIdeas.map((idea, index) => `${index + 1}. ${idea}`),
+            '',
+            `I saved them as planned ideas for ${platforms.join(', ')} so automation and scheduling can use them later.`,
+          ].join('\n'),
+          {
+            brandKit,
+            request: normalizedContent,
+            platform: platforms[0],
+          }
+        );
+
+        const assistantMessage: ChatMessage = {
+          id: generateId(),
+          role: 'assistant',
+          content: brainstormResponse,
+          timestamp: new Date().toISOString(),
+        };
+
+        setState(s => ({
+          ...s,
+          messages: [...s.messages, assistantMessage],
+          isThinking: false,
+          currentTask: null,
+        }));
+
+        await saveChatMessage(assistantMessage);
+        await extractAndSaveMemory(normalizedContent, brainstormResponse, intent);
         return;
       }
 

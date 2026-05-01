@@ -13,6 +13,8 @@ import {
   buildFileAnalysisFailureMessage,
   getConversationalExecutionTask,
   shouldAvoidPuterForIntent,
+  isBrainstormingRequest,
+  extractBrainstormTopic,
 } from '../lib/context/agentBehavior.mjs';
 
 test('normalizeIncomingMessage handles blank content with files', () => {
@@ -210,4 +212,16 @@ test('getConversationalExecutionTask routes questions and file work through anal
   assert.equal(getConversationalExecutionTask('manage_brand'), 'analysis');
   assert.equal(getConversationalExecutionTask('read_file'), 'analysis');
   assert.equal(getConversationalExecutionTask('generate_content'), 'chat');
+});
+
+test('isBrainstormingRequest detects idea generation without treating saved ideas as requests', () => {
+  assert.equal(isBrainstormingRequest('brainstorm post ideas for today'), true);
+  assert.equal(isBrainstormingRequest('give me 5 content ideas about my launch'), true);
+  assert.equal(isBrainstormingRequest('my content idea is a behind the scenes launch post'), false);
+});
+
+test('extractBrainstormTopic returns a usable ideation topic', () => {
+  assert.equal(extractBrainstormTopic('brainstorm post ideas for my skincare launch today'), 'my skincare launch');
+  assert.equal(extractBrainstormTopic('give me 5 content ideas about my launch'), 'my launch');
+  assert.equal(extractBrainstormTopic('ideas'), 'content I can post today');
 });
