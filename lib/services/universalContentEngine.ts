@@ -157,6 +157,15 @@ async function emitProgress(request: UniversalPipelineRequest, message: string, 
   await request.onProgress(message, task);
 }
 
+function formatProviderError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (!message.trim()) return fallback;
+  if (/signal is aborted|aborted without reason|aborterror/i.test(message)) {
+    return `${fallback} The provider request was aborted before returning a playable asset.`;
+  }
+  return message;
+}
+
 function buildStructure(profile: BrandProfile): string {
   if (profile.contentType === 'story') return 'Scene -> Escalation -> Cliffhanger Loop';
   if (profile.contentType === 'education') return 'Hook -> Value -> Takeaway -> CTA';
@@ -321,10 +330,11 @@ export async function runUniversalContentPipeline(
         await emitProgress(request, 'The image generation agent returned an image asset.', 'Image asset ready...');
       }
     } catch (error) {
-      warnings.push(`Image generation failed: ${error instanceof Error ? error.message : 'Unknown image error'}`);
+      const message = formatProviderError(error, 'Image generation failed.');
+      warnings.push(`Image generation failed: ${message}`);
       await emitProgress(
         request,
-        `The image generation agent failed: ${error instanceof Error ? error.message : 'Unknown image error'}`,
+        `The image generation agent failed: ${message}`,
         'Image generation failed...'
       );
     }
@@ -357,10 +367,11 @@ export async function runUniversalContentPipeline(
         await emitProgress(request, 'The video generation agent returned a playable video asset.', 'Video asset ready...');
       }
     } catch (error) {
-      warnings.push(`Video generation failed: ${error instanceof Error ? error.message : 'Unknown video error'}`);
+      const message = formatProviderError(error, 'Video generation failed.');
+      warnings.push(`Video generation failed: ${message}`);
       await emitProgress(
         request,
-        `The video generation agent failed: ${error instanceof Error ? error.message : 'Unknown video error'}`,
+        `The video generation agent failed: ${message}`,
         'Video generation failed...'
       );
     }
@@ -369,10 +380,12 @@ export async function runUniversalContentPipeline(
   let voiceUrl: string | undefined;
   if (request.includeVoice !== false) {
     try {
-      await emitProgress(request, 'Let me call the voice generation agent for the narration track.', 'Calling voice generation agent...');
+      await emitProgress(request, 'I am calling the ElevenLabs voice generation agent for the narration track.', 'Calling ElevenLabs voice agent...');
       const voice = await withPipelineTimeout(
         generateVoice({
           text: finalScript,
+          provider: 'elevenlabs',
+          voiceId: '21m00Tcm4TlvDq8ikWAM',
           speed: emotion.pacing === 'slow' ? 0.88 : emotion.pacing === 'fast' ? 1.08 : 1,
         }),
         PIPELINE_MEDIA_TIMEOUT_MS.voice,
@@ -394,11 +407,12 @@ export async function runUniversalContentPipeline(
         await emitProgress(request, 'The voice generation agent returned a playable narration asset.', 'Voice asset ready...');
       }
     } catch (error) {
-      warnings.push(`Voice generation failed: ${error instanceof Error ? error.message : 'Unknown voice error'}`);
+      const message = formatProviderError(error, 'Voice generation failed.');
+      warnings.push(`Voice generation failed: ${message}`);
       voiceUrl = undefined;
       await emitProgress(
         request,
-        `The voice generation agent failed: ${error instanceof Error ? error.message : 'Unknown voice error'}`,
+        `The ElevenLabs voice generation agent failed: ${message}`,
         'Voice generation failed...'
       );
     }
@@ -407,7 +421,7 @@ export async function runUniversalContentPipeline(
   let musicUrl: string | undefined;
   if (request.includeMusic !== false) {
     try {
-      await emitProgress(request, 'Let me call the music generation agent for the soundtrack layer.', 'Calling music generation agent...');
+      await emitProgress(request, 'I am calling the music generation agent for the soundtrack layer.', 'Calling music generation agent...');
       const music = await withPipelineTimeout(
         generateBackgroundMusic(finalScript, { duration: beatPlan.durationSeconds }),
         PIPELINE_MEDIA_TIMEOUT_MS.music,
@@ -415,7 +429,7 @@ export async function runUniversalContentPipeline(
       );
       if (music?.url === 'browser-generated') {
         try {
-          await emitProgress(request, 'The music agent is using the browser synth fallback. I am rendering it into a playable audio file.', 'Rendering music asset...');
+          await emitProgress(request, 'The music layer needs local rendering. I am turning it into a playable audio file now.', 'Rendering music asset...');
           const blob = await withPipelineTimeout(
             getBrowserMusicGenerator().generateMusic(music.mood, music.duration || beatPlan.durationSeconds),
             PIPELINE_MEDIA_TIMEOUT_MS.music,
@@ -451,10 +465,11 @@ export async function runUniversalContentPipeline(
         warnings.push('Music generation returned no asset URL.');
       }
     } catch (error) {
-      warnings.push(`Music generation failed: ${error instanceof Error ? error.message : 'Unknown music error'}`);
+      const message = formatProviderError(error, 'Music generation failed.');
+      warnings.push(`Music generation failed: ${message}`);
       await emitProgress(
         request,
-        `The music generation agent failed: ${error instanceof Error ? error.message : 'Unknown music error'}`,
+        `The music generation agent failed: ${message}`,
         'Music generation failed...'
       );
     }

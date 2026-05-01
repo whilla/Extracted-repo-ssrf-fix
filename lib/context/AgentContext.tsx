@@ -479,33 +479,46 @@ function formatUniversalPipelineResponse(
   pipeline: UniversalPipelineResult,
   options: { target?: string } = {}
 ): string {
+  const hasVideo = Boolean(pipeline.media.finalVideoUrl || pipeline.media.videoUrl);
+  const hasImage = Boolean(pipeline.media.imageUrl);
+  const hasVoice = Boolean(pipeline.audio.voiceUrl);
+  const hasMusic = Boolean(pipeline.audio.musicUrl);
   const assets = [
-    pipeline.media.finalVideoUrl ? `Final video: ${pipeline.media.finalVideoUrl}` : null,
-    pipeline.media.videoUrl ? `Video: ${pipeline.media.videoUrl}` : null,
-    pipeline.media.imageUrl ? `Image: ${pipeline.media.imageUrl}` : null,
-    pipeline.audio.voiceUrl ? `Voice: ${pipeline.audio.voiceUrl}` : null,
-    pipeline.audio.musicUrl ? `Music: ${pipeline.audio.musicUrl}` : null,
+    pipeline.media.finalVideoUrl ? 'Final video: attached' : null,
+    !pipeline.media.finalVideoUrl && pipeline.media.videoUrl ? 'Video: attached' : null,
+    hasImage ? 'Image: attached' : null,
+    hasVoice ? 'Voice: attached' : null,
+    hasMusic ? 'Music: attached' : null,
   ].filter(Boolean);
   const platformSummary = pipeline.platformPackages
-    .map((pkg) => `${pkg.platform}: ${pkg.text}`)
+    .map((pkg) => `${pkg.platform}: ready`)
     .slice(0, 3)
-    .join('\n\n');
+    .join('\n');
   const mix = pipeline.audio.mixPlan.settings;
   const audioSummary =
-    pipeline.audio.voiceUrl || pipeline.audio.musicUrl
+    hasVoice || hasMusic
       ? `Voice ${Math.round(mix.voiceVolume * 100)}%, music ${Math.round(mix.musicVolume * 100)}%, FX ${Math.round(mix.fxVolume * 100)}%, ducking ${mix.duckingEnabled ? 'on' : 'off'}`
       : '';
+  const assetSummary =
+    assets.length > 0
+      ? `Attached assets:\n${assets.join('\n')}`
+      : 'Attached assets: none returned by the providers.';
+  const warnings = pipeline.warnings
+    .filter((warning) => !/data:audio|base64|blob:/i.test(warning))
+    .slice(0, 3);
 
   return [
     `I built the ${options.target || 'content'} package.`,
+    !hasVideo && /video/i.test(options.target || '') ? 'The video render did not return a playable video asset, so I attached the audio/visual layers that completed.' : '',
     '',
     `Hook: ${pipeline.content.hook}`,
     '',
     `Script:\n${pipeline.content.script}`,
     '',
-    platformSummary ? `Platform cuts:\n${platformSummary}` : '',
-    assets.length > 0 ? `Assets:\n${assets.join('\n')}` : '',
+    platformSummary ? `Platform cuts: ${platformSummary.replace(/\n/g, ', ')}` : '',
+    assetSummary,
     audioSummary ? `Audio mix:\n${audioSummary}` : '',
+    warnings.length > 0 ? `Notes:\n${warnings.map((warning) => `- ${warning}`).join('\n')}` : '',
     pipeline.criticVerdict.approved
       ? `Quality check: passed (${pipeline.criticVerdict.score}/100).`
       : `Quality check: needs review (${pipeline.criticVerdict.score}/100). ${pipeline.criticVerdict.reasons.slice(0, 2).join(' ')}`,
@@ -2852,8 +2865,8 @@ Rules:
         let musicUrl = music.url;
         if (music.source === 'browser' || music.url === 'browser-generated') {
           await postProcessUpdate(
-            'The music agent is using the browser synth fallback. I am rendering it into a playable file now.',
-            'Rendering browser music asset...'
+            'The music layer needs local rendering. I am turning it into a playable audio file now.',
+            'Rendering music asset...'
           );
           const blob = await withMediaTimeout(
             getBrowserMusicGenerator().generateMusic(music.mood, music.duration || 30),
@@ -2907,7 +2920,7 @@ Rules:
             `Tempo: ${music.mood.tempo}`,
             `Energy: ${music.mood.energy}/100`,
             `Genre: ${music.mood.genre}`,
-            `Source: ${music.source}`,
+            'Provider: music engine',
           ].join('\n'),
           {
             brandKit,
