@@ -15,6 +15,8 @@ import {
   type OrchestrationPlan,
   type SubTask,
 } from './multiAgentService';
+import { savePlan } from './planStorageService';
+import { addToApprovalQueue } from './approvalQueueService';
 import {
   runEvolutionCycle,
   analyzeAgentPerformance,
@@ -197,9 +199,19 @@ export async function orchestrate(
       plan.status = 'completed';
       plan.finalOutput = result.combinedContent;
       
+      // CEO Approval Gate: Queue the result instead of immediate success
+      const approvalId = await addToApprovalQueue(result.combinedContent, {
+        platform: options.platform || 'twitter',
+        agentRole: 'orchestrator',
+        modelUsed: options.preferredModel || 'gpt-4o',
+        score: result.outputs.length > 0 ? result.outputs[0].score : 0,
+        createdAt: new Date().toISOString(),
+        orchestrationPlanId: plan.id,
+      });
+
       finalResult = {
         success: true,
-        finalContent: result.combinedContent,
+        finalContent: `CONTENT_QUEUED_FOR_APPROVAL:${approvalId}`,
         agentOutputs: result.outputs,
         validation,
         governorDecision: decision,
@@ -209,6 +221,7 @@ export async function orchestrate(
           agentsUsed: result.outputs.length,
           regenerations,
           modelUsed: options.preferredModel || 'gpt-4o',
+          approvalId,
         },
       };
       break;

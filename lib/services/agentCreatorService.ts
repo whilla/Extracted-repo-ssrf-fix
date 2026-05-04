@@ -5,6 +5,9 @@ import { kvGet, kvSet, writeFile, readFile, PATHS } from './puterService';
 import { generateId } from './memoryService';
 import { chat } from './aiService';
 import { validateContent } from './governorService';
+import { runSandboxedCode, type SandboxResult } from './sandboxRunner';
+import { logEvolutionEvent } from './evolutionLogService';
+import { addToApprovalQueue } from './approvalQueueService';
 import { 
   loadAgents, 
   saveAgents, 
@@ -183,6 +186,40 @@ function validateCodeModule(codeModule: Pick<AgentCodeModule, 'name' | 'code' | 
     const closes = code.split(close).length - 1;
     if (opens !== closes) {
       errors.push(`Unbalanced ${open}${close} delimiters.`);
+    }
+  }
+
+  return {
+    passed: errors.length === 0,
+    errors,
+  };
+}
+
+async function verifyCodeModuleWithTests(
+  code: string,
+  language: string,
+  tests: Array<{ input: any; expectedOutput: any }>
+): Promise<{ passed: boolean; errors: string[] }> {
+  if (!Array.isArray(tests) || tests.length === 0) {
+    return { passed: false, errors: ['No test cases provided for verification.'] };
+  }
+
+  const errors: string[] = [];
+  
+  for (let i = 0; i < tests.length; i++) {
+    const test = tests[i];
+    try {
+      const result = await runSandboxedCode(code, test.input);
+      if (!result.success) {
+        errors.push(`Test ${i + 1} failed with error: ${result.error}`);
+        continue;
+      }
+      
+      if (JSON.stringify(result.result) !== JSON.stringify(test.expectedOutput)) {
+        errors.push(`Test ${i + 1} failed: Expected ${JSON.stringify(test.expectedOutput)}, got ${JSON.stringify(result.result)}`);
+      }
+    } catch (err) {
+      errors.push(`Test ${i + 1} crashed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -578,6 +615,23 @@ export async function applySelfModification(
             return false;
           }
 
+          // --- TDD Verification Loop ---
+          const tests = codeUpdate.tests || [];
+          const verification = await verifyCodeModuleWithTests(
+            codeUpdate.code,
+            agent.codeModules[moduleIndex].language,
+            tests
+          );
+
+          if (!verification.passed) {
+            modification.impact = 'negative';
+            const errorMsg = `Self-modification rejected: Tests failed. ${verification.errors.join(' ')}`;
+            console.error(errorMsg);
+            await saveCreatedAgent(agent);
+            return false;
+          }
+          // --- End TDD Loop ---
+
           const validation = validateCodeModule({
             name: codeUpdate.name,
             code: codeUpdate.code,
@@ -632,6 +686,19 @@ export async function applySelfModification(
     agent.updatedAt = new Date().toISOString();
     
     await saveCreatedAgent(agent);
+    
+    // Log to Evolution Dashboard
+    await logEvolutionEvent(
+      modification.type === 'code' ? 'module_deploy' : 'config_change',
+      `Autonomous update to agent ${agent.name} (${modification.type})`,
+      {
+        agentId: agent.id,
+        reasoning: modification.reasoning,
+        before: modification.before,
+        after: modification.after,
+      },
+      'positive'
+    );
     
     // Also update in main agent system
     await updateMainAgentSystem(agent);
@@ -743,6 +810,13 @@ The code must:
       modifiedBy: 'agent',
     };
 
+    // Verify the generated code with the generated test cases
+    const tests = parsed.testCases || [];
+    const verification = await verifyCodeModuleWithTests(codeModule.code, codeModule.language, tests);
+    if (!verification.passed) {
+      throw new Error(`Generated module failed verification tests: ${verification.errors.join(' ')}`);
+    }
+
     const validation = validateCodeModule(codeModule);
     if (!validation.passed) {
       throw new Error(`Generated module failed validation: ${validation.errors.join(' ')}`);
@@ -772,6 +846,18 @@ The code must:
       approved: true,
       appliedAt: new Date().toISOString(),
     });
+    
+    await logEvolutionEvent(
+      'module_deploy',
+      `Created new capability module for ${agent.name}: ${persistedModule.name}`,
+      {
+        agentId: agent.id,
+        moduleId: persistedModule.id,
+        reasoning: request.purpose,
+        after: persistedModule.code,
+      },
+      'positive'
+    );
     
     agent.godModeStats.totalModifications++;
     agent.godModeStats.successfulModifications++;
@@ -865,6 +951,19 @@ Provide the improved code. Return JSON:
       approved: true,
       appliedAt: new Date().toISOString(),
     });
+    
+    await logEvolutionEvent(
+      'module_deploy',
+      `Optimized module ${codeModule.name} for ${agent.name}`,
+      {
+        agentId: agent.id,
+        moduleId: codeModule.id,
+        reasoning: parsed.reasoning || editRequest.improvement,
+        before: oldCode,
+        after: parsed.code,
+      },
+      'positive'
+    );
     
     agent.godModeStats.totalModifications++;
     agent.godModeStats.successfulModifications++;

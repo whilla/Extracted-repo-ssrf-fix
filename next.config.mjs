@@ -5,39 +5,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  outputFileTracingRoot: __dirname,
-  experimental: {
-    webpackBuildWorker: false,
-  },
+  output: 'standalone',
   typescript: {
     ignoreBuildErrors: true,
-    // Skip type checking during build since we run tsc separately
-    // This works around WASM compiler issues on some platforms
-    tsconfigPath: './tsconfig.json',
   },
   images: {
-    // SECURITY FIX: Restrict to trusted domains only instead of allowing any HTTPS domain
-      {
-        protocol: 'https',
-        hostname: 'extractedproject-theta.vercel.app',
-      },
-      {
-        protocol: 'https',
-        hostname: '*.extractedproject-theta.vercel.app',
-      },
-      {
-        protocol: 'https',
-        hostname: 'puter.com',
-      },
-      {
-        protocol: 'https',
-        hostname: '*.puter.com',
-      },
-      // Add other trusted CDNs as needed
-      {
-        protocol: 'https',
-        hostname: 'cdn.example.com', // Replace with your CDN domain
-      },
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.vercel.app' },
+      { protocol: 'https', hostname: 'puter.com' },
+      { protocol: 'https', hostname: '*.puter.com' },
     ],
   },
   headers: async () => {
@@ -47,11 +23,8 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            // BUG FIX #3: Harden CSP - remove unsafe-eval, restrict unsafe-inline
             value: [
               "default-src 'self'",
-              // Next.js app router injects inline bootstrap scripts for hydration.
-              // Without unsafe-inline here, the UI renders but client interactions never bind.
               "script-src 'self' 'unsafe-inline' https://js.puter.com https://cdn.puter.com https://puter.com https://*.puter.com 'wasm-unsafe-eval'",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",

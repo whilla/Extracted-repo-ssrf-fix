@@ -1,19 +1,31 @@
 {
   "framework": "nextjs",
-  "buildCommand": "pnpm run build",
-  "devCommand": "pnpm run dev",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
   "regions": ["iad1"],
-  "git": {
-    "deploymentEnabled": {
-      "main": true,
-      "production": true
+  "experimentalServices": {
+    "web": {
+      "entrypoint": ".",
+      "routePrefix": "/"
+    },
+    "orchestrator": {
+      "entrypoint": "lib/services/orchestrator-entry.ts",
+      "routePrefix": "/api/orchestrator",
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "worker": {
+      "entrypoint": "lib/services/worker-entry.ts",
+      "routePrefix": "/api/worker",
+      "memory": 2048,
+      "maxDuration": 900
     }
   },
   "crons": [
     {
       "path": "/api/worker/process",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }

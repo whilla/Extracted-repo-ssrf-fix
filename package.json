@@ -3,13 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": "20.x"
+  },
+  "packageManager": "npm@10.x",
   "scripts": {
     "dev": "if [ \"$TERMUX_VERSION\" ]; then sh ./scripts/run-next.sh dev --webpack; else next dev; fi",
     "build": "if [ \"$TERMUX_VERSION\" ]; then sh ./scripts/run-next.sh build --webpack; else next build; fi",
     "start": "if [ \"$TERMUX_VERSION\" ]; then sh ./scripts/run-next.sh start; else next start; fi",
     "lint": "eslint app components hooks lib types *.mjs",
-    "test": "pnpm run test:agent && pnpm run test:agent-progress && pnpm run test:behavior-upgrade && pnpm run test:retry && pnpm run test:puter-service && pnpm run test:chat-storage && pnpm run test:orchestration && pnpm run test:ai-routing && pnpm run test:media-assets && pnpm run test:video-generation && pnpm run test:brand-identity && pnpm run test:provider-credentials && pnpm run test:upload-worker && pnpm run test:publishing-readiness && pnpm run test:server-ai-proxy",
+    "test": "npm run test:agent && npm run test:agent-progress && npm run test:behavior-upgrade && npm run test:retry && npm run test:puter-service && npm run test:chat-storage && npm run test:orchestration && npm run test:ai-routing && npm run test:media-assets && npm run test:video-generation && npm run test:brand-identity && npm run test:provider-credentials && npm run test:upload-worker && npm run test:publishing-readiness && npm run test:server-ai-proxy",
     "test:agent": "node --eval \"import('./tests/agent-behavior.test.mjs')\"",
     "test:agent-progress": "node --eval \"import('./tests/agent-progress.test.mjs')\"",
     "test:behavior-upgrade": "node --eval \"import('./tests/behavior-upgrade.test.mjs')\"",
@@ -59,6 +62,7 @@
     "@radix-ui/react-tooltip": "1.2.8",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.4",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@vercel/analytics": "1.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
