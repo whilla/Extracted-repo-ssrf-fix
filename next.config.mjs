@@ -7,13 +7,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const nextConfig = {
   output: 'standalone',
   typescript: {
-    ignoreBuildErrors: true,
+    // Vercel handles TypeScript errors during build
+    ignoreBuildErrors: false,
   },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.vercel.app' },
       { protocol: 'https', hostname: 'puter.com' },
       { protocol: 'https', hostname: '*.puter.com' },
+      { protocol: 'https', hostname: '**.supabase.co' }, // For Supabase Storage
     ],
   },
   headers: async () => {
@@ -30,7 +32,7 @@ const nextConfig = {
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: https:",
               "media-src 'self' data: https:",
-              "connect-src 'self' https://js.puter.com https://api.puter.com https://puter.com https://*.puter.com https: ws: wss:",
+              "connect-src 'self' https://js.puter.com https://api.puter.com https://puter.com https://*.puter.com wss://*.puter.com https: ws: wss:",
               "frame-src 'self' https://puter.com https://*.puter.com",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",

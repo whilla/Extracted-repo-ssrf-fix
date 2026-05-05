@@ -5,6 +5,66 @@ import { kvGet, kvSet } from './puterService';
 import { generateId } from './memoryService';
 import { combineStructuredOutputs } from './orchestrationPrimitives';
 
+// Cache configuration
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const CACHE_PREFIX = 'agent_cache_';
+
+// Cache functions
+async function getCachedOutput(agentId: string, input: string): Promise<AgentOutput | null> {
+  const cacheKey = `${CACHE_PREFIX}${agentId}_${input}`;
+  const cachedData = await kvGet(cacheKey);
+  if (!cachedData) return null;
+
+  try {
+    const parsed = JSON.parse(cachedData);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+      return null; // Cache expired
+    }
+    return parsed.output;
+  } catch {
+    return null;
+  }
+}
+
+async function setCachedOutput(agentId: string, input: string, output: AgentOutput): Promise<void> {
+  const cacheKey = `${CACHE_PREFIX}${agentId}_${input}`;
+  const cacheData = {
+    output,
+    timestamp: Date.now(),
+  };
+  await kvSet(cacheKey, JSON.stringify(cacheData));
+}
+
+// Cache configuration
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const CACHE_PREFIX = 'agent_cache_';
+
+// Cache functions
+async function getCachedOutput(agentId: string, input: string): Promise<AgentOutput | null> {
+  const cacheKey = `${CACHE_PREFIX}${agentId}_${input}`;
+  const cachedData = await kvGet(cacheKey);
+  if (!cachedData) return null;
+
+  try {
+    const parsed = JSON.parse(cachedData);
+    if (Date.now() - parsed.timestamp > CACHE_TTL) {
+      return null; // Cache expired
+    }
+    return parsed.output;
+  } catch {
+    return null;
+  }
+}
+
+async function setCachedOutput(agentId: string, input: string, output: AgentOutput): Promise<void> {
+  const cacheKey = `${CACHE_PREFIX}${agentId}_${input}`;
+  const cacheData = {
+    output,
+    timestamp: Date.now(),
+  };
+  await kvSet(cacheKey, JSON.stringify(cacheData));
+}
+
 // Agent Types
 export type AgentRole = 
   | 'planner'
@@ -15,17 +75,19 @@ export type AgentRole =
   | 'distribution'
   | 'memory'
   | 'trend'
-  | 'writer' 
-  | 'hook' 
-  | 'strategist' 
-  | 'optimizer' 
-  | 'critic' 
-  | 'visual' 
-  | 'hashtag' 
+  | 'writer'
+  | 'hook'
+  | 'strategist'
+  | 'optimizer'
+  | 'critic'
+  | 'visual'
+  | 'hashtag'
   | 'engagement'
-  | 'hybrid';
+  | 'hybrid'
+  | 'mediaDirector';
 
-export type AgentCapability = 
+
+export type AgentCapability =
   | 'execution_planning'
   | 'identity_modeling'
   | 'rule_generation'
@@ -81,6 +143,7 @@ export interface AgentOutput {
   content: string;
   score: number;
   reasoning: string;
+  fullPrompt: string;
   metadata: Record<string, unknown>;
 }
 
@@ -99,7 +162,7 @@ export interface SubTask {
     | 'body'
     | 'strategy'
     | 'optimize'
-    | 'critique'
+    | 'critic'
     | 'visual'
     | 'hashtag';
   input: string;
@@ -115,7 +178,7 @@ export interface OrchestrationPlan {
   subtasks: SubTask[];
   parallelGroups: string[][];
   aggregationStrategy: 'best_score' | 'combine' | 'vote' | 'weighted';
-  status: 'planning' | 'executing' | 'aggregating' | 'completed' | 'failed';
+  status: 'planning' | 'executing' | 'paused' | 'aggregating' | 'completed' | 'failed';
   finalOutput?: string;
   createdAt: string;
 }
@@ -704,7 +767,7 @@ export async function initializeAgents(): Promise<AgentConfig[]> {
     await saveAgents(merged);
     return merged;
   }
-  
+
   const now = new Date().toISOString();
   const agents: AgentConfig[] = DEFAULT_AGENTS.map(template => ({
     ...template,
@@ -713,7 +776,7 @@ export async function initializeAgents(): Promise<AgentConfig[]> {
     createdAt: now,
     updatedAt: now,
   }));
-  
+
   await saveAgents(agents);
   return agents;
 }
@@ -785,23 +848,23 @@ export async function recordAgentTask(
   const agents = await loadAgents();
   const agent = agents.find(a => a.id === agentId);
   if (!agent) return;
-  
+
   const record: AgentTaskRecord = {
     ...task,
     taskId: generateId(),
     timestamp: new Date().toISOString(),
   };
-  
+
   // Keep last 100 tasks
   agent.taskHistory = [record, ...agent.taskHistory].slice(0, 100);
-  
+
   // Update performance score based on recent tasks
   const recentTasks = agent.taskHistory.slice(0, 20);
   if (recentTasks.length >= 5) {
     const avgScore = recentTasks.reduce((sum, t) => sum + t.score, 0) / recentTasks.length;
     agent.performanceScore = Math.round(avgScore);
   }
-  
+
   agent.updatedAt = new Date().toISOString();
   await saveAgents(agents);
 }
@@ -814,13 +877,13 @@ export async function createOrchestrationPlan(
   const planId = generateId();
   const subtasks: SubTask[] = [];
   const parallelGroups: string[][] = [];
-  
+
   const agents = await loadAgents();
-  const getAgent = (role: AgentRole) => 
+  const getAgent = (role: AgentRole) =>
     agents.find(a => a.role === role && a.evolutionState !== 'deprecated');
   const getAgentId = (primary: AgentRole, fallback?: AgentRole) =>
     getAgent(primary)?.id || (fallback ? getAgent(fallback)?.id || '' : '');
-  
+
   if (requestType === 'content' || requestType === 'full') {
     const plannerTask: SubTask = {
       id: generateId(),
@@ -886,11 +949,20 @@ export async function createOrchestrationPlan(
 
     const criticTask: SubTask = {
       id: generateId(),
-      type: 'critique',
+      type: 'critic',
       input: userRequest,
       assignedAgent: getAgentId('critic'),
       status: 'pending',
       dependencies: [distributionTask.id, visualTask.id],
+    };
+
+    const mediaDirectorTask: SubTask = {
+      id: generateId(),
+      type: 'mediaDirector',
+      input: userRequest,
+      assignedAgent: getAgentId('mediaDirector'),
+      status: 'pending',
+      dependencies: [generatorTask.id],
     };
 
     subtasks.push(
@@ -901,6 +973,7 @@ export async function createOrchestrationPlan(
       generatorTask,
       visualTask,
       distributionTask,
+      mediaDirectorTask,
       criticTask
     );
     parallelGroups.push(
@@ -909,7 +982,7 @@ export async function createOrchestrationPlan(
       [rulesTask.id],
       [structureTask.id],
       [generatorTask.id],
-      [visualTask.id, distributionTask.id],
+      [visualTask.id, distributionTask.id, mediaDirectorTask.id],
       [criticTask.id]
     );
 
@@ -933,6 +1006,7 @@ export async function createOrchestrationPlan(
       subtasks.push(memoryTask, trendTask);
       parallelGroups.splice(6, 0, [memoryTask.id, trendTask.id]);
     }
+    }
   } else if (requestType === 'strategy') {
     const strategyTask: SubTask = {
       id: generateId(),
@@ -944,7 +1018,7 @@ export async function createOrchestrationPlan(
     subtasks.push(strategyTask);
     parallelGroups.push([strategyTask.id]);
   }
-  
+
   const plan: OrchestrationPlan = {
     id: planId,
     userRequest,
@@ -954,7 +1028,7 @@ export async function createOrchestrationPlan(
     status: 'planning',
     createdAt: new Date().toISOString(),
   };
-  
+
   return plan;
 }
 
@@ -966,18 +1040,18 @@ export async function executeAgentTask(
   aiProvider: (prompt: string) => Promise<string>
 ): Promise<AgentOutput> {
   const startTime = Date.now();
-  
+
   // Build prompt from template
   const prompt = fillPromptTemplate(agent.promptTemplate, input, context);
   const reasoningPrompt = `${prompt}\n\n${DEEP_REASONING_DIRECTIVE}`;
-  
+
   try {
     const content = await aiProvider(reasoningPrompt);
     const duration = Date.now() - startTime;
-    
+
     // Calculate score based on output characteristics
     const score = calculateOutputScore(content, agent.scoringWeights);
-    
+
     // Record the task
     await recordAgentTask(agent.id, {
       taskType: agent.role,
@@ -986,13 +1060,14 @@ export async function executeAgentTask(
       score,
       duration,
     });
-    
+
     return {
       agentId: agent.id,
       agentRole: agent.role,
       content,
       score,
       reasoning: `Generated by ${agent.name} (v${agent.version}) with deep reasoning`,
+      fullPrompt: reasoningPrompt,
       metadata: { duration, promptLength: reasoningPrompt.length, reasoningMode: 'deep' },
     };
   } catch (error) {
@@ -1013,28 +1088,28 @@ function calculateOutputScore(
   weights: AgentConfig['scoringWeights']
 ): number {
   let score = 0;
-  
+
   // Creativity: Check for unique phrases, varied sentence structure
   const sentences = content.split(/[.!?]+/).filter(Boolean);
   const avgSentenceLength = sentences.reduce((sum, s) => sum + s.length, 0) / (sentences.length || 1);
   const creativityScore = Math.min(100, avgSentenceLength > 50 && avgSentenceLength < 150 ? 80 : 60);
   score += creativityScore * weights.creativity;
-  
+
   // Relevance: Check content length and completeness
   const relevanceScore = content.length > 100 ? 85 : content.length > 50 ? 70 : 50;
   score += relevanceScore * weights.relevance;
-  
+
   // Engagement: Check for hooks, questions, CTAs
   const hasQuestion = content.includes('?');
   const hasCTA = /\b(click|tap|follow|share|comment|like|save|dm|link)\b/i.test(content);
   const hasHook = sentences[0]?.length < 100;
   const engagementScore = (hasQuestion ? 25 : 0) + (hasCTA ? 35 : 0) + (hasHook ? 25 : 0) + 15;
   score += engagementScore * weights.engagement;
-  
+
   // Brand alignment: Placeholder (would need brand context)
   const brandScore = 75;
   score += brandScore * weights.brandAlignment;
-  
+
   return Math.round(score);
 }
 
@@ -1042,17 +1117,17 @@ function calculateOutputScore(
 export function selectBestOutput(outputs: AgentOutput[]): AgentOutput | null {
   if (outputs.length === 0) return null;
   if (outputs.length === 1) return outputs[0];
-  
+
   // Sort by score descending
   const sorted = [...outputs].sort((a, b) => b.score - a.score);
-  
+
   // If top 2 are close (within 5 points), consider other factors
   if (sorted.length >= 2 && sorted[0].score - sorted[1].score <= 5) {
     // Prefer longer, more detailed content
     const byLength = sorted.slice(0, 2).sort((a, b) => b.content.length - a.content.length);
     return byLength[0];
   }
-  
+
   return sorted[0];
 }
 
@@ -1072,7 +1147,7 @@ export async function getAgentStats(): Promise<{
   const agents = await loadAgents();
   const activeAgents = agents.filter(a => a.evolutionState !== 'deprecated');
   const totalTasks = agents.reduce((sum, a) => sum + a.taskHistory.length, 0);
-  
+
   return {
     totalAgents: agents.length,
     activeAgents: activeAgents.length,
@@ -1091,12 +1166,12 @@ export async function createHybridAgent(
 ): Promise<AgentConfig | null> {
   const agents = await loadAgents();
   const parents = agents.filter(a => parentIds.includes(a.id));
-  
+
   if (parents.length < 2) return null;
-  
+
   // Combine capabilities
   const capabilities = [...new Set(parents.flatMap(p => p.capabilities))] as AgentCapability[];
-  
+
   // Average scoring weights
   const avgWeights = {
     creativity: parents.reduce((sum, p) => sum + p.scoringWeights.creativity, 0) / parents.length,
@@ -1104,7 +1179,7 @@ export async function createHybridAgent(
     engagement: parents.reduce((sum, p) => sum + p.scoringWeights.engagement, 0) / parents.length,
     brandAlignment: parents.reduce((sum, p) => sum + p.scoringWeights.brandAlignment, 0) / parents.length,
   };
-  
+
   // Combine prompt templates
   const combinedPrompt = `You are a hybrid AI combining multiple specializations.
 
@@ -1117,7 +1192,7 @@ Input: {{input}}
 Brand Context: {{brandContext}}
 
 Generate optimized content using your combined expertise.`;
-  
+
   const now = new Date().toISOString();
   const hybrid: AgentConfig = {
     id: generateId(),
@@ -1134,9 +1209,9 @@ Generate optimized content using your combined expertise.`;
     createdAt: now,
     updatedAt: now,
   };
-  
+
   agents.push(hybrid);
   await saveAgents(agents);
-  
+
   return hybrid;
 }

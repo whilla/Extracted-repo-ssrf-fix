@@ -28,6 +28,7 @@ export interface CriticVerdict {
   score: number | null;
   critique: string;
   fixes: string[];
+  targetAgent?: OrchestrationAgentRole;
   schemaValid: boolean;
 }
 
@@ -45,11 +46,13 @@ export function parseCriticVerdict(content: string): CriticVerdict {
 
   const verdictMatch = raw.match(/(?:^|\n)\s*(?:verdict|final verdict)\s*:\s*(approve|reject)\b/i);
   const scoreMatch = raw.match(/(?:^|\n)\s*score\s*:\s*(\d{1,3})\b/i);
+  const targetMatch = raw.match(/(?:^|\n)\s*target agent\s*:\s*([a-z_]+)\b/i);
   const critiqueMatch = raw.match(/(?:^|\n)\s*critique\s*:\s*([\s\S]*?)(?=\n\s*fixes\s*:|$)/i);
   const fixesMatch = raw.match(/(?:^|\n)\s*fixes\s*:\s*([\s\S]*)$/i);
 
   const verdict = (verdictMatch?.[1] || '').toLowerCase() as 'approve' | 'reject' | '';
   const score = scoreMatch ? Number.parseInt(scoreMatch[1], 10) : null;
+  const targetAgent = (targetMatch?.[1] || '').toLowerCase() as OrchestrationAgentRole || undefined;
   const critique = (critiqueMatch?.[1] || '').trim();
   const fixesRaw = (fixesMatch?.[1] || '').trim();
   const fixes = fixesRaw
@@ -64,6 +67,7 @@ export function parseCriticVerdict(content: string): CriticVerdict {
     score: Number.isFinite(score) ? score : null,
     critique,
     fixes,
+    targetAgent: targetAgent || undefined,
     schemaValid,
   };
 }

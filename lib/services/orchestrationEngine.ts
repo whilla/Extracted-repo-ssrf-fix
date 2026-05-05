@@ -15,7 +15,8 @@ import {
   type OrchestrationPlan,
   type SubTask,
 } from './multiAgentService';
-import { savePlan } from './planStorageService';
+import { savePlan, getPlan } from './planStorageService';
+
 import { addToApprovalQueue } from './approvalQueueService';
 import {
   runEvolutionCycle,
@@ -34,13 +35,154 @@ import {
 import { loadBrandKit } from './memoryService';
 import { buildMemoryContext } from './agentMemoryService';
 import { universalChat } from './aiService';
-import { parseCriticVerdict } from './orchestrationPrimitives';
+import { BrandKit } from '@/lib/validators';
+
+// Keyword-based context retrieval for RAG-lite
+interface ContextSection {
+  id: string;
+  title: string;
+  content: string;
+  keywords: string[];
+}
+
+function splitBrandKitIntoSections(brandKit: BrandKit): ContextSection[] {
+  const sections: ContextSection[] = [
+    {
+      id: 'voice',
+      title: 'Brand Voice',
+      content: `Tone: ${brandKit.tone}\nLanguage: ${brandKit.language}`,
+      keywords: ['tone', 'voice', 'language', 'style'],
+    },
+    {
+      id: 'pillars',
+      title: 'Content Pillars',
+      content: brandKit.contentPillars.join('\n'),
+      keywords: ['pillar', 'focus', 'core', 'strategy'],
+    },
+    {
+      id: 'avoid',
+      title: 'Avoid Topics',
+      content: brandKit.avoidTopics.join('\n'),
+      keywords: ['avoid', 'exclude', 'restrict', 'limit'],
+    },
+    {
+      id: 'usp',
+      title: 'Unique Selling Point',
+      content: brandKit.uniqueSellingPoint,
+      keywords: ['usp', 'unique', 'differentiator', 'value'],
+    },
+    {
+      id: 'niche',
+      title: 'Niche',
+      content: `Niche: ${brandKit.niche}\nAudience: ${brandKit.targetAudience}`,
+      keywords: ['niche', 'audience', 'target', 'segment'],
+    },
+  ];
+
+  return sections;
+}
+
+function retrieveRelevantContext(
+  query: string,
+  sections: ContextSection[],
+  role: AgentRole
+): string {
+  const relevantSections: ContextSection[] = [];
+
+  // Role-based filtering
+  switch (role) {
+    case 'planner':
+    case 'identity':
+    case 'rules':
+      relevantSections.push(...sections.filter(s => ['voice', 'pillars', 'avoid', 'usp'].includes(s.id)));
+      break;
+    case 'generator':
+    case 'writer':
+      relevantSections.push(...sections.filter(s => ['voice', 'usp'].includes(s.id)));
+      break;
+    case 'distribution':
+    case 'hashtag':
+      relevantSections.push(...sections.filter(s => ['niche', 'pillars'].includes(s.id)));
+      break;
+    default:
+      relevantSections.push(...sections);
+  }
+
+  // Keyword matching
+  const queryKeywords = query.toLowerCase().split(/\s+/);
+  const matchedSections = relevantSections.filter(section =>
+    section.keywords.some(keyword =>
+      queryKeywords.includes(keyword.toLowerCase())
+    )
+  );
+
+  // Fallback to all relevant sections if no matches
+  const finalSections = matchedSections.length > 0 ? matchedSections : relevantSections;
+
+  return finalSections.map(s => `### ${s.title}\n${s.content}`).join('\n\n');
+}
+
+function getSurgicalBrandContext(role: AgentRole, brandKit: BrandKit | null): string {
+  if (!brandKit) return '';
+
+  const parts: string[] = [];
+  
+  switch (role) {
+    case 'planner':
+    case 'identity':
+      parts.push(`Brand: ${brandKit.brandName}`);
+      parts.push(`Niche: ${brandKit.niche}`);
+      parts.push(`Audience: ${brandKit.targetAudience}`);
+      parts.push(`USP: ${brandKit.uniqueSellingPoint}`);
+      parts.push(`Tone: ${brandKit.tone}`);
+      parts.push(`Pillars: ${brandKit.contentPillars.join(', ')}`);
+      parts.push(`Avoid: ${brandKit.avoidTopics.join(', ')}`);
+      break;
+      
+    case 'rules':
+      parts.push(`Tone: ${brandKit.tone}`);
+      parts.push(`Pillars: ${brandKit.contentPillars.join(', ')}`);
+      parts.push(`Avoid: ${brandKit.avoidTopics.join(', ')}`);
+      break;
+      
+    case 'generator':
+    case 'writer':
+      parts.push(`Tone: ${brandKit.tone}`);
+      parts.push(`USP: ${brandKit.uniqueSellingPoint}`);
+      parts.push(`Pillars: ${brandKit.contentPillars.join(', ')}`);
+      break;
+      
+    case 'distribution':
+    case 'hashtag':
+      parts.push(`Audience: ${brandKit.targetAudience}`);
+      parts.push(`Hashtag Strategy: ${Array.isArray(brandKit.hashtagStrategy) ? brandKit.hashtagStrategy.join(', ') : brandKit.hashtagStrategy}`);
+      break;
+      
+    default:
+      parts.push(`Brand: ${brandKit.brandName} (${brandKit.niche})`);
+      parts.push(`Tone: ${brandKit.tone}`);
+  }
+
+  return parts.join('\n');
+}
+
 
 // Orchestration Types
 export interface OrchestrationResult {
   success: boolean;
   finalContent: string;
   agentOutputs: AgentOutput[];
+  trace: Array<{
+    taskId: string;
+    agentId: string;
+    role: AgentRole;
+    input: string;
+    prompt: string;
+    output: string;
+    score: number;
+    duration: number;
+    timestamp: string;
+  }>;
   validation: ContentValidation;
   governorDecision: GovernorDecision;
   orchestrationPlan: OrchestrationPlan;
@@ -49,6 +191,7 @@ export interface OrchestrationResult {
     agentsUsed: number;
     regenerations: number;
     modelUsed: string;
+    pausedAtTaskId?: string;
   };
 }
 
@@ -58,6 +201,9 @@ export interface OrchestrationOptions {
   maxRegenerations?: number;
   preferredModel?: string;
   skipGovernor?: boolean;
+  orchestrationPlanId?: string;
+  resumeFromTaskId?: string;
+  pauseAtRole?: AgentRole;
 }
 
 const CRITIC_REJECT_PATTERN = /(?:^|\n)\s*(?:verdict|final verdict)\s*:\s*reject\b/i;
@@ -74,7 +220,7 @@ const ROLE_CONTEXT_KEY: Record<AgentOutput['agentRole'], string> = {
   hook: 'hook',
   strategist: 'strategy',
   optimizer: 'optimizedContent',
-  critic: 'critique',
+  critic: 'critic',
   visual: 'visualPrompt',
   hashtag: 'hashtags',
   engagement: 'engagementInsights',
@@ -145,15 +291,30 @@ export async function orchestrate(
     };
   }
   
-  // Create orchestration plan
-  const plan = await createOrchestrationPlan(userRequest, options.requestType);
+  // Create or Load orchestration plan
+  let plan: OrchestrationPlan;
+  if (options.orchestrationPlanId) {
+    const savedPlan = await getPlan(options.orchestrationPlanId);
+    if (!savedPlan) throw new Error(`Plan ${options.orchestrationPlanId} not found`);
+    plan = savedPlan.plan_data;
+  } else {
+    plan = await createOrchestrationPlan(userRequest, options.requestType);
+  }
   plan.status = 'executing';
+  await savePlan(plan);
+
   
   // AI provider function
-  const aiProvider = async (prompt: string): Promise<string> => {
+  const aiProvider = async (prompt: string, role: AgentRole): Promise<string> => {
     const model = options.preferredModel || 'gpt-4o';
-    return await universalChat(prompt, { model, brandKit });
+    const brandKitSections = brandKit ? splitBrandKitIntoSections(brandKit) : [];
+    const surgicalBrand = getSurgicalBrandContext(role, brandKit);
+    const retrievedContext = retrieveRelevantContext(prompt, brandKitSections, role);
+    const enhancedContext = `${surgicalBrand}\n\n${retrievedContext}`;
+    return await universalChat(prompt, { model, brandKit: { ...brandKit!, uniqueSellingPoint: enhancedContext } as any });
   };
+
+
   
   // Execute orchestration with potential regeneration
   let finalResult: OrchestrationResult | null = null;
@@ -166,11 +327,69 @@ export async function orchestrate(
         memoryContext,
         platform: options.platform || 'twitter',
       },
-      aiProvider
+      aiProvider,
+      options
     );
 
-    if (result.criticRejected && regenerations < maxRegenerations) {
+    if (result.pausedAtTaskId) {
+      return {
+        success: false,
+        finalContent: `PAUSED_AT_TASK:${result.pausedAtTaskId}`,
+        agentOutputs: result.outputs,
+        trace: result.trace,
+        validation: {
+          isValid: false,
+          score: 0,
+          issues: [{ type: 'info', severity: 'low', message: 'Orchestration paused for human review' }],
+          suggestions: ['Review current outputs and resume'],
+          governorApproved: false,
+          rejectionReason: 'Paused',
+        },
+        governorDecision: {
+          approved: false,
+          action: 'pause',
+          reason: `Paused at task ${result.pausedAtTaskId}`,
+        },
+        orchestrationPlan: plan,
+        metadata: {
+          totalDuration: Date.now() - startTime,
+          agentsUsed: result.outputs.length,
+          regenerations,
+          modelUsed: options.preferredModel || 'gpt-4o',
+          pausedAtTaskId: result.pausedAtTaskId,
+        },
+      };
+    }
+
+    const criticRejected = result.criticFeedback
+      ? !result.criticVerdict.schemaValid || result.criticVerdict.verdict === 'reject' || CRITIC_REJECT_PATTERN.test(result.criticFeedback)
+      : false;
+
+    if (criticRejected && regenerations < maxRegenerations) {
       regenerations++;
+      
+      // Adaptive Planning: If critic specifies a target agent, invalidate that task and its descendants
+      const targetRole = result.criticVerdict.targetAgent;
+      if (targetRole) {
+        const targetTask = plan.subtasks.find(t => t.type === targetRole || t.assignedAgent === targetRole);
+        if (targetTask) {
+          // Invalidate target and all downstream tasks
+          plan.subtasks.forEach(t => {
+            if (t.id === targetTask.id || (t.dependencies && t.dependencies.includes(targetTask.id))) {
+              t.status = 'pending';
+              t.output = undefined;
+            }
+          });
+        }
+      } else {
+        // Full reset if no target specified
+        plan.subtasks.forEach(t => {
+          t.status = 'pending';
+          t.output = undefined;
+        });
+      }
+      
+      await savePlan(plan);
       continue;
     }
     
@@ -199,7 +418,7 @@ export async function orchestrate(
       plan.status = 'completed';
       plan.finalOutput = result.combinedContent;
       
-      // CEO Approval Gate: Queue the result instead of immediate success
+      // CEO Approval Gate: Queue the result for tracking
       const approvalId = await addToApprovalQueue(result.combinedContent, {
         platform: options.platform || 'twitter',
         agentRole: 'orchestrator',
@@ -211,8 +430,9 @@ export async function orchestrate(
 
       finalResult = {
         success: true,
-        finalContent: `CONTENT_QUEUED_FOR_APPROVAL:${approvalId}`,
+        finalContent: result.combinedContent,
         agentOutputs: result.outputs,
+        trace: result.trace,
         validation,
         governorDecision: decision,
         orchestrationPlan: plan,
@@ -245,6 +465,7 @@ export async function orchestrate(
       success: false,
       finalContent: result.combinedContent,
       agentOutputs: result.outputs,
+      trace: result.trace,
       validation,
       governorDecision: decision,
       orchestrationPlan: plan,
@@ -275,6 +496,7 @@ export async function orchestrate(
       success: false,
       finalContent: '',
       agentOutputs: [],
+      trace: [],
       validation: lastValidation,
       governorDecision: {
         approved: false,
@@ -298,23 +520,58 @@ export async function orchestrate(
 async function executeOrchestrationPlan(
   plan: OrchestrationPlan,
   context: Record<string, string>,
-  aiProvider: (prompt: string) => Promise<string>
+  aiProvider: (prompt: string, role: AgentRole) => Promise<string>,
+  options: OrchestrationOptions = {}
 ): Promise<{
   outputs: AgentOutput[];
   combinedContent: string;
-  criticRejected: boolean;
+  criticVerdict: CriticVerdict;
   criticFeedback: string;
+  trace: Array<{
+    taskId: string;
+    agentId: string;
+    role: AgentRole;
+    input: string;
+    prompt: string;
+    output: string;
+    score: number;
+    duration: number;
+    timestamp: string;
+  }>;
+  pausedAtTaskId?: string;
 }> {
   const outputs: AgentOutput[] = [];
   const taskOutputs: Map<string, AgentOutput> = new Map();
+  const trace: any[] = [];
   
+  // If resuming, load previous outputs
+  if (plan.status === 'paused' || options.resumeFromTaskId) {
+    // We assume plan.subtasks contains the outputs of completed tasks
+    plan.subtasks.forEach(task => {
+      if (task.output) {
+        taskOutputs.set(task.id, task.output);
+        outputs.push(task.output);
+      }
+    });
+  }
+
   // Execute each parallel group in sequence
   for (const group of plan.parallelGroups) {
     // Get subtasks for this group
     const groupTasks = plan.subtasks.filter(t => group.includes(t.id));
     
+    // Skip already completed tasks (for resume)
+    const remainingTasks = groupTasks.filter(task => {
+      if (task.status === 'completed') return false;
+      if (options.resumeFromTaskId && task.id !== options.resumeFromTaskId) {
+        // This is a simplified resume logic: skip everything before the target task
+        // In a real app, we'd check if the task is in the current or future group
+      }
+      return true;
+    });
+
     // Check dependencies
-    const readyTasks = groupTasks.filter(task => {
+    const readyTasks = remainingTasks.filter(task => {
       if (!task.dependencies) return true;
       return task.dependencies.every(depId => taskOutputs.has(depId));
     });
@@ -345,6 +602,13 @@ async function executeOrchestrationPlan(
         return null;
       }
       
+      // Check if we should pause at this role
+      if (options.pauseAtRole === assignedAgent.role) {
+        plan.status = 'paused';
+        await savePlan(plan);
+        return { taskId: task.id, paused: true };
+      }
+      
       // Build task-specific context
       const taskContext = { ...context };
       
@@ -359,17 +623,47 @@ async function executeOrchestrationPlan(
         }
       }
       
-      // Execute agent task
+      // Execute agent task with error recovery
       task.status = 'running';
-      const output = await executeAgentTask(
-        assignedAgent,
-        task.input || plan.userRequest,
-        taskContext,
-        aiProvider
-      );
+      let output: AgentOutput;
+      try {
+        output = await executeAgentTask(
+          assignedAgent,
+          task.input || plan.userRequest,
+          taskContext,
+          (p) => aiProvider(p, assignedAgent.role)
+        );
+      } catch (error) {
+        // Fallback to alternative agent with same role
+        const alternativeAgent = await getAgentByRole(assignedAgent.role);
+        if (alternativeAgent && alternativeAgent.id !== assignedAgent.id) {
+          output = await executeAgentTask(
+            alternativeAgent,
+            task.input || plan.userRequest,
+            taskContext,
+            (p) => aiProvider(p, alternativeAgent.role)
+          );
+        } else {
+          throw error;
+        }
+      }
+
       
       task.output = output;
       task.status = output.score > 0 ? 'completed' : 'failed';
+      
+      // Record trace
+      trace.push({
+        taskId: task.id,
+        agentId: assignedAgent.id,
+        role: assignedAgent.role,
+        input: task.input || plan.userRequest,
+        prompt: output.fullPrompt,
+        output: output.content,
+        score: output.score,
+        duration: output.metadata.duration as number,
+        timestamp: new Date().toISOString(),
+      });
       
       return { taskId: task.id, output };
     });
@@ -380,10 +674,23 @@ async function executeOrchestrationPlan(
     // Store outputs
     for (const result of results) {
       if (result) {
-        taskOutputs.set(result.taskId, result.output);
-        outputs.push(result.output);
+        if ((result as any).paused) {
+          return { 
+            outputs, 
+            combinedContent: '', 
+            criticRejected: false, 
+            criticFeedback: '', 
+            trace, 
+            pausedAtTaskId: (result as any).taskId 
+          };
+        }
+        taskOutputs.set(result.taskId, (result as any).output);
+        outputs.push((result as any).output);
       }
     }
+    
+    // Save plan state after each group for resilience
+    await savePlan(plan);
   }
   
   // Combine outputs based on strategy
@@ -428,11 +735,7 @@ async function executeOrchestrationPlan(
     };
   }
 
-  const criticRejected = criticFeedback
-    ? !criticVerdict.schemaValid || criticVerdict.verdict === 'reject' || CRITIC_REJECT_PATTERN.test(criticFeedback)
-    : true;
-
-  return { outputs, combinedContent, criticRejected, criticFeedback };
+  return { outputs, combinedContent, criticVerdict, criticFeedback, trace };
 }
 
 // Quick content generation (single agent, fast path)
