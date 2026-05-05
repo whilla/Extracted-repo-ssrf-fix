@@ -23,9 +23,11 @@ export default function LoginPage() {
       if (isSignUp) {
         await signUpWithEmail(email, password);
         toast.success('Account created! Please check your email for verification.');
+        router.push('/signup'); // Stay on signup or move to a "verify email" page
       } else {
         await signInWithEmail(email, password);
-        router.push('/dashboard');
+        // Force a page refresh or use a state update to let AuthContext know we are logged in
+        window.location.href = '/dashboard';
       }
     } catch (error) {
       console.error('Auth Error:', error);
