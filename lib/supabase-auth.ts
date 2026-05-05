@@ -6,6 +6,12 @@ export const getSupabaseClient = () => {
   return createClientComponentClient<Database>();
 };
 
+export const signUpWithEmail = async (email: string, password: string) => {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+};
+
 export const signInWithEmail = async (email: string, password: string) => {
   const supabase = getSupabaseClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
