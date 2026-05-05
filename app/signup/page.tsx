@@ -23,9 +23,11 @@ export default function SignUpPage() {
       if (useMagicLink) {
         await signUpWithMagicLink(email);
         toast.success('Magic link sent! Please check your email to verify your account.');
+        router.push('/login');
       } else {
         await signUpWithEmail(email, password);
         toast.success('Account created! Please check your email for verification.');
+        router.push('/login');
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Sign-up failed');
