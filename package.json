@@ -9,7 +9,7 @@
   "packageManager": "npm@10.x",
   "scripts": {
     "dev": "next dev", 
-    "build": "next build", 
+    "build": "next build --webpack", 
     "start": "next start",
     "lint": "eslint app components hooks lib types *.mjs",
     "test": "npm run test:agent && npm run test:agent-progress && npm run test:behavior-upgrade && npm run test:retry && npm run test:puter-service && npm run test:chat-storage && npm run test:orchestration && npm run test:ai-routing && npm run test:media-assets && npm run test:video-generation && npm run test:brand-identity && npm run test:provider-credentials && npm run test:upload-worker && npm run test:publishing-readiness && npm run test:server-ai-proxy",
