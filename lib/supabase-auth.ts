@@ -12,6 +12,17 @@ export const signUpWithEmail = async (email: string, password: string) => {
   if (error) throw error;
 };
 
+export const signInWithGoogle = async () => {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
+  if (error) throw error;
+};
+
 export const signInWithEmail = async (email: string, password: string) => {
   const supabase = getSupabaseClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });

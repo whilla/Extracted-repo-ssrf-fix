@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInWithEmail } from '@/lib/supabase-auth';
+import { signInWithEmail, signUpWithEmail } from '@/lib/supabase-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { Chrome } from 'lucide-react'; // Assuming lucide-react is installed based on package.json
 
 export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -62,6 +63,28 @@ export default function LoginPage() {
             {isLoading ? (isSignUp ? 'Creating Account...' : 'Signing In...') : (isSignUp ? 'Sign Up' : 'Sign In')}
           </Button>
         </form>
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+          </div>
+        </div>
+        <Button 
+          variant="outline" 
+          className="w-full" 
+          onClick={async () => {
+            try {
+              await import('@/lib/supabase-auth').then(auth => auth.signInWithGoogle());
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : 'Google sign-in failed');
+            }
+          }}
+        >
+          <Chrome className="mr-2 h-4 w-4" />
+          Google
+        </Button>
         <div className="text-center text-sm">
           {isSignUp ? (
             <p>Already have an account? <button onClick={() => setIsSignUp(false)} className="text-primary hover:underline">Sign In</button></p>
