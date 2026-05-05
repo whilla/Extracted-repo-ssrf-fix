@@ -4,7 +4,7 @@ import Script from 'next/script'
 import './globals.css'
 import { Providers } from './providers'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
-import { Toaster } from '@/components/ui/toaster'
+import { Toaster } from 'sonner'
 
 const runtimeBootstrap = `
 (() => {

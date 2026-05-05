@@ -21,13 +21,14 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       if (isSignUp) {
-        await import('@/lib/supabase-auth').then(auth => auth.signUpWithEmail(email, password));
+        await signUpWithEmail(email, password);
         toast.success('Account created! Please check your email for verification.');
       } else {
-        await import('@/lib/supabase-auth').then(auth => auth.signInWithEmail(email, password));
+        await signInWithEmail(email, password);
         router.push('/dashboard');
       }
     } catch (error) {
+      console.error('Auth Error:', error);
       toast.error(error instanceof Error ? error.message : 'Authentication failed');
     } finally {
       setIsLoading(false);

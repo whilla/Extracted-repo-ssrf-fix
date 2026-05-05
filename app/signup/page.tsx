@@ -30,6 +30,7 @@ export default function SignUpPage() {
         router.push('/login');
       }
     } catch (error) {
+      console.error('Auth Error:', error);
       toast.error(error instanceof Error ? error.message : 'Sign-up failed');
     } finally {
       setIsLoading(false);
