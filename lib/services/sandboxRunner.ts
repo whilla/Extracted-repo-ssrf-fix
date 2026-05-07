@@ -18,12 +18,12 @@ export async function runSandboxedCode<T = any>(
   timeoutMs: number = 500
 ): Promise<SandboxResult<T>> {
   const startTime = Date.now();
-  const context = createManagerContext();
+  const managerContext = createManagerContext();
 
   try {
     // Create a restricted sandbox context
     const sandbox = {
-      ...context,
+      ...managerContext,
       console: {
         log: (...args: any[]) => console.log("[Sandbox Log]:", ...args),
         error: (...args: any[]) => console.error("[Sandbox Error]:", ...args),
@@ -35,7 +35,7 @@ export async function runSandboxedCode<T = any>(
       __filename: undefined,
     };
 
-    const context = vm.createContext(sandbox);
+    const vmContext = vm.createContext(sandbox);
     
     // Wrap code in an async function to allow await
     const wrappedCode = `async function __sandbox_main(input, context) { ${code} }`;
@@ -45,9 +45,9 @@ export async function runSandboxedCode<T = any>(
     const result = await Promise.race([
       (async () => {
         try {
-          const resultValue = script.runInContext(context, { timeout: timeoutMs });
+          const resultValue = script.runInContext(vmContext, { timeout: timeoutMs });
           if (typeof resultValue === 'function') {
-            return await resultValue(input, context);
+            return await resultValue(input, vmContext);
           }
           return resultValue;
         } catch (vmError: any) {

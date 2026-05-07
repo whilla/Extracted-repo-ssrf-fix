@@ -29,14 +29,14 @@ export async function analyzeMusicMood(content: string): Promise<MusicMood> {
   
   // Enhanced mood patterns with weights
   const moodPatterns: Array<[MusicMood['primary'], RegExp, number]> = [
-    ['energetic', /\b(energy|hype|fast|launch|viral|bold|exciting|power|move|action|success|growth)\b/g, 2],
-    ['dramatic', /\b(dramatic|cinematic|epic|stakes|tension|storm|battle|reveal|intense|critical|urgent)\b/g, 2],
+    ['energetic', /\b(energy|hype|fast|launch|viral|bold|exciting|power|move|action|success|growth)\b/g, 3],
+    ['dramatic', /\b(dramatic|cinematic|epic|stakes|tension|storm|battle|reveal|intense|critical|urgent)\b/g, 4],
     ['mysterious', /\b(mystery|mysterious|secret|unknown|shadow|hidden|strange|suspense|curiosity)\b/g, 2],
     ['calm', /\b(calm|soft|peace|gentle|slow|relax|quiet|ambient|zen|minimal)\b/g, 2],
-    ['sad', /\b(sad|loss|lonely|grief|melancholy|heartbreak|struggle|pain)\b/g, 2],
+    ['sad', /\b(sad|loss|lonely|grief|melancholy|heartbreak|struggle|pain)\b/g, 3],
     ['nostalgic', /\b(memory|nostalgia|past|remember|childhood|vintage|legacy|history)\b/g, 2],
-    ['happy', /\b(happy|joy|bright|celebrate|fun|smile|positive|laugh)\b/g, 2],
-    ['inspiring', /\b(inspire|hope|growth|brand|future|build|dream|create|transform|vision|victory)\b/g, 2],
+    ['happy', /\b(happy|joy|bright|celebrate|fun|smile|positive|laugh)\b/g, 3],
+    ['inspiring', /\b(inspire|hope|growth|brand|future|build|dream|create|transform|vision|victory)\b/g, 4],
   ];
   
   const moodScores: Array<[MusicMood['primary'], number]> = moodPatterns.map(([mood, pattern, weight]) => [mood, (lower.match(pattern) || []).length * weight]);

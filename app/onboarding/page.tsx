@@ -102,6 +102,7 @@ function OnboardingContent() {
     tone: 'professional',
     avoidTopics: [],
     contentPillars: [],
+    contentPreferences: [],
     uniqueSellingPoint: '',
     language: 'en',
   });
