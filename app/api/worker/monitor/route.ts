@@ -2,13 +2,16 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function GET() {
   try {
+    const supabase = getSupabaseClient();
     // Define a "stalled" post as one that has been in 'uploading' or 'pending' 
     // for more than 30 minutes without an update.
     const STALL_THRESHOLD_MINUTES = 30;

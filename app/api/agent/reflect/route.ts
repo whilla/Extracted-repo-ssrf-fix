@@ -3,13 +3,16 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { aiService } from '@/lib/services/aiService';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function POST(request: Request) {
   try {
+    const supabase = getSupabaseClient();
     const { agent_id } = await request.json();
 
     if (!agent_id) {
@@ -56,16 +59,12 @@ export async function POST(request: Request) {
     const insights = await aiService.chat(reflectionPrompt);
 
     // 4. Store the reflection in the agent's vector memory
-    // We don't actually have a vector embedding helper here, so we'll store it as a 
-    // high-priority memory entry in the database for the agent to retrieve.
     const { error: memoryError } = await supabase
       .from('agent_vector_memory')
       .insert({
         agent_id,
         content: `[REFLECTION - ${new Date().toISOString()}]\n${insights}`,
         metadata: { type: 'performance_reflection', priority: 'high' },
-        // Note: In a real scenario, we would call an embedding model here
-        // embedding: await generateEmbedding(insights) 
       });
 
     if (memoryError) throw memoryError;
