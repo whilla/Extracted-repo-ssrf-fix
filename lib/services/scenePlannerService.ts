@@ -78,7 +78,7 @@ export interface ScenePlan {
   title: string;
   description: string;
   platform: string;
-  contentType: 'reel' | 'tiktok' | 'youtube-short' | 'youtube-long' | 'story' | 'ad' | 'tutorial';
+  contentType: 'reel' | 'tiktok' | 'youtube-short' | 'youtube-long' | 'story' | 'ad' | 'tutorial' | 'storytelling_animated' | 'conversational';
   targetDuration: number;
   scenes: Scene[];
   hooks: string[];

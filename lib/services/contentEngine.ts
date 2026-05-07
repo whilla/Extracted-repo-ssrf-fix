@@ -21,10 +21,11 @@ const MAX_IMAGE_RETRIES = 3;
 interface GenerationOptions {
   idea: string;
   platforms: Platform[];
-  format?: 'post' | 'thread' | 'carousel' | 'story';
+  format?: 'post' | 'thread' | 'carousel' | 'story' | 'storytelling_animated' | 'conversational';
   includeImage?: boolean;
   includeVoice?: boolean;
   customInstructions?: string;
+  preferredContentType?: string;
 }
 
 interface GeneratedContent {
@@ -61,6 +62,14 @@ export async function generateContent(
     throw new Error('Live content generation is unavailable while offline. Reconnect to generate real content.');
   }
 
+  // Fetch and Apply User Content Preferences
+  const userPreferences = brand?.contentPreferences || [];
+  const preferredPref = userPreferences.find(p => p.type === options.preferredContentType);
+  const strictPreferenceInstructions = preferredPref 
+    ? `STRICT REQUIREMENT: The user has a saved preference for ${preferredPref.type} content. 
+       FOLLOW THESE SAVED INSTRUCTIONS EXACTLY: ${preferredPref.savedInstructions}`
+    : '';
+
   const lockedNiche = agentMemory.niche || brand?.niche || '';
   const lockedAudience = agentMemory.targetAudience || brand?.targetAudience || '';
   const lockedTone = agentMemory.preferredTone || brand?.tone || '';
@@ -82,6 +91,7 @@ Recent saved ideas: ${recentIdeas.length > 0 ? recentIdeas.join(' | ') : 'None s
 Idea/Topic: ${idea}
 Platforms: ${platformConstraints}
 Format: ${format}
+${strictPreferenceInstructions ? `\n${strictPreferenceInstructions}` : ''}
 ${customInstructions ? `Special Instructions: ${customInstructions}` : ''}
 ${recentTopics.length > 0 ? `Avoid repeating these recent topics: ${recentTopics.join('; ')}` : ''}
 ${nicheGuidance ? `${nicheGuidance}` : ''}

@@ -7,10 +7,9 @@ export async function middleware(request: NextRequest) {
   const supabase = createMiddlewareClient({ req: request, res: response });
 
   const { data: { session } } = await supabase.auth.getSession();
-  const bypassAuth = request.cookies.get('nexus_bypass_auth')?.value === 'true';
 
   // Redirect to login if no session and not on public routes
-  if (!session && !bypassAuth && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
+  if (!session && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 

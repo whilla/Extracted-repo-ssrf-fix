@@ -26,17 +26,20 @@ export interface GeneratedMusic {
 // Analyze content to determine appropriate music mood
 export async function analyzeMusicMood(content: string): Promise<MusicMood> {
   const lower = (content || '').toLowerCase();
-  const moodPatterns: Array<[MusicMood['primary'], RegExp]> = [
-    ['energetic', /\b(energy|hype|fast|launch|viral|bold|exciting|power|move|action)\b/g],
-    ['dramatic', /\b(dramatic|cinematic|epic|stakes|tension|storm|battle|reveal|intense)\b/g],
-    ['mysterious', /\b(mystery|mysterious|secret|unknown|shadow|hidden|strange|suspense)\b/g],
-    ['calm', /\b(calm|soft|peace|gentle|slow|relax|quiet|ambient)\b/g],
-    ['sad', /\b(sad|loss|lonely|grief|melancholy|heartbreak)\b/g],
-    ['nostalgic', /\b(memory|nostalgia|past|remember|childhood|vintage)\b/g],
-    ['happy', /\b(happy|joy|bright|celebrate|fun|smile)\b/g],
-    ['inspiring', /\b(inspire|hope|growth|brand|future|build|dream|create|transform)\b/g],
+  
+  // Enhanced mood patterns with weights
+  const moodPatterns: Array<[MusicMood['primary'], RegExp, number]> = [
+    ['energetic', /\b(energy|hype|fast|launch|viral|bold|exciting|power|move|action|success|growth)\b/g, 2],
+    ['dramatic', /\b(dramatic|cinematic|epic|stakes|tension|storm|battle|reveal|intense|critical|urgent)\b/g, 2],
+    ['mysterious', /\b(mystery|mysterious|secret|unknown|shadow|hidden|strange|suspense|curiosity)\b/g, 2],
+    ['calm', /\b(calm|soft|peace|gentle|slow|relax|quiet|ambient|zen|minimal)\b/g, 2],
+    ['sad', /\b(sad|loss|lonely|grief|melancholy|heartbreak|struggle|pain)\b/g, 2],
+    ['nostalgic', /\b(memory|nostalgia|past|remember|childhood|vintage|legacy|history)\b/g, 2],
+    ['happy', /\b(happy|joy|bright|celebrate|fun|smile|positive|laugh)\b/g, 2],
+    ['inspiring', /\b(inspire|hope|growth|brand|future|build|dream|create|transform|vision|victory)\b/g, 2],
   ];
-  const moodScores: Array<[MusicMood['primary'], number]> = moodPatterns.map(([mood, pattern]) => [mood, (lower.match(pattern) || []).length]);
+  
+  const moodScores: Array<[MusicMood['primary'], number]> = moodPatterns.map(([mood, pattern, weight]) => [mood, (lower.match(pattern) || []).length * weight]);
 
   const [primary, score] = moodScores.sort((a, b) => b[1] - a[1])[0] || ['inspiring', 0];
   const energetic = primary === 'energetic' || primary === 'dramatic';
@@ -50,7 +53,7 @@ export async function analyzeMusicMood(content: string): Promise<MusicMood> {
     energy,
     genre: primary === 'dramatic' ? 'cinematic hybrid' : primary === 'energetic' ? 'modern electronic' : 'ambient electronic',
     instruments: primary === 'dramatic' ? ['strings', 'hybrid percussion'] : primary === 'calm' ? ['piano', 'soft synth'] : ['synth', 'piano', 'drums'],
-    keywords: [primary, tempo, 'brand-safe', 'background'],
+    keywords: [primary, tempo, 'brand-safe', 'background', 'perfect-match'],
   };
 }
 

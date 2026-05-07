@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 import { 
   getEvolutionLog, 
   getEvolutionStats 
@@ -10,46 +12,80 @@ import {
 } from '@/lib/services/agentEvolutionService';
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const view = searchParams.get('view');
+  try {
+    const supabase = createRouteHandlerClient({ cookies });
+    const { data: { user } } = await supabase.auth.getUser();
 
-  if (view === 'stats') {
-    const stats = await getEvolutionStats();
-    return NextResponse.json(stats);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get('view');
+
+    if (view === 'stats') {
+      const stats = await getEvolutionStats();
+      return NextResponse.json(stats);
+    }
+
+    if (view === 'history') {
+      const history = await getEvolutionHistory();
+      return NextResponse.json(history);
+    }
+
+    const log = await getEvolutionLog();
+    return NextResponse.json(log);
+  } catch (error: any) {
+    console.error('GET /api/evolution error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  if (view === 'history') {
-    const history = await getEvolutionHistory();
-    return NextResponse.json(history);
-  }
-
-  const log = await getEvolutionLog();
-  return NextResponse.json(log);
 }
 
 export async function POST(request: NextRequest) {
-  const { action, proposalId } = await request.json();
+  try {
+    const supabase = createRouteHandlerClient({ cookies });
+    const { data: { user } } = await supabase.auth.getUser();
 
-  if (action === 'trigger_cycle') {
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    let action: string | undefined;
+    let proposalId: string | undefined;
     try {
-      const result = await runEvolutionCycle();
-      return NextResponse.json({ success: true, result });
-    } catch (error: any) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      const body = await request.json();
+      action = body.action;
+      proposalId = body.proposalId;
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
-  }
 
-  if (action === 'apply_proposal') {
-    if (!proposalId) {
-      return NextResponse.json({ error: 'proposalId is required' }, { status: 400 });
+    if (action === 'trigger_cycle') {
+      try {
+        const result = await runEvolutionCycle();
+        return NextResponse.json({ success: true, result });
+      } catch (error: any) {
+        console.error('Evolution cycle trigger error:', error);
+        return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+      }
     }
-    try {
-      const success = await applyEvolution(proposalId);
-      return NextResponse.json({ success });
-    } catch (error: any) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
-  }
 
-  return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    if (action === 'apply_proposal') {
+      if (!proposalId) {
+        return NextResponse.json({ error: 'proposalId is required' }, { status: 400 });
+      }
+      try {
+        const success = await applyEvolution(proposalId);
+        return NextResponse.json({ success });
+      } catch (error: any) {
+        console.error('Apply evolution error:', error);
+        return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  } catch (error: any) {
+    console.error('POST /api/evolution error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }

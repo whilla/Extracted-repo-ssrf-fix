@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 import { logService } from '@/lib/services/logService';
 import { n8nBridgeService } from '@/lib/services/n8nBridgeService';
 import { planService } from '@/lib/services/planService';
@@ -10,6 +12,13 @@ import { kvGet } from '@/lib/services/puterService';
 
 export async function POST(request: Request) {
   try {
+    const supabase = createRouteHandlerClient({ cookies });
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { agent_id, goal, context, memory_id } = body;
 

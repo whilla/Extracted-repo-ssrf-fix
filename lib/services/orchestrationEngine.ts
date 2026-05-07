@@ -167,6 +167,36 @@ function getSurgicalBrandContext(role: AgentRole, brandKit: BrandKit | null): st
 }
 
 
+// Helper to handle Ultimate Brain fallback when specialized agents fail
+async function handleBrainFallback(
+  task: any, 
+  context: any, 
+  originalError: any
+): Promise<AgentOutput> {
+  console.warn(`[Brand Manager] Specialized agent failed for task ${task.id}. Stepping in as the Ultimate Brain...`);
+  
+  const prompt = `The specialized agent for the role ${task.type} failed to complete this task. 
+As the Brand Manager and Ultimate Brain of this operation, you must now handle this perfectly.
+
+TASK: ${task.input || 'Main Goal'}
+CONTEXT: ${JSON.stringify(context)}
+ERROR ENCOUNTERED: ${originalError instanceof Error ? originalError.message : String(originalError)}
+
+Requirement: Provide the final, perfect output that a specialized agent would have provided, ensuring total alignment with brand identity and quality standards.`;
+
+  const content = await universalChat(prompt, { model: 'gpt-4o' });
+
+  return {
+    agentId: 'brand-manager-brain',
+    agentRole: 'orchestrator' as any,
+    content,
+    score: 100,
+    reasoning: 'Handled by Brand Manager fallback after specialized agent failure',
+    fullPrompt: prompt,
+    metadata: { duration: 0 },
+  };
+}
+
 // Orchestration Types
 export interface OrchestrationResult {
   success: boolean;
@@ -662,7 +692,7 @@ async function executeOrchestrationPlan(
         }
       }
       
-      // Execute agent task with error recovery
+      // Execute agent task with error recovery and Ultimate Brain fallback
       task.status = 'running';
       let output: AgentOutput;
       try {
@@ -673,17 +703,22 @@ async function executeOrchestrationPlan(
           (p) => aiProvider(p, assignedAgent.role)
         );
       } catch (error) {
-        // Fallback to alternative agent with same role
+        // Fallback 1: Try alternative agent with same role
         const alternativeAgent = await getAgentByRole(assignedAgent.role);
         if (alternativeAgent && alternativeAgent.id !== assignedAgent.id) {
-          output = await executeAgentTask(
-            alternativeAgent,
-            task.input || plan.userRequest,
-            taskContext,
-            (p) => aiProvider(p, alternativeAgent.role)
-          );
+          try {
+            output = await executeAgentTask(
+              alternativeAgent,
+              task.input || plan.userRequest,
+              taskContext,
+              (p) => aiProvider(p, alternativeAgent.role)
+            );
+          } catch (altError) {
+            output = await handleBrainFallback(task, taskContext, altError);
+          }
         } else {
-          throw error;
+          // Fallback 2: Immediate Ultimate Brain fallback
+          output = await handleBrainFallback(task, taskContext, error);
         }
       }
 

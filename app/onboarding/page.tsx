@@ -93,6 +93,8 @@ function OnboardingContent() {
   // Form state
   const [brandKit, setBrandKit] = useState<Partial<BrandKit>>({
     brandName: '',
+    userName: '',
+    agentName: '',
     niche: '',
     targetAudience: '',
     primaryColor: '#00F5FF',
@@ -212,6 +214,8 @@ function OnboardingContent() {
       // Save brand kit
       const completeBrandKit: BrandKit = {
         brandName: brandKit.brandName || 'My Brand',
+        userName: brandKit.userName || 'User',
+        agentName: brandKit.agentName || 'Nexus',
         niche: brandKit.niche || 'General',
         targetAudience: brandKit.targetAudience || 'General audience',
         primaryColor: brandKit.primaryColor || '#00F5FF',
@@ -377,6 +381,29 @@ function OnboardingContent() {
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Your Name</label>
+                    <input
+                      type="text"
+                      value={brandKit.userName}
+                      onChange={(e) => setBrandKit({ ...brandKit, userName: e.target.value })}
+                      placeholder="Enter your name"
+                      className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Agent's Name</label>
+                    <input
+                      type="text"
+                      value={brandKit.agentName}
+                      onChange={(e) => setBrandKit({ ...brandKit, agentName: e.target.value })}
+                      placeholder="e.g., Nexus, Nova, Aria"
+                      className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)]"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium mb-1.5">Niche / Industry</label>
                   <input
@@ -396,6 +423,17 @@ function OnboardingContent() {
                     onChange={(e) => setBrandKit({ ...brandKit, targetAudience: e.target.value })}
                     placeholder="e.g., Young professionals, Parents, Entrepreneurs"
                     className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Unique Selling Point / Brand Vision</label>
+                  <textarea
+                    value={brandKit.uniqueSellingPoint}
+                    onChange={(e) => setBrandKit({ ...brandKit, uniqueSellingPoint: e.target.value })}
+                    placeholder="What makes your brand unique? Describe your vision and core values."
+                    rows={3}
+                    className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)] resize-none"
                   />
                 </div>
 

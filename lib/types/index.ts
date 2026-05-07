@@ -1,9 +1,13 @@
 // NexusAI Type Definitions
 
+// NexusAI Type Definitions
+
 // Brand Kit
 export interface BrandKit {
   name?: string;
   brandName: string;
+  userName: string;
+  agentName: string;
   niche: string;
   targetAudience: string;
   audience?: string;
@@ -15,6 +19,14 @@ export interface BrandKit {
   uniqueSellingPoint: string;
   language: string;
   hashtagStrategy?: string | string[];
+  contentPreferences: UserContentPreference[];
+}
+
+export interface UserContentPreference {
+  type: string; // e.g., "storytelling_animated", "conversational", "educational_short"
+  description: string;
+  frequency: 'always' | 'often' | 'rarely';
+  savedInstructions: string;
 }
 
 // Content
