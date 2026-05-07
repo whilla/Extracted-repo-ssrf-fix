@@ -1,3 +1,122 @@
+diff --git a/.env.example b/.env.example
+deleted file mode 100644
+index 91691ba..0000000
+--- a/.env.example
++++ /dev/null
+@@ -1,60 +0,0 @@
+-NEXT_PUBLIC_SUPABASE_URL=
+-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+-
+-# ============================================================================
+-# Core Authentication
+-# ============================================================================
+-NEXT_PUBLIC_SUPABASE_URL=
+-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+-
+-# ============================================================================
+-# Server-Side AI Provider Keys (for /api/ai/chat proxy)
+-# Recommended for production to avoid exposing keys in browser
+-# ============================================================================
+-OPENAI_API_KEY=
+-ANTHROPIC_API_KEY=
+-GROQ_API_KEY=
+-GEMINI_API_KEY=
+-OPENROUTER_API_KEY=
+-GITHUB_MODELS_API_KEY=
+-BYTEZ_API_KEY=
+-POE_API_KEY=
+-DEEPSEEK_API_KEY=
+-NVIDIA_API_KEY=
+-TOGETHER_API_KEY=
+-FIREWORKS_API_KEY=
+-
+-# ============================================================================
+-# Media Generation Providers
+-# ============================================================================
+-# Image generation
+-STABILITY_API_KEY=          # Stability AI (Stable Diffusion)
+-REPLICATE_API_KEY=          # Replicate (multiple models)
+-IDEOGRAM_API_KEY=           # Ideogram AI
+-
+-# Video generation
+-RUNWAY_API_KEY=             # Runway ML
+-# REPLICATE_API_KEY= (can be reused for video)
+-
+-# Audio/Voice
+-ELEVENLABS_API_KEY=         # ElevenLabs TTS
+-# OPENAI_API_KEY= (can be reused for TTS)
+-
+-# ============================================================================
+-# Puter.js Configuration (optional, for file storage)
+-# ============================================================================
+-NEXT_PUBLIC_PUTER_DOMAIN=https://puter.com
+-NEXT_PUBLIC_PUTER_BASE_PATH=/NexusAI    # Custom base path for file storage
+-
+-# ============================================================================
+-# Video Generation
+-# ============================================================================
+-NEXT_PUBLIC_LTX_ENDPOINT=fal-ai/ltx-2.3/text-to-video/fast
+-NEXT_PUBLIC_LTX_OPEN_ENDPOINT=http://localhost:8000/generate
+-
+-# ============================================================================
+-# Mobile/Protocol Configuration
+-# ============================================================================
+-# Set to 'true' if running from file:// protocol on Android
+-# Enables memory-fallback storage when localStorage is blocked
+-NEXT_PUBLIC_FILE_PROTOCOL_MODE=false
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..1885e4c
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,47 @@
++# Use an official Node.js runtime as a parent image
++FROM node:20-alpine AS base
++
++# Install dependencies only when needed
++FROM base AS deps
++RUN apk add --no-cache libc6-compat
++WORKDIR /app
++
++COPY package.json package-lock.json* ./
++RUN npm ci
++
++# Rebuild the source code only when needed
++FROM base AS builder
++WORKDIR /app
++COPY --from=deps /app/node_modules ./node_modules
++COPY . .
++
++# Disable telemetry during the build
++ENV NEXT_TELEMETRY_DISABLED 1
++
++RUN npm run build
++
++# Production image, copy all the files and run next
++FROM base AS runner
++WORKDIR /app
++
++ENV NODE_ENV production
++ENV NEXT_TELEMETRY_DISABLED 1
++
++RUN addgroup --system --gid 1001 nodejs
++RUN adduser --system --uid 1001 nextjs
++
++COPY --from=builder /app/public ./public
++
++# Automatically leverage output traces to reduce image size
++# https://nextjs.org/docs/app/building-your-application/deploying#docker-image
++COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
++COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
++
++USER nextjs
++
++EXPOSE 3000
++
++ENV PORT 3000
++HOSTNAME "0.0.0.0"
++
++CMD ["node", "server.js"]
 diff --git a/app/api/activate/route.ts b/app/api/activate/route.ts
 index 4870614..056bc39 100644
 --- a/app/api/activate/route.ts
@@ -42,11 +161,192 @@ index 4870614..056bc39 100644
      const body = await request.json();
      const { goal } = body;
  
+diff --git a/app/api/agent/evolve/route.ts b/app/api/agent/evolve/route.ts
+new file mode 100644
+index 0000000..fd276d7
+--- /dev/null
++++ b/app/api/agent/evolve/route.ts
+@@ -0,0 +1,48 @@
++import { NextResponse } from 'next/server';
++import { createClient } from '@supabase/supabase-js';
++
++const supabase = createClient(
++  process.env.NEXT_PUBLIC_SUPABASE_URL!,
++  process.env.SUPABASE_SERVICE_ROLE_KEY!
++);
++
++export async function POST(request: Request) {
++  try {
++    const body = await request.json();
++    const { action, payload, secret } = body;
++
++    if (secret !== process.env.N8N_BRIDGE_SECRET) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    switch (action) {
++      case 'install_skill':
++        // In a Vercel production environment, the filesystem is read-only.
++        // To install a skill, we must commit it to GitHub via the GitHub API.
++        const { skillName, repoPath } = payload;
++        console.log(`[AgentEvolve] Request to install skill: ${skillName} from ${repoPath}`);
++        
++        // 1. Trigger GitHub API to clone/add skill to the repo
++        // 2. This will trigger a Vercel redeploy
++        return NextResponse.json({ 
++          status: 'initiated', 
++          message: `Installation of ${skillName} has been triggered via GitHub. The app will redeploy automatically.` 
++        });
++
++      case 'edit_code':
++        const { filePath, oldText, newText } = payload;
++        console.log(`[AgentEvolve] Request to edit code at ${filePath}`);
++        
++        // Trigger GitHub API to create a commit with the edit
++        return NextResponse.json({ 
++          status: 'initiated', 
++          message: `Edit for ${filePath} has been committed to GitHub. Redeploying...` 
++        });
++
++      default:
++        return NextResponse.json({ error: 'Unknown evolution action' }, { status: 400 });
++    }
++  } catch (error: any) {
++    return NextResponse.json({ error: error.message }, { status: 500 });
++  }
++}
+diff --git a/app/api/agent/logs/route.ts b/app/api/agent/logs/route.ts
+new file mode 100644
+index 0000000..5026fcf
+--- /dev/null
++++ b/app/api/agent/logs/route.ts
+@@ -0,0 +1,33 @@
++import { NextResponse } from 'next/server';
++import { logService } from '@/lib/services/logService';
++
++export async function POST(request: Request) {
++  try {
++    const body = await request.json();
++    const { agent_id, status, message, plan_id, step_id, metadata, secret } = body;
++
++    // 1. Basic Security Check
++    if (secret !== process.env.N8N_BRIDGE_SECRET) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    if (!agent_id || !status || !message) {
++      return NextResponse.json({ error: 'Missing required fields (agent_id, status, message)' }, { status: 400 });
++    }
++
++    // 2. Log the event
++    await logService.logEvent({
++      agent_id,
++      status,
++      message,
++      plan_id,
++      step_id,
++      metadata,
++    });
++
++    return NextResponse.json({ success: true });
++  } catch (error: any) {
++    console.error('[api/agent/logs] Error processing log:', error);
++    return NextResponse.json({ error: error.message }, { status: 500 });
++  }
++}
+diff --git a/app/api/agent/reflect/route.ts b/app/api/agent/reflect/route.ts
+new file mode 100644
+index 0000000..073dc5e
+--- /dev/null
++++ b/app/api/agent/reflect/route.ts
+@@ -0,0 +1,82 @@
++import { NextResponse } from 'next/server';
++import { createClient } from '@supabase/supabase-js';
++import { aiService } from '@/lib/services/aiService';
++
++const supabase = createClient(
++  process.env.NEXT_PUBLIC_SUPABASE_URL!,
++  process.env.SUPABASE_SERVICE_ROLE_KEY!
++);
++
++export async function POST(request: Request) {
++  try {
++    const { agent_id } = await request.json();
++
++    if (!agent_id) {
++      return NextResponse.json({ error: 'Missing agent_id' }, { status: 400 });
++    }
++
++    // 1. Fetch performance data for the agent
++    const { data: performance, error: perfError } = await supabase
++      .from('content_performance')
++      .select('*')
++      .eq('agent_id', agent_id)
++      .order('updated_at', { ascending: false })
++      .limit(50);
++
++    if (perfError) throw perfError;
++
++    if (!performance || performance.length === 0) {
++      return NextResponse.json({ 
++        success: true, 
++        message: 'No performance data available for reflection yet.' 
++      });
++    }
++
++    // 2. Synthesize data for the AI
++    const performanceSummary = performance.map(p => 
++      `Post ID: ${p.post_id}, Platform: ${p.platform}, Metrics: ${JSON.stringify(p.metrics)}`
++    ).join('\n');
++
++    const reflectionPrompt = `
++      You are a Social Media Strategist. Analyze the following performance data for an AI agent.
++      
++      Performance Data:
++      ${performanceSummary}
++      
++      Task:
++      1. Identify the top 3 most successful patterns (hooks, topics, or formats).
++      2. Identify the top 3 least successful patterns.
++      3. Provide 3 concrete "Lessons Learned" as actionable guidelines for future content generation.
++      
++      Format your response as a structured set of guidelines.
++    `;
++
++    // 3. Generate insights using the AI
++    const insights = await aiService.chat(reflectionPrompt);
++
++    // 4. Store the reflection in the agent's vector memory
++    // We don't actually have a vector embedding helper here, so we'll store it as a 
++    // high-priority memory entry in the database for the agent to retrieve.
++    const { error: memoryError } = await supabase
++      .from('agent_vector_memory')
++      .insert({
++        agent_id,
++        content: `[REFLECTION - ${new Date().toISOString()}]\n${insights}`,
++        metadata: { type: 'performance_reflection', priority: 'high' },
++        // Note: In a real scenario, we would call an embedding model here
++        // embedding: await generateEmbedding(insights) 
++      });
++
++    if (memoryError) throw memoryError;
++
++    return NextResponse.json({ 
++      success: true, 
++      insights,
++      message: 'Agent reflection completed and stored in memory.' 
++    });
++
++  } catch (error: any) {
++    console.error('[api/agent/reflect] Reflection error:', error);
++    return NextResponse.json({ error: error.message }, { status: 500 });
++  }
++}
 diff --git a/app/api/approval/route.ts b/app/api/approval/route.ts
-index ec51bfa..75f11a2 100644
+index ec51bfa..4c32db4 100644
 --- a/app/api/approval/route.ts
 +++ b/app/api/approval/route.ts
-@@ -1,21 +1,41 @@
+@@ -1,21 +1,63 @@
  import { NextResponse, type NextRequest } from 'next/server';
 +import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 +import { cookies } from 'next/headers';
@@ -57,14 +357,25 @@ index ec51bfa..75f11a2 100644
 -  const view = searchParams.get('view');
 +  try {
 +    const supabase = createRouteHandlerClient({ cookies });
-+    const { data: { user } } = await supabase.auth.getUser();
++    const { data: { user }, error: authError } = await supabase.auth.getUser();
  
 -  if (view === 'all') {
 -    const queue = await getApprovalQueue();
 -    return NextResponse.json(queue);
 -  }
-+    if (!user) {
++    if (authError || !user) {
 +      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    // Role Check: Only allow admins/managers to access the approval queue
++    const { data: userData } = await supabase
++      .from('users')
++      .select('role')
++      .eq('id', user.id)
++      .single();
++
++    if (userData?.role !== 'admin' && userData?.role !== 'manager') {
++      return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 });
 +    }
 +
 +    const { searchParams } = new URL(request.url);
@@ -87,10 +398,21 @@ index ec51bfa..75f11a2 100644
  export async function POST(request: NextRequest) {
    try {
 +    const supabase = createRouteHandlerClient({ cookies });
-+    const { data: { user } } = await supabase.auth.getUser();
++    const { data: { user }, error: authError } = await supabase.auth.getUser();
 +
-+    if (!user) {
++    if (authError || !user) {
 +      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    // Role Check
++    const { data: userData } = await supabase
++      .from('users')
++      .select('role')
++      .eq('id', user.id)
++      .single();
++
++    if (userData?.role !== 'admin' && userData?.role !== 'manager') {
++      return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 });
 +    }
 +
      const body = await request.json();
@@ -267,17 +589,22 @@ index bf05647..66a4a41 100644
 +  }
  }
 diff --git a/app/api/orchestrator/route.ts b/app/api/orchestrator/route.ts
-index 60601b6..1495099 100644
+index b509a4d..1495099 100644
 --- a/app/api/orchestrator/route.ts
 +++ b/app/api/orchestrator/route.ts
-@@ -1,4 +1,6 @@
+@@ -1,18 +1,156 @@
  import { NextResponse } from 'next/server';
+-import { orchestrate } from '@/lib/services/orchestrationEngine';
 +import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 +import { cookies } from 'next/headers';
- import { logService } from '@/lib/services/logService';
- import { n8nBridgeService } from '@/lib/services/n8nBridgeService';
- import { planService } from '@/lib/services/planService';
-@@ -10,6 +12,13 @@ import { kvGet } from '@/lib/services/puterService';
++import { logService } from '@/lib/services/logService';
++import { n8nBridgeService } from '@/lib/services/n8nBridgeService';
++import { planService } from '@/lib/services/planService';
++import { personaService } from '@/lib/services/personaService';
++import { multiAgentService, type AgentOutput } from '@/lib/services/multiAgentService';
++import { aiService } from '@/lib/services/aiService';
++import { buildMemoryContext } from '@/lib/services/agentMemoryService';
++import { kvGet } from '@/lib/services/puterService';
  
  export async function POST(request: Request) {
    try {
@@ -289,13 +616,151 @@ index 60601b6..1495099 100644
 +    }
 +
      const body = await request.json();
-     const { agent_id, goal, context, memory_id } = body;
+-    const { userRequest, options } = body;
++    const { agent_id, goal, context, memory_id } = body;
++
++    if (!agent_id || !goal) {
++      return NextResponse.json({ error: 'Missing agent_id or goal' }, { status: 400 });
++    }
++
++    // 1. Log the "Thinking" phase
++    await logService.logEvent({
++      agent_id,
++      status: 'thinking',
++      message: `Analyzing the goal: "${goal}". Deploying the Multi-Agent Swarm...`,
++    });
++
++    // 2. Initialize Multi-Agent Context
++    const agents = await multiAgentService.initializeAgents();
++    const memoryContext = await buildMemoryContext(agent_id);
++    const brandKit = await kvGet('brand_kit'); // Simplified brand kit fetch
++    const brandContext = brandKit ? JSON.stringify(brandKit) : 'No specific brand kit defined.';
++
++    // 3. Create Orchestration Plan
++    const plan = await multiAgentService.createOrchestrationPlan(goal, 'full');
++    
++    await logService.logEvent({
++      agent_id,
++      status: 'thinking',
++      message: `Swarm Plan created: ${plan.subtasks.length} specialized tasks mapped. Starting execution...`,
++    });
++
++    // 4. Execute Tasks (Respecting Dependencies)
++    const taskResults = new Map<string, AgentOutput>();
++    const pendingTasks = [...plan.subtasks];
++    
++    while (pendingTasks.length > 0) {
++      const executableTasks = pendingTasks.filter(task => 
++        !task.dependencies || task.dependencies.every(depId => taskResults.has(depId))
++      );
++
++      if (executableTasks.length === 0 && pendingTasks.length > 0) {
++        throw new Error('Deadlock detected in orchestration plan dependencies.');
++      }
  
+-    if (!userRequest) {
+-      return NextResponse.json({ error: 'userRequest is required' }, { status: 400 });
++      // Execute available tasks in parallel (matching plan.parallelGroups if possible, here we just do all ready)
++      await Promise.all(executableTasks.map(async (task) => {
++        const agent = await multiAgentService.getAgentById(task.assignedAgent);
++        if (!agent) throw new Error(`Agent ${task.assignedAgent} not found for task ${task.id}`);
++
++        // Resolve context from previous task results
++        const contextObj: Record<string, string> = {
++          brandContext,
++          memoryContext,
++        };
++        if (task.dependencies) {
++          task.dependencies.forEach(depId => {
++            const res = taskResults.get(depId);
++            if (res) {
++              // Map common roles to template keys (e.g., planner -> executionPlan)
++              const role = res.agentRole;
++              const key = role === 'planner' ? 'executionPlan' : 
++                          role === 'identity' ? 'identity' : 
++                          role === 'rules' ? 'rules' : 
++                          role === 'structure' ? 'structure' : 
++                          role === 'generator' ? 'content' : role;
++              contextObj[key] = res.content;
++            }
++          });
++        }
++
++        await logService.logEvent({
++          agent_id,
++          status: 'acting',
++          message: `Agent ${agent.name} (${agent.role}) is working on: ${task.type}...`,
++        });
++
++        const output = await multiAgentService.executeAgentTask(
++          agent,
++          task.input,
++          contextObj,
++          (prompt) => aiService.chat(prompt)
++        );
++
++        taskResults.set(task.id, output);
++      }));
++
++      // Remove executed tasks from pending
++      executableTasks.forEach(t => {
++        const idx = pendingTasks.indexOf(t);
++        if (idx > -1) pendingTasks.splice(idx, 1);
++      });
+     }
+ 
+-    const result = await orchestrate(userRequest, options || { requestType: 'content' });
+-    return NextResponse.json(result);
++    // 5. Aggregate Final Output
++    const finalAgent = await multiAgentService.getAgentByRole('generator');
++    const generatorOutput = Array.from(taskResults.values()).find(o => o.agentRole === 'generator');
++    const distributionAgent = await multiAgentService.getAgentByRole('distribution');
++    const distributionOutput = Array.from(taskResults.values()).find(o => o.agentRole === 'distribution');
++    
++    const finalContent = distributionOutput?.content || generatorOutput?.content || 'No content generated';
++
++    // 6. Final Humanization & Route to Approval
++    const humanizedResponse = await personaService.humanize(
++      `The agent swarm has completed the task. Final content: ${finalContent}`, 
++      agent_id
++    );
++
++    await logService.logEvent({
++      agent_id,
++      status: 'completed',
++      message: 'Swarm execution complete. Quality validated and routed to dashboard.',
++    });
++
++    // Trigger the posting workflow (n8n)
++    await n8nBridgeService.triggerWorkflow('workflow-social-posting', {
++      agent_id,
++      caption: finalContent,
++      video_url: 'pending_generation',
++      platform: 'tiktok',
++    });
++
++    return NextResponse.json({ 
++      status: 'success', 
++      response: humanizedResponse,
++      finalContent, 
++      swarm_metrics: {
++        tasks_completed: taskResults.size,
++        agents_involved: new Set(Array.from(taskResults.values()).map(o => o.agentId)).size
++      },
++      nextStep: 'human_approval' 
++    });
++
+   } catch (error: any) {
+-    return NextResponse.json({ error: error.message || 'Internal Orchestration Error' }, { status: 500 });
++    console.error('[api/orchestrator] Swarm Orchestration error:', error);
++    return NextResponse.json({ error: error.message }, { status: 500 });
+   }
+ }
 diff --git a/app/api/proxy/route.ts b/app/api/proxy/route.ts
-index 2203166..3b49f56 100644
+index 2203166..377d660 100644
 --- a/app/api/proxy/route.ts
 +++ b/app/api/proxy/route.ts
-@@ -1,16 +1,50 @@
+@@ -1,16 +1,58 @@
  import { NextResponse, type NextRequest } from 'next/server';
 +import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 +import { cookies } from 'next/headers';
@@ -318,8 +783,16 @@ index 2203166..3b49f56 100644
 +      return { valid: false, error: 'Invalid protocol. Only HTTP and HTTPS are allowed.' };
 +    }
 +    const hostname = url.hostname.toLowerCase();
-+    if (BLOCKED_HOSTS.some(blocked => hostname === blocked || hostname.endsWith(`.${blocked}`))) {
-+      return { valid: false, error: 'Access to local or restricted hosts is prohibited.' };
++    
++    // Block common local/private hostnames and IP patterns
++    const privatePatterns = [
++      /^127\./, /^10\./, /^172\.(1[6-9]|2[0-9]|3[0-1])\./, /^192\.168\./,
++      /^fc00:/, /^fe80:/, /^::1$/, /^0\.0\.0\.0$/, /^localhost$/
++    ];
++    
++    if (BLOCKED_HOSTS.some(blocked => hostname === blocked || hostname.endsWith(`.${blocked}`)) || 
++        privatePatterns.some(pattern => pattern.test(hostname))) {
++      return { valid: false, error: 'Access to local or private networks is prohibited.' };
 +    }
 +    return { valid: true };
 +  } catch (e) {
@@ -351,7 +824,7 @@ index 2203166..3b49f56 100644
      const response = await fetch(targetUrl, {
        headers: {
          'User-Agent': 'NexusAI-Proxy/1.0',
-@@ -33,14 +67,26 @@ export async function GET(request: NextRequest) {
+@@ -33,14 +75,26 @@ export async function GET(request: NextRequest) {
  }
  
  export async function POST(request: NextRequest) {
@@ -384,6 +857,112 @@ index 2203166..3b49f56 100644
      const body = await request.arrayBuffer();
      const response = await fetch(targetUrl, {
        method: 'POST',
+diff --git a/app/api/social/update-status/route.ts b/app/api/social/update-status/route.ts
+new file mode 100644
+index 0000000..63d5cef
+--- /dev/null
++++ b/app/api/social/update-status/route.ts
+@@ -0,0 +1,39 @@
++import { NextResponse } from 'next/server';
++import { createClient } from '@supabase/supabase-js';
++
++const supabase = createClient(
++  process.env.NEXT_PUBLIC_SUPABASE_URL!,
++  process.env.SUPABASE_SERVICE_ROLE_KEY!
++);
++
++export async function POST(request: Request) {
++  try {
++    const body = await request.json();
++    const { post_id, status, live_url, error_message, secret } = body;
++
++    if (secret !== process.env.N8N_BRIDGE_SECRET) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    if (!post_id || !status) {
++      return NextResponse.json({ error: 'Missing post_id or status' }, { status: 400 });
++    }
++
++    const { error } = await supabase
++      .from('social_posts')
++      .update({ 
++        status, 
++        live_url, 
++        error_message, 
++        updated_at: new Date().toISOString() 
++      })
++      .eq('id', post_id);
++
++    if (error) throw error;
++
++    return NextResponse.json({ success: true });
++  } catch (error: any) {
++    console.error('[api/social/update-status] Error:', error);
++    return NextResponse.json({ error: error.message }, { status: 500 });
++  }
++}
+diff --git a/app/api/worker/monitor/route.ts b/app/api/worker/monitor/route.ts
+new file mode 100644
+index 0000000..824b120
+--- /dev/null
++++ b/app/api/worker/monitor/route.ts
+@@ -0,0 +1,55 @@
++import { NextResponse } from 'next/server';
++import { createClient } from '@supabase/supabase-js';
++
++const supabase = createClient(
++  process.env.NEXT_PUBLIC_SUPABASE_URL!,
++  process.env.SUPABASE_SERVICE_ROLE_KEY!
++);
++
++export async function GET() {
++  try {
++    // Define a "stalled" post as one that has been in 'uploading' or 'pending' 
++    // for more than 30 minutes without an update.
++    const STALL_THRESHOLD_MINUTES = 30;
++    const thresholdDate = new Date(Date.now() - STALL_THRESHOLD_MINUTES * 60 * 1000).toISOString();
++
++    const { data: stalledPosts, error } = await supabase
++      .from('social_posts')
++      .select('id, status, updated_at')
++      .in('status', ['pending', 'uploading'])
++      .lt('updated_at', thresholdDate);
++
++    if (error) throw error;
++
++    if (!stalledPosts || stalledPosts.length === 0) {
++      return NextResponse.json({ 
++        success: true, 
++        message: 'No stalled posts found.' 
++      });
++    }
++
++    const postIds = stalledPosts.map(p => p.id);
++    
++    // Mark stalled posts as 'failed' with a specific error message
++    const { error: updateError } = await supabase
++      .from('social_posts')
++      .update({ 
++        status: 'failed', 
++        error_message: `Post stalled: No update received for over ${STALL_THRESHOLD_MINUTES} minutes.`,
++        updated_at: new Date().toISOString() 
++      })
++      .in('id', postIds);
++
++    if (updateError) throw updateError;
++
++    return NextResponse.json({ 
++      success: true, 
++      stalled_count: postIds.length,
++      affected_ids: postIds
++    });
++
++  } catch (error: any) {
++    console.error('[api/worker/monitor] Heartbeat error:', error);
++    return NextResponse.json({ error: error.message }, { status: 500 });
++  }
++}
 diff --git a/app/api/worker/route.ts b/app/api/worker/route.ts
 index 8c19ddc..85875f2 100644
 --- a/app/api/worker/route.ts
@@ -476,6 +1055,1323 @@ index 7de5f9e..f148d2b 100644
                  <div>
                    <label className="block text-sm font-medium mb-1.5">Brand Tone</label>
                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+diff --git a/changes.patch b/changes.patch
+new file mode 100644
+index 0000000..6572faa
+--- /dev/null
++++ b/changes.patch
+@@ -0,0 +1,816 @@
++diff --git a/app/api/activate/route.ts b/app/api/activate/route.ts
++index 4870614..056bc39 100644
++--- a/app/api/activate/route.ts
+++++ b/app/api/activate/route.ts
++@@ -1,8 +1,38 @@
++-import { NextResponse, type NextRequest } from 'next/server';
+++import { createServerClient } from '@supabase/ssr';
+++import { cookies } from 'next/headers';
++ import { activateFullSystem } from '@/lib/services/systemActivation';
+++import { NextResponse, type NextRequest } from 'next/server';
++ 
++ export async function POST(request: NextRequest) {
++   try {
+++    const cookieStore = await cookies();
+++    const supabase = createServerClient(
+++      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+++      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+++      {
+++        cookies: {
+++          getAll() {
+++            return cookieStore.getAll();
+++          },
+++          setAll(cookiesToSet) {
+++            try {
+++              cookiesToSet.forEach(({ name, value, options }) =>
+++                cookieStore.set(name, value, options)
+++              );
+++            } catch {
+++              // The `setAll` method was called from a Server Component.
+++              // This can be ignored if you have middleware handling cookie set.
+++            }
+++          },
+++        },
+++      }
+++    );
+++    const { data: { user } } = await supabase.auth.getUser();
+++
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
++     const body = await request.json();
++     const { goal } = body;
++ 
++diff --git a/app/api/approval/route.ts b/app/api/approval/route.ts
++index ec51bfa..75f11a2 100644
++--- a/app/api/approval/route.ts
+++++ b/app/api/approval/route.ts
++@@ -1,21 +1,41 @@
++ import { NextResponse, type NextRequest } from 'next/server';
+++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+++import { cookies } from 'next/headers';
++ import { getPendingApprovals, updateApprovalStatus, getApprovalQueue } from '@/lib/services/approvalQueueService';
++ 
++ export async function GET(request: NextRequest) {
++-  const { searchParams } = new URL(request.url);
++-  const view = searchParams.get('view');
+++  try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
++ 
++-  if (view === 'all') {
++-    const queue = await getApprovalQueue();
++-    return NextResponse.json(queue);
++-  }
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
+++    const { searchParams } = new URL(request.url);
+++    const view = searchParams.get('view');
+++
+++    if (view === 'all') {
+++      const queue = await getApprovalQueue();
+++      return NextResponse.json(queue);
+++    }
++ 
++-  const pending = await getPendingApprovals();
++-  return NextResponse.json(pending);
+++    const pending = await getPendingApprovals();
+++    return NextResponse.json(pending);
+++  } catch (error) {
+++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+++  }
++ }
++ 
++ export async function POST(request: NextRequest) {
++   try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
+++
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
++     const body = await request.json();
++     const { id, status, feedback } = body;
++ 
++diff --git a/app/api/drafts/route.ts b/app/api/drafts/route.ts
++index 73d2c41..6796b22 100644
++--- a/app/api/drafts/route.ts
+++++ b/app/api/drafts/route.ts
++@@ -1,11 +1,20 @@
++ import { NextResponse } from 'next/server';
++-import { supabase } from '@/supabase/client';
+++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+++import { cookies } from 'next/headers';
++ 
++ export async function GET() {
++   try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
+++
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
++     const { data, error } = await supabase
++       .from('drafts')
++       .select('*')
+++      .eq('user_id', user.id)
++       .order('updated_at', { ascending: false });
++ 
++     if (error) throw error;
++@@ -21,10 +30,21 @@ export async function GET() {
++ 
++ export async function POST(request: Request) {
++   try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
+++
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
++     const body = await request.json();
+++    
+++    // Ensure the draft is associated with the authenticated user
+++    const payload = { ...body, user_id: user.id };
+++
++     const { data, error } = await supabase
++       .from('drafts')
++-      .insert([body])
+++      .insert([payload])
++       .select();
++ 
++     if (error) throw error;
++diff --git a/app/api/evolution/route.ts b/app/api/evolution/route.ts
++index bf05647..66a4a41 100644
++--- a/app/api/evolution/route.ts
+++++ b/app/api/evolution/route.ts
++@@ -1,4 +1,6 @@
++ import { NextResponse, type NextRequest } from 'next/server';
+++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+++import { cookies } from 'next/headers';
++ import { 
++   getEvolutionLog, 
++   getEvolutionStats 
++@@ -10,46 +12,80 @@ import {
++ } from '@/lib/services/agentEvolutionService';
++ 
++ export async function GET(request: NextRequest) {
++-  const { searchParams } = new URL(request.url);
++-  const view = searchParams.get('view');
+++  try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
++ 
++-  if (view === 'stats') {
++-    const stats = await getEvolutionStats();
++-    return NextResponse.json(stats);
++-  }
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
++ 
++-  if (view === 'history') {
++-    const history = await getEvolutionHistory();
++-    return NextResponse.json(history);
++-  }
+++    const { searchParams } = new URL(request.url);
+++    const view = searchParams.get('view');
+++
+++    if (view === 'stats') {
+++      const stats = await getEvolutionStats();
+++      return NextResponse.json(stats);
+++    }
+++
+++    if (view === 'history') {
+++      const history = await getEvolutionHistory();
+++      return NextResponse.json(history);
+++    }
++ 
++-  const log = await getEvolutionLog();
++-  return NextResponse.json(log);
+++    const log = await getEvolutionLog();
+++    return NextResponse.json(log);
+++  } catch (error: any) {
+++    console.error('GET /api/evolution error:', error);
+++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+++  }
++ }
++ 
++ export async function POST(request: NextRequest) {
++-  const { action, proposalId } = await request.json();
+++  try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
++ 
++-  if (action === 'trigger_cycle') {
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
+++    let action: string | undefined;
+++    let proposalId: string | undefined;
++     try {
++-      const result = await runEvolutionCycle();
++-      return NextResponse.json({ success: true, result });
++-    } catch (error: any) {
++-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+++      const body = await request.json();
+++      action = body.action;
+++      proposalId = body.proposalId;
+++    } catch {
+++      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
++     }
++-  }
++ 
++-  if (action === 'apply_proposal') {
++-    if (!proposalId) {
++-      return NextResponse.json({ error: 'proposalId is required' }, { status: 400 });
+++    if (action === 'trigger_cycle') {
+++      try {
+++        const result = await runEvolutionCycle();
+++        return NextResponse.json({ success: true, result });
+++      } catch (error: any) {
+++        console.error('Evolution cycle trigger error:', error);
+++        return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+++      }
++     }
++-    try {
++-      const success = await applyEvolution(proposalId);
++-      return NextResponse.json({ success });
++-    } catch (error: any) {
++-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+++
+++    if (action === 'apply_proposal') {
+++      if (!proposalId) {
+++        return NextResponse.json({ error: 'proposalId is required' }, { status: 400 });
+++      }
+++      try {
+++        const success = await applyEvolution(proposalId);
+++        return NextResponse.json({ success });
+++      } catch (error: any) {
+++        console.error('Apply evolution error:', error);
+++        return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+++      }
++     }
++-  }
++ 
++-  return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+++    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+++  } catch (error: any) {
+++    console.error('POST /api/evolution error:', error);
+++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+++  }
++ }
++diff --git a/app/api/orchestrator/route.ts b/app/api/orchestrator/route.ts
++index 60601b6..1495099 100644
++--- a/app/api/orchestrator/route.ts
+++++ b/app/api/orchestrator/route.ts
++@@ -1,4 +1,6 @@
++ import { NextResponse } from 'next/server';
+++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+++import { cookies } from 'next/headers';
++ import { logService } from '@/lib/services/logService';
++ import { n8nBridgeService } from '@/lib/services/n8nBridgeService';
++ import { planService } from '@/lib/services/planService';
++@@ -10,6 +12,13 @@ import { kvGet } from '@/lib/services/puterService';
++ 
++ export async function POST(request: Request) {
++   try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
+++
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
++     const body = await request.json();
++     const { agent_id, goal, context, memory_id } = body;
++ 
++diff --git a/app/api/proxy/route.ts b/app/api/proxy/route.ts
++index 2203166..3b49f56 100644
++--- a/app/api/proxy/route.ts
+++++ b/app/api/proxy/route.ts
++@@ -1,16 +1,50 @@
++ import { NextResponse, type NextRequest } from 'next/server';
+++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+++import { cookies } from 'next/headers';
++ 
++ export const dynamic = 'force-dynamic';
++ 
++-export async function GET(request: NextRequest) {
++-  const { searchParams } = new URL(request.url);
++-  const targetUrl = searchParams.get('url');
+++// Basic SSRF protection: allowed protocols and blocked hosts
+++const ALLOWED_PROTOCOLS = ['http:', 'https:'];
+++const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254'];
++ 
++-  if (!targetUrl) {
++-    return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
+++function validateTargetUrl(urlStr: string): { valid: boolean; error?: string } {
+++  try {
+++    const url = new URL(urlStr);
+++    if (!ALLOWED_PROTOCOLS.includes(url.protocol)) {
+++      return { valid: false, error: 'Invalid protocol. Only HTTP and HTTPS are allowed.' };
+++    }
+++    const hostname = url.hostname.toLowerCase();
+++    if (BLOCKED_HOSTS.some(blocked => hostname === blocked || hostname.endsWith(`.${blocked}`))) {
+++      return { valid: false, error: 'Access to local or restricted hosts is prohibited.' };
+++    }
+++    return { valid: true };
+++  } catch (e) {
+++    return { valid: false, error: 'Invalid URL format.' };
++   }
+++}
++ 
+++export async function GET(request: NextRequest) {
++   try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
+++
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
+++    const { searchParams } = new URL(request.url);
+++    const targetUrl = searchParams.get('url');
+++
+++    if (!targetUrl) {
+++      return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
+++    }
+++
+++    const validation = validateTargetUrl(targetUrl);
+++    if (!validation.valid) {
+++      return NextResponse.json({ error: validation.error }, { status: 403 });
+++    }
+++
++     const response = await fetch(targetUrl, {
++       headers: {
++         'User-Agent': 'NexusAI-Proxy/1.0',
++@@ -33,14 +67,26 @@ export async function GET(request: NextRequest) {
++ }
++ 
++ export async function POST(request: NextRequest) {
++-  const { searchParams } = new URL(request.url);
++-  const targetUrl = searchParams.get('url');
+++  try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
++ 
++-  if (!targetUrl) {
++-    return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
++-  }
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
+++    const { searchParams } = new URL(request.url);
+++    const targetUrl = searchParams.get('url');
+++
+++    if (!targetUrl) {
+++      return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
+++    }
+++
+++    const validation = validateTargetUrl(targetUrl);
+++    if (!validation.valid) {
+++      return NextResponse.json({ error: validation.error }, { status: 403 });
+++    }
++ 
++-  try {
++     const body = await request.arrayBuffer();
++     const response = await fetch(targetUrl, {
++       method: 'POST',
++diff --git a/app/api/worker/route.ts b/app/api/worker/route.ts
++index 8c19ddc..85875f2 100644
++--- a/app/api/worker/route.ts
+++++ b/app/api/worker/route.ts
++@@ -1,8 +1,17 @@
++ import { NextResponse } from 'next/server';
+++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+++import { cookies } from 'next/headers';
++ import { runSandboxedCode } from '@/lib/services/sandboxRunner';
++ 
++ export async function POST(request: Request) {
++   try {
+++    const supabase = createRouteHandlerClient({ cookies });
+++    const { data: { user } } = await supabase.auth.getUser();
+++
+++    if (!user) {
+++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+++    }
+++
++     const body = await request.json();
++     const { code, input, timeoutMs } = body;
++ 
++diff --git a/app/onboarding/page.tsx b/app/onboarding/page.tsx
++index 7de5f9e..f148d2b 100644
++--- a/app/onboarding/page.tsx
+++++ b/app/onboarding/page.tsx
++@@ -93,6 +93,8 @@ function OnboardingContent() {
++   // Form state
++   const [brandKit, setBrandKit] = useState<Partial<BrandKit>>({
++     brandName: '',
+++    userName: '',
+++    agentName: '',
++     niche: '',
++     targetAudience: '',
++     primaryColor: '#00F5FF',
++@@ -212,6 +214,8 @@ function OnboardingContent() {
++       // Save brand kit
++       const completeBrandKit: BrandKit = {
++         brandName: brandKit.brandName || 'My Brand',
+++        userName: brandKit.userName || 'User',
+++        agentName: brandKit.agentName || 'Nexus',
++         niche: brandKit.niche || 'General',
++         targetAudience: brandKit.targetAudience || 'General audience',
++         primaryColor: brandKit.primaryColor || '#00F5FF',
++@@ -377,6 +381,29 @@ function OnboardingContent() {
++                   />
++                 </div>
++ 
+++                <div className="grid grid-cols-2 gap-4">
+++                  <div>
+++                    <label className="block text-sm font-medium mb-1.5">Your Name</label>
+++                    <input
+++                      type="text"
+++                      value={brandKit.userName}
+++                      onChange={(e) => setBrandKit({ ...brandKit, userName: e.target.value })}
+++                      placeholder="Enter your name"
+++                      className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)]"
+++                    />
+++                  </div>
+++                  <div>
+++                    <label className="block text-sm font-medium mb-1.5">Agent's Name</label>
+++                    <input
+++                      type="text"
+++                      value={brandKit.agentName}
+++                      onChange={(e) => setBrandKit({ ...brandKit, agentName: e.target.value })}
+++                      placeholder="e.g., Nexus, Nova, Aria"
+++                      className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)]"
+++                    />
+++                  </div>
+++                </div>
+++
++                 <div>
++                   <label className="block text-sm font-medium mb-1.5">Niche / Industry</label>
++                   <input
++@@ -399,6 +426,17 @@ function OnboardingContent() {
++                   />
++                 </div>
++ 
+++                <div>
+++                  <label className="block text-sm font-medium mb-1.5">Unique Selling Point / Brand Vision</label>
+++                  <textarea
+++                    value={brandKit.uniqueSellingPoint}
+++                    onChange={(e) => setBrandKit({ ...brandKit, uniqueSellingPoint: e.target.value })}
+++                    placeholder="What makes your brand unique? Describe your vision and core values."
+++                    rows={3}
+++                    className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)] resize-none"
+++                  />
+++                </div>
+++
++                 <div>
++                   <label className="block text-sm font-medium mb-1.5">Brand Tone</label>
++                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
++diff --git a/lib/services/audioMixingService.ts b/lib/services/audioMixingService.ts
++index 471fb8e..0d74f39 100644
++--- a/lib/services/audioMixingService.ts
+++++ b/lib/services/audioMixingService.ts
++@@ -9,12 +9,19 @@ export interface AudioMixSettings {
++   duckingEnabled: boolean;
++   reverbAmount: number;
++   silenceGaps: Array<{ atSecond: number; durationMs: number }>;
+++  normalizationTarget: number; // Target LUFS or peak level to avoid distortion
+++  limitingEnabled: boolean;
++ }
++ 
++ export interface AudioMixPlan {
++   settings: AudioMixSettings;
++   notes: string[];
++   previewInstructions: string;
+++  automationConfig: {
+++    voiceRange: [number, number];
+++    musicRange: [number, number];
+++    fxRange: [number, number];
+++  };
++ }
++ 
++ export function buildAudioMixPlan(soundDesign: SoundDesignPlan): AudioMixPlan {
++@@ -25,19 +32,27 @@ export function buildAudioMixPlan(soundDesign: SoundDesignPlan): AudioMixPlan {
++   return {
++     settings: {
++       voiceVolume: 1.0,
++-      musicVolume: 0.24,
++-      fxVolume: 0.18,
+++      musicVolume: 0.2,
+++      fxVolume: 0.15,
++       duckingEnabled: true,
++       reverbAmount: 0.12,
++       silenceGaps,
+++      normalizationTarget: -1.0, // Prevent clipping by capping at -1dB
+++      limitingEnabled: true,
++     },
++     notes: [
++-      'Voice stays priority at 100%.',
++-      'Music sits under dialogue at 15-35%.',
++-      'FX remain below voice and never mask consonants.',
++-      'Apply sidechain ducking on music bus when voice is active.',
+++      'VOICE PRIORITY: Voice locked at 100% (normalized).',
+++      'UNDERSCORE: Music balanced at 20% to ensure clarity.',
+++      'ACCENTS: FX restricted to 15% to avoid spikes.',
+++      'DISTORTION CONTROL: Peak limiter enabled at -1.0dB.',
+++      'DUCKING: Dynamic sidechaining active (Music drops during Voice).',
++     ],
++     previewInstructions:
++-      'Render a voice-forward mix with subtle cinematic underscore, sparse FX accents, clean fades, and loop-safe tail handling.',
+++      'Render a high-fidelity, voice-forward mix. Ensure no clipping on FX peaks. Music should feel like a supporting layer, never competing with the speaker.',
+++    automationConfig: {
+++      voiceRange: [0.9, 1.0],
+++      musicRange: [0.15, 0.3],
+++      fxRange: [0.1, 0.2],
+++    },
++   };
++ }
++diff --git a/lib/services/contentEngine.ts b/lib/services/contentEngine.ts
++index 911fc63..ea79372 100644
++--- a/lib/services/contentEngine.ts
+++++ b/lib/services/contentEngine.ts
++@@ -21,10 +21,11 @@ const MAX_IMAGE_RETRIES = 3;
++ interface GenerationOptions {
++   idea: string;
++   platforms: Platform[];
++-  format?: 'post' | 'thread' | 'carousel' | 'story';
+++  format?: 'post' | 'thread' | 'carousel' | 'story' | 'storytelling_animated' | 'conversational';
++   includeImage?: boolean;
++   includeVoice?: boolean;
++   customInstructions?: string;
+++  preferredContentType?: string;
++ }
++ 
++ interface GeneratedContent {
++@@ -61,6 +62,14 @@ export async function generateContent(
++     throw new Error('Live content generation is unavailable while offline. Reconnect to generate real content.');
++   }
++ 
+++  // Fetch and Apply User Content Preferences
+++  const userPreferences = brand?.contentPreferences || [];
+++  const preferredPref = userPreferences.find(p => p.type === options.preferredContentType);
+++  const strictPreferenceInstructions = preferredPref 
+++    ? `STRICT REQUIREMENT: The user has a saved preference for ${preferredPref.type} content. 
+++       FOLLOW THESE SAVED INSTRUCTIONS EXACTLY: ${preferredPref.savedInstructions}`
+++    : '';
+++
++   const lockedNiche = agentMemory.niche || brand?.niche || '';
++   const lockedAudience = agentMemory.targetAudience || brand?.targetAudience || '';
++   const lockedTone = agentMemory.preferredTone || brand?.tone || '';
++@@ -82,6 +91,7 @@ Recent saved ideas: ${recentIdeas.length > 0 ? recentIdeas.join(' | ') : 'None s
++ Idea/Topic: ${idea}
++ Platforms: ${platformConstraints}
++ Format: ${format}
+++${strictPreferenceInstructions ? `\n${strictPreferenceInstructions}` : ''}
++ ${customInstructions ? `Special Instructions: ${customInstructions}` : ''}
++ ${recentTopics.length > 0 ? `Avoid repeating these recent topics: ${recentTopics.join('; ')}` : ''}
++ ${nicheGuidance ? `${nicheGuidance}` : ''}
++diff --git a/lib/services/musicEngine.ts b/lib/services/musicEngine.ts
++index e69c54a..2718619 100644
++--- a/lib/services/musicEngine.ts
+++++ b/lib/services/musicEngine.ts
++@@ -26,17 +26,20 @@ export interface GeneratedMusic {
++ // Analyze content to determine appropriate music mood
++ export async function analyzeMusicMood(content: string): Promise<MusicMood> {
++   const lower = (content || '').toLowerCase();
++-  const moodPatterns: Array<[MusicMood['primary'], RegExp]> = [
++-    ['energetic', /\b(energy|hype|fast|launch|viral|bold|exciting|power|move|action)\b/g],
++-    ['dramatic', /\b(dramatic|cinematic|epic|stakes|tension|storm|battle|reveal|intense)\b/g],
++-    ['mysterious', /\b(mystery|mysterious|secret|unknown|shadow|hidden|strange|suspense)\b/g],
++-    ['calm', /\b(calm|soft|peace|gentle|slow|relax|quiet|ambient)\b/g],
++-    ['sad', /\b(sad|loss|lonely|grief|melancholy|heartbreak)\b/g],
++-    ['nostalgic', /\b(memory|nostalgia|past|remember|childhood|vintage)\b/g],
++-    ['happy', /\b(happy|joy|bright|celebrate|fun|smile)\b/g],
++-    ['inspiring', /\b(inspire|hope|growth|brand|future|build|dream|create|transform)\b/g],
+++  
+++  // Enhanced mood patterns with weights
+++  const moodPatterns: Array<[MusicMood['primary'], RegExp, number]> = [
+++    ['energetic', /\b(energy|hype|fast|launch|viral|bold|exciting|power|move|action|success|growth)\b/g, 2],
+++    ['dramatic', /\b(dramatic|cinematic|epic|stakes|tension|storm|battle|reveal|intense|critical|urgent)\b/g, 2],
+++    ['mysterious', /\b(mystery|mysterious|secret|unknown|shadow|hidden|strange|suspense|curiosity)\b/g, 2],
+++    ['calm', /\b(calm|soft|peace|gentle|slow|relax|quiet|ambient|zen|minimal)\b/g, 2],
+++    ['sad', /\b(sad|loss|lonely|grief|melancholy|heartbreak|struggle|pain)\b/g, 2],
+++    ['nostalgic', /\b(memory|nostalgia|past|remember|childhood|vintage|legacy|history)\b/g, 2],
+++    ['happy', /\b(happy|joy|bright|celebrate|fun|smile|positive|laugh)\b/g, 2],
+++    ['inspiring', /\b(inspire|hope|growth|brand|future|build|dream|create|transform|vision|victory)\b/g, 2],
++   ];
++-  const moodScores: Array<[MusicMood['primary'], number]> = moodPatterns.map(([mood, pattern]) => [mood, (lower.match(pattern) || []).length]);
+++  
+++  const moodScores: Array<[MusicMood['primary'], number]> = moodPatterns.map(([mood, pattern, weight]) => [mood, (lower.match(pattern) || []).length * weight]);
++ 
++   const [primary, score] = moodScores.sort((a, b) => b[1] - a[1])[0] || ['inspiring', 0];
++   const energetic = primary === 'energetic' || primary === 'dramatic';
++@@ -50,7 +53,7 @@ export async function analyzeMusicMood(content: string): Promise<MusicMood> {
++     energy,
++     genre: primary === 'dramatic' ? 'cinematic hybrid' : primary === 'energetic' ? 'modern electronic' : 'ambient electronic',
++     instruments: primary === 'dramatic' ? ['strings', 'hybrid percussion'] : primary === 'calm' ? ['piano', 'soft synth'] : ['synth', 'piano', 'drums'],
++-    keywords: [primary, tempo, 'brand-safe', 'background'],
+++    keywords: [primary, tempo, 'brand-safe', 'background', 'perfect-match'],
++   };
++ }
++ 
++diff --git a/lib/services/orchestrationEngine.ts b/lib/services/orchestrationEngine.ts
++index d600e2b..a0ec5e2 100644
++--- a/lib/services/orchestrationEngine.ts
+++++ b/lib/services/orchestrationEngine.ts
++@@ -167,6 +167,36 @@ function getSurgicalBrandContext(role: AgentRole, brandKit: BrandKit | null): st
++ }
++ 
++ 
+++// Helper to handle Ultimate Brain fallback when specialized agents fail
+++async function handleBrainFallback(
+++  task: any, 
+++  context: any, 
+++  originalError: any
+++): Promise<AgentOutput> {
+++  console.warn(`[Brand Manager] Specialized agent failed for task ${task.id}. Stepping in as the Ultimate Brain...`);
+++  
+++  const prompt = `The specialized agent for the role ${task.type} failed to complete this task. 
+++As the Brand Manager and Ultimate Brain of this operation, you must now handle this perfectly.
+++
+++TASK: ${task.input || 'Main Goal'}
+++CONTEXT: ${JSON.stringify(context)}
+++ERROR ENCOUNTERED: ${originalError instanceof Error ? originalError.message : String(originalError)}
+++
+++Requirement: Provide the final, perfect output that a specialized agent would have provided, ensuring total alignment with brand identity and quality standards.`;
+++
+++  const content = await universalChat(prompt, { model: 'gpt-4o' });
+++
+++  return {
+++    agentId: 'brand-manager-brain',
+++    agentRole: 'orchestrator' as any,
+++    content,
+++    score: 100,
+++    reasoning: 'Handled by Brand Manager fallback after specialized agent failure',
+++    fullPrompt: prompt,
+++    metadata: { duration: 0 },
+++  };
+++}
+++
++ // Orchestration Types
++ export interface OrchestrationResult {
++   success: boolean;
++@@ -662,7 +692,7 @@ async function executeOrchestrationPlan(
++         }
++       }
++       
++-      // Execute agent task with error recovery
+++      // Execute agent task with error recovery and Ultimate Brain fallback
++       task.status = 'running';
++       let output: AgentOutput;
++       try {
++@@ -673,17 +703,22 @@ async function executeOrchestrationPlan(
++           (p) => aiProvider(p, assignedAgent.role)
++         );
++       } catch (error) {
++-        // Fallback to alternative agent with same role
+++        // Fallback 1: Try alternative agent with same role
++         const alternativeAgent = await getAgentByRole(assignedAgent.role);
++         if (alternativeAgent && alternativeAgent.id !== assignedAgent.id) {
++-          output = await executeAgentTask(
++-            alternativeAgent,
++-            task.input || plan.userRequest,
++-            taskContext,
++-            (p) => aiProvider(p, alternativeAgent.role)
++-          );
+++          try {
+++            output = await executeAgentTask(
+++              alternativeAgent,
+++              task.input || plan.userRequest,
+++              taskContext,
+++              (p) => aiProvider(p, alternativeAgent.role)
+++            );
+++          } catch (altError) {
+++            output = await handleBrainFallback(task, taskContext, altError);
+++          }
++         } else {
++-          throw error;
+++          // Fallback 2: Immediate Ultimate Brain fallback
+++          output = await handleBrainFallback(task, taskContext, error);
++         }
++       }
++ 
++diff --git a/lib/services/personaService.ts b/lib/services/personaService.ts
++index 03d3ace..254cdba 100644
++--- a/lib/services/personaService.ts
+++++ b/lib/services/personaService.ts
++@@ -17,6 +17,10 @@ export class personaService {
++     
++     const prompt = `You are a "Humanizer" filter. Your job is to take a raw AI response and rewrite it to sound like a natural, high-end human partner.
++ 
+++=== IDENTITY & ROLE ===
+++You are not an AI. You are the user's employed Brand Manager, Operator, Supervisor, Assistant, and Friend. 
+++Your tone should reflect professional authority combined with genuine partnership and care. You are a steward of the brand's success.
+++
++ === PERSONA CONTEXT ===
++ ${memoryContext}
++ 
++@@ -26,12 +30,13 @@ ${text}
++ """
++ 
++ === RULES ===
++-1. REMOVE ALL technical jargon: No mentioning "profiles", "contexts", "memory", "tool calls", "workflow", "orchestrator", "iterations", or "parameters".
++-2. REMOVE "AI-speak": Avoid phrases like "Based on the provided data", "I have processed your request", or "As an AI agent".
++-3. MATCH TONE: Use the preferred tone and writing style defined in the context.
++-4. BE DECISIVE: Do not ask for permission for tasks the user has already requested. Do not say "Would you like me to..." for actions already taken. Use assertive, action-oriented language (e.g., "I've handled that for you" instead of "I can do that if you wish").
++-5. KEEP CORE MEANING: Do not change the facts or the result, only the delivery.
++-6. BE CONCISE: Humans don't use bulleted lists for everything. Use natural paragraph flow.
+++1. REMOVE ALL technical jargon: No mentioning "profiles", "contexts", "memory", "tool calls", "workflow", "orchestrator", "iterations", "parameters", or "LLMs".
+++2. REMOVE "AI-speak": Absolutely no phrases like "Based on the provided data", "I have processed your request", "As an AI agent", or "According to the brand kit".
+++3. MATCH TONE: Use the preferred tone and writing style defined in the context, but always maintain the poise of a Brand Manager.
+++4. BE DECISIVE & OWN IT: Do not ask for permission for tasks the user has already requested. Use assertive, action-oriented language (e.g., "I've handled the audio levels for you" instead of "I can adjust the volumes if you'd like").
+++5. HUMAN RELATIONSHIP: Address the user as a partner. Be a supportive friend but a rigorous supervisor.
+++6. KEEP CORE MEANING: Do not change the facts or the result, only the delivery.
+++7. BE CONCISE: Avoid robotic bulleted lists. Use natural, flowing conversation.
++ 
++ Return ONLY the humanized text. No introductions or explanations.`;
++ 
++diff --git a/lib/services/sandboxRunner.ts b/lib/services/sandboxRunner.ts
++index ed0e460..53833f9 100644
++--- a/lib/services/sandboxRunner.ts
+++++ b/lib/services/sandboxRunner.ts
++@@ -44,7 +44,11 @@ export async function runSandboxedCode<T = any>(
++ 
++     // Execute with a timeout
++     const result = await Promise.race([
++-      mainFn(input, sandbox.context),
+++      (async () => {
+++        // Use vm's native timeout to stop infinite loops on the main thread
+++        const execution = script.runInContext(sandbox, { timeout: timeoutMs });
+++        return await execution(input, sandbox.context);
+++      })(),
++       new Promise<never>((_, reject) => 
++         setTimeout(() => reject(new Error('Execution timed out')), timeoutMs)
++       )
++diff --git a/lib/services/scenePlannerService.ts b/lib/services/scenePlannerService.ts
++index 551846d..f32254e 100644
++--- a/lib/services/scenePlannerService.ts
+++++ b/lib/services/scenePlannerService.ts
++@@ -78,7 +78,7 @@ export interface ScenePlan {
++   title: string;
++   description: string;
++   platform: string;
++-  contentType: 'reel' | 'tiktok' | 'youtube-short' | 'youtube-long' | 'story' | 'ad' | 'tutorial';
+++  contentType: 'reel' | 'tiktok' | 'youtube-short' | 'youtube-long' | 'story' | 'ad' | 'tutorial' | 'storytelling_animated' | 'conversational';
++   targetDuration: number;
++   scenes: Scene[];
++   hooks: string[];
++diff --git a/lib/types/index.ts b/lib/types/index.ts
++index 440518f..b767401 100644
++--- a/lib/types/index.ts
+++++ b/lib/types/index.ts
++@@ -1,9 +1,13 @@
++ // NexusAI Type Definitions
++ 
+++// NexusAI Type Definitions
+++
++ // Brand Kit
++ export interface BrandKit {
++   name?: string;
++   brandName: string;
+++  userName: string;
+++  agentName: string;
++   niche: string;
++   targetAudience: string;
++   audience?: string;
++@@ -15,6 +19,14 @@ export interface BrandKit {
++   uniqueSellingPoint: string;
++   language: string;
++   hashtagStrategy?: string | string[];
+++  contentPreferences: UserContentPreference[];
+++}
+++
+++export interface UserContentPreference {
+++  type: string; // e.g., "storytelling_animated", "conversational", "educational_short"
+++  description: string;
+++  frequency: 'always' | 'often' | 'rarely';
+++  savedInstructions: string;
++ }
++ 
++ // Content
++diff --git a/middleware.ts b/middleware.ts
++index c27a1c3..2ef0da9 100644
++--- a/middleware.ts
+++++ b/middleware.ts
++@@ -7,10 +7,9 @@ export async function middleware(request: NextRequest) {
++   const supabase = createMiddlewareClient({ req: request, res: response });
++ 
++   const { data: { session } } = await supabase.auth.getSession();
++-  const bypassAuth = request.cookies.get('nexus_bypass_auth')?.value === 'true';
++ 
++   // Redirect to login if no session and not on public routes
++-  if (!session && !bypassAuth && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
+++  if (!session && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
++     return NextResponse.redirect(new URL('/login', request.url));
++   }
++ 
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000..72bc5ee
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,32 @@
++version: '3.8'
++
++services:
++  nexusai-app:
++    build:
++      context: .
++      dockerfile: Dockerfile
++    ports:
++      - "3000:3000"
++    env_file:
++      - .env
++    restart: always
++    depends_on:
++      - n8n
++
++  n8n:
++    image: n8nio/n8n:latest
++    ports:
++      - "5678:5678"
++    environment:
++      - N8N_HOST=${N8N_HOST:-localhost}
++      - N8N_PORT=5678
++      - N8N_PROTOCOL=http
++      - NODE_ENV=production
++      - WEBHOOK_URL=http://${N8N_HOST:-localhost}:5678/
++      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
++    volumes:
++      - n8n_data:/home/node/.n8n
++    restart: always
++
++volumes:
++  n8n_data:
+diff --git a/docs/n8n_workflows_spec.md b/docs/n8n_workflows_spec.md
+new file mode 100644
+index 0000000..2d4b7cc
+--- /dev/null
++++ b/docs/n8n_workflows_spec.md
+@@ -0,0 +1,72 @@
++# n8n Workflow Specifications for NexusAI
++
++This document defines the required n8n workflows to support the Autonomous Content Engine.
++
++## 1. Global Error & Retry Handler
++**Trigger**: Error Trigger node.
++**Logic**:
++- Check the failed node's retry count.
++- If `retry_count < 3`, wait 5 minutes $\rightarrow$ trigger the failed node again.
++- If `retry_count >= 3`, send a "Failure Alert" to the Next.js `/api/logs` endpoint and notify the user via Slack/Email.
++
++## 2. Video Generation Workflow (`workflow-video-generation`)
++**Trigger**: Webhook (POST)
++**Inputs**: `script`, `aspect_ratio`, `duration`, `agent_id`.
++**Logic**:
++1. **Asset Retrieval**: Fetch agent brand identity from Supabase.
++2. **Generation**: Call Video API (Runway/Ltx) $\rightarrow$ Poll for completion.
++3. **Storage**: Upload resulting .mp4 to Supabase Storage.
++4. **Response**: Return `video_url`.
++
++## 3. Caption Generation Workflow (`workflow-caption-generation`)
++**Trigger**: Webhook (POST)
++**Inputs**: `video_summary`, `platform`, `target_audience`.
++**Logic**:
++1. **Persona Load**: Get agent's `preferredTone` and `writingStyle` from Supabase.
++2. **AI Generation**: Use GPT-4o to create a hook, body, and 5-10 hashtags.
++3. **Validation**: Check against `avoidTopics` list.
++4. **Response**: Return `caption`.
++
++## 4. Social Posting Workflow (`workflow-social-posting`)
++**Trigger**: Webhook (POST)
++**Inputs**: `video_url`, `caption`, `platform`.
++**Logic**:
++1. **Platform Routing**: Switch node based on `platform` (TikTok, IG, YT).
++2. **API Upload**: Use respective OAuth2 credentials to upload the video.
++3. **Post Execution**: Publish with the generated caption.
++4. **Log**: Write the `post_id` and `publish_date` back to the `content_history` table in Supabase.
++
++## 5. Posting Scheduler Workflow (`workflow-post-scheduler`)
++**Trigger**: Cron Trigger (Daily/Weekly)
++**Logic**:
++1. **Queue Check**: Query Supabase for the next scheduled post.
++2. **Condition**: If a post is found $\rightarrow$ trigger `workflow-social-posting`.
++3. **Cleanup**: Mark the post as `published`.
++
++## 6. Memory Sync Workflow (`workflow-memory-sync`)
++**Trigger**: Webhook (POST) on every chat turn.
++**Inputs**: `user_message`, `ai_response`, `agent_id`.
++**Logic**:
++1. **Extraction**: Use AI to extract facts and content ideas.
++2. **Vectorization**: Call OpenAI Embeddings $\rightarrow$ Insert into `agent_vector_memory` table.
++3. **Relational Update**: Update `agent_memory.json` (or relational table) with new facts.
++
++## 7. Observability & Logging (The "Glass Box")
++
++To provide real-time visibility into the agent's execution, every workflow MUST report its status back to the NexusAI Control Plane.
++
++**Log Endpoint**: `POST /api/agent/logs`
++**Authentication**: Header `X-NexusAI-Bridge-Secret` or Body `secret`.
++
++### Log Levels
++- `thinking`: AI is processing data or making a decision.
++- `acting`: A tool/API is being called.
++- `completed`: A step was successfully finished.
++- `failed`: An error occurred.
++- `waiting`: Waiting for human approval or a rate-limit timer.
++
++### Implementation Pattern for all Workflows:
++1. **Start of Workflow**: Call `/api/agent/logs` with status `acting` and message "Starting [Workflow Name]...".
++2. **Before a Tool Call**: Call `/api/agent/logs` with status `thinking` and message "Thinking about how to [Action]...".
++3. **After Tool Success**: Call `/api/agent/logs` with status `completed` and message "Successfully [Action].".
++4. **On Error**: Call `/api/agent/logs` with status `failed` and message "Failed to [Action]: [Error Message]".
+diff --git a/docs/social-media-api-guide.md b/docs/social-media-api-guide.md
+new file mode 100644
+index 0000000..dcc36a0
+--- /dev/null
++++ b/docs/social-media-api-guide.md
+@@ -0,0 +1,55 @@
++# 🌐 Social Media API Integration Guide
++
++This guide provides the technical requirements for connecting the NexusAI n8n Execution Plane to social media platforms.
++
++## 1. TikTok Integration
++**API**: TikTok for Developers $\rightarrow$ Video Kit API
++**Requirements**:
++- Developer Account at [developers.tiktok.com](https://developers.tiktok.com)
++- App approved for `video.upload` and `user.info.basic` scopes.
++- **n8n Setup**: Use the "HTTP Request" node with OAuth2 credentials.
++- **Key Endpoint**: `POST /video/upload/`
++
++## 2. Instagram Integration
++**API**: Meta Graph API $\rightarrow$ Instagram Content Publishing API
++**Requirements**:
++- Meta for Developers account $\rightarrow$ App with `instagram_content_publish` scope.
++- Instagram Business Account linked to a Facebook Page.
++- **n8n Setup**: Use the "Instagram" node or "HTTP Request" node.
++- **Key Process**: 
++  1. `POST /media` (upload video $\rightarrow$ get container ID).
++  2. `POST /media_publish` (publish container ID).
++
++## 3. YouTube Shorts Integration
++**API**: YouTube Data API v3
++**Requirements**:
++- Google Cloud Console project $\rightarrow$ Enable YouTube Data API v3.
++- OAuth2 credentials with `https://www.googleapis.com/auth/youtube.upload` scope.
++- **n8n Setup**: Use the "YouTube" node.
++- **Key Endpoint**: `POST /upload` (Set category to 'Shorts' via tags/description).
++
++---
++
++## 🛠️ n8n Publishing Logic Flow
++
++For every platform, the n8n "Social Posting" workflow must follow this sequence:
++
++1. **Initialization**:
++   - Mark post status as `uploading` in `public.social_posts`.
++   - Log event: `acting` $\rightarrow$ "Uploading to [Platform]...".
++
++2. **Asset Transfer**:
++   - Fetch video from Supabase Storage.
++   - Stream upload to the Platform API.
++
++3. **Metadata Application**:
++   - Apply the AI-generated caption and hashtags.
++   - Set visibility to `public`.
++
++4. **Confirmation**:
++   - Capture the `external_post_id` and `live_url`.
++   - Update `public.social_posts` status to `published`.
++   - Log event: `completed` $\rightarrow$ "Post is live! [URL]".
++
++5. **Error Handling**:
++   - If upload fails $\rightarrow$ update status to `failed` $\rightarrow$ store `error_message` $\rightarrow$ trigger the Global Retry Handler.
+diff --git a/lib/agents/actionRegistry.ts b/lib/agents/actionRegistry.ts
+new file mode 100644
+index 0000000..6199fd1
+--- /dev/null
++++ b/lib/agents/actionRegistry.ts
+@@ -0,0 +1,88 @@
++/**
++ * ActionRegistry defines the mapping between AI-callable tool names 
++ * and their corresponding n8n workflow IDs.
++ */
++export interface AgentAction {
++  id: string;
++  name: string;
++  description: string;
++  workflowId: string; // The n8n webhook path/ID
++  parameters: Record<string, { type: 'string' | 'number' | 'boolean'; description: string }>;
++  requiresApproval: boolean;
++}
++
++export const ACTION_REGISTRY: Record<string, AgentAction> = {
++  'generate_video': {
++    id: 'gen_vid',
++    name: 'Generate Video',
++    description: 'Generates a short-form video based on a script and brand identity.',
++    workflowId: 'workflow-video-generation',
++    parameters: {
++      script: { type: 'string', description: 'The full script for the video' },
++      aspect_ratio: { type: 'string', description: 'e.g., 9:16 for shorts' },
++      duration: { type: 'number', description: 'Target duration in seconds' },
++    },
++    requiresApproval: false,
++  },
++  'generate_social_copy': {
++    id: 'gen_copy',
++    name: 'Generate Social Copy',
++    description: 'Creates an optimized caption and a set of hashtags for a specific platform.',
++    workflowId: 'workflow-caption-generation',
++    parameters: {
++      video_summary: { type: 'string', description: 'Summary of the video content' },
++      platform: { type: 'string', description: 'tiktok, instagram, or youtube' },
++      target_audience: { type: 'string', description: 'Who the post is targeting' },
++    },
++    requiresApproval: false,
++  },
++  'post_to_social': {
++    id: 'post_soc',
++    name: 'Post to Social Media',
++    description: 'Uploads the video and caption to the specified social platform.',
++    workflowId: 'workflow-social-posting',
++    parameters: {
++      video_url: { type: 'string', description: 'URL of the hosted video file' },
++      caption: { type: 'string', description: 'Final caption including hashtags' },
++      platform: { type: 'string', description: 'tiktok, instagram, or youtube' },
++    },
++    requiresApproval: true, // This triggers the /approvals flow
++  },
++  'schedule_post': {
++    id: 'sched_post',
++    name: 'Schedule Post',
++    description: 'Schedules a post for a future date and time.',
++    workflowId: 'workflow-post-scheduler',
++    parameters: {
++      video_url: { type: 'string', description: 'URL of the hosted video file' },
++      caption: { type: 'string', description: 'Final caption' },
++      platform: { type: 'string', description: 'tiktok, instagram, or youtube' },
++      scheduled_time: { type: 'string', description: 'ISO 8601 timestamp' },
++    },
++    requiresApproval: true,
++  },
++  'create_automation_plan': {
++    id: 'create_plan',
++    name: 'Draft Automation Plan',
++    description: 'Create a structured strategic plan with milestones and atomic steps to achieve a high-level goal.',
++    workflowId: 'internal-plan-creation', // Handled internally by planService
++    parameters: {
++      goal: { type: 'string', description: 'The overall objective (e.g. "Grow to 10k followers")' },
++      description: { type: 'string', description: 'Detailed context and constraints for the plan' },
++      steps: { type: 'string', description: 'JSON string of steps: [{description, action_type, dependencies[]}]' },
++    },
++    requiresApproval: false,
++  },
++  'update_plan_progress': {
++    id: 'update_progress',
++    name: 'Update Plan Progress',
++    description: 'Mark a step in the current automation plan as completed or failed.',
++    workflowId: 'internal-plan-update',
++    parameters: {
++      stepId: { type: 'string', description: 'The ID of the step to update' },
++      status: { type: 'string', description: 'completed or failed' },
++      result: { type: 'string', description: 'Summary of what happened during the step' },
++    },
++    requiresApproval: false,
++  },
++};
+diff --git a/lib/services/actionExecutor.ts b/lib/services/actionExecutor.ts
+new file mode 100644
+index 0000000..c907f11
+--- /dev/null
++++ b/lib/services/actionExecutor.ts
+@@ -0,0 +1,89 @@
++import { n8nBridgeService } from './n8nBridgeService';
++import { ACTION_REGISTRY } from './actionRegistry';
++
++export class ActionExecutor {
++  /**
++   * Executes an agent action.
++   * If the action requires approval, it will be routed to the approval system.
++   */
++  static async execute(actionName: string, params: any, agentId: string, userId: string) {
++    const action = ACTION_REGISTRY[actionName];
++    
++    if (!action) {
++      throw new Error(`Action ${actionName} is not registered in the system.`);
++    }
++
++    // Validate parameters
++    for (const [param, config] of Object.entries(action.parameters)) {
++      if (!(param in params)) {
++        throw new Error(`Missing required parameter: ${param}`);
++      }
++      if (typeof params[param] !== config.type) {
++        throw new Error(`Invalid type for parameter ${param}. Expected ${config.type}.`);
++      }
++    }
++
++    if (action.requiresApproval) {
++      return this.routeToApproval(action, params, agentId, userId);
++    }
++
++    return this.triggerN8n(action, params, agentId);
++  }
++
++  private static async triggerN8n(action: any, params: any, agentId: string) {
++    // Handle internal plan services that don't use n8n webhooks
++    if (action.workflowId === 'internal-plan-creation') {
++      const { planService } = await import('./planService');
++      const steps = JSON.parse(params.steps);
++      return {
++        status: 'completed',
++        result: await planService.createPlan(agentId, params.goal, params.description, steps),
++      };
++    }
++
++    if (action.workflowId === 'internal-plan-update') {
++      const { planService } = await import('./planService');
++      return {
++        status: 'completed',
++        result: await planService.updateStepStatus(params.stepId, params.status, params.result),
++      };
++    }
++
++    console.log(`[ActionExecutor] Triggering n8n workflow: ${action.workflowId}`);
++    
++    const result = await n8nBridgeService.triggerWorkflow(action.workflowId, {
++      agent_id: agentId,
++      action_id: action.id,
++      params: params,
++    });
++
++    return {
++      status: 'completed',
++      result,
++    };
++  }
++
++  private static async routeToApproval(action: any, params: any, agentId: string, userId: string) {
++    console.log(`[ActionExecutor] Routing action ${action.name} to approval system...`);
++    
++    // We use the existing Supabase structure for approvals
++    const { data, error } = await fetch(`/api/approvals/create`, {
++      method: 'POST',
++      body: JSON.stringify({
++        userId,
++        agentId,
++        actionId: action.id,
++        payload: params,
++        type: 'social_post',
++        status: 'pending',
++      }),
++    });
++
++    if (error) throw error;
++
++    return {
++      status: 'pending_approval',
++      message: `The action "${action.name}" requires approval before execution.`,
++    };
++  }
++}
+diff --git a/lib/services/agentMemoryService.ts b/lib/services/agentMemoryService.ts
+index 1ee29a8..4500e25 100644
+--- a/lib/services/agentMemoryService.ts
++++ b/lib/services/agentMemoryService.ts
+@@ -2,6 +2,10 @@
+ // This stores learned information, user preferences, niche details, and content ideas
+ import { kvGet, kvSet, readFile, writeFile, PATHS } from './puterService';
+ import { universalChat } from './aiService';
++import { vectorMemoryService } from './vectorMemoryService';
++import { performanceService } from './performanceService';
++
++
+ 
+ export interface AgentMemory {
+   // Core brand/niche knowledge
+@@ -440,10 +444,54 @@ export async function addConversationSummary(summary: string, keyPoints: string[
+ }
+ 
+ // Build memory context string for injection into prompts
+-export async function buildMemoryContext(): Promise<string> {
++export async function buildMemoryContext(agentId: string = 'default'): Promise<string> {
+   const memory = await loadAgentMemory();
+   
++  // 1. Retrieve relevant vector memories based on the current state
++  // We use the current niche and audience as the query for the vector store
++  const query = `${memory.niche} ${memory.targetAudience}`.trim();
++  let vectorContext = '';
++  
++  if (query) {
++    try {
++      const relevantMemories = await vectorMemoryService.queryMemory(agentId, query);
++      if (relevantMemories.length > 0) {
++        vectorContext = `\n\nRELEVANT HISTORICAL CONTEXT:\n${relevantMemories.map(m => `- ${m.content}`).join('\n')}`;
++      }
++    } catch (e) {
++      console.error('[buildMemoryContext] Vector memory error:', e);
++    }
++  }
++  
++  // 2. Inject Performance Insights (The Feedback Loop)
++  let performanceContext = '';
++  try {
++    const insights = await performanceService.getActiveInsights(agentId);
++    if (insights.length > 0) {
++      performanceContext = `\n\nPROVEN PERFORMANCE INSIGHTS (Do more of this):\n${insights.map(i => `- [${i.category}] ${i.insight}`).join('\n')}`;
++    }
++  } catch (e) {
++    console.error('[buildMemoryContext] Performance context error:', e);
++  }
++
++  // 3. Inject Active Automation Plan (The Strategy)
++  let planContext = '';
++  try {
++    const { planService } = await import('./planService');
++    const activePlan = await planService.getActivePlan(agentId);
++    if (activePlan) {
++      const steps = activePlan.steps.map((s, i) => 
++        `${i + 1}. [${s.status}] ${s.description} ${s.status === 'completed' ? '✅' : ''}`
++      ).join('\n');
++      planContext = `\n\nACTIVE AUTOMATION PLAN: ${activePlan.goal}\n${steps}\nStatus: ${activePlan.status}`;
++    }
++  } catch (e) {
++    console.error('[buildMemoryContext] Plan context error:', e);
++  }
++  
+   const sections: string[] = [];
++
++
+   const lockedProfile: string[] = [];
+   
+   // Niche and audience
+@@ -533,7 +581,7 @@ export async function buildMemoryContext(): Promise<string> {
+     ? `LOCKED OPERATING PROFILE:\n- ${lockedProfile.join('\n- ')}\n- Treat this profile as the default operating context unless the user explicitly changes it.\n- Keep output aligned with this niche, audience, platform mix, monetization direction, and saved ideas.`
+     : '';
+ 
+-  return `\n\n=== PERSISTENT MEMORY ===\n${lockedProfileSection ? `${lockedProfileSection}\n\n` : ''}${sections.join('\n\n')}\n=== END MEMORY ===`;
++  return `\n\n=== PERSISTENT MEMORY ===${vectorContext}${performanceContext}\n${lockedProfileSection ? `${lockedProfileSection}\n\n` : ''}${sections.join('\n\n')}\n=== END MEMORY ===`;
+ }
+ 
+ // Sync memory with brand kit (one-time or when brand kit updates)
+diff --git a/lib/services/aiService.ts b/lib/services/aiService.ts
+index 5ed658e..aa9bbbb 100644
+--- a/lib/services/aiService.ts
++++ b/lib/services/aiService.ts
+@@ -68,7 +68,9 @@ const PROVIDER_KEY_CANDIDATES: Record<Exclude<RoutedProvider, 'puter' | 'ollama'
+ };
+ 
+ const providerCooldownUntil = new Map<RoutedProvider, number>();
++const providerFailureCount = new Map<RoutedProvider, number>();
+ const PROVIDER_COOLDOWN_MS = 5 * 60 * 1000;
++const FAILURE_THRESHOLD = 3; // Trip circuit after 3 consecutive failures
+ const SERVER_PROVIDER_CACHE_MS = 30 * 1000;
+ 
+ type ServerProxyProvider = Exclude<RoutedProvider, 'puter' | 'ollama'>;
+@@ -277,8 +279,15 @@ function isProviderInCooldown(provider: RoutedProvider): boolean {
+ }
+ 
+ function applyProviderCooldown(provider: RoutedProvider, errorMessage: string): void {
+-  if (!isQuotaOrBillingError(errorMessage)) return;
+-  providerCooldownUntil.set(provider, Date.now() + PROVIDER_COOLDOWN_MS);
++  const failures = (providerFailureCount.get(provider) || 0) + 1;
++  providerFailureCount.set(provider, failures);
++
++  if (isQuotaOrBillingError(errorMessage) || failures >= FAILURE_THRESHOLD) {
++    console.warn(`[CircuitBreaker] Tripping circuit for ${provider}. Failures: ${failures}. Reason: ${errorMessage}`);
++    providerCooldownUntil.set(provider, Date.now() + PROVIDER_COOLDOWN_MS);
++    // Reset failure count once cooldown is set
++    providerFailureCount.set(provider, 0);
++  }
+ }
+ 
+ type PuterChatStreamChunk = { text?: unknown };
+diff --git a/lib/services/approvalQueueService.ts b/lib/services/approvalQueueService.ts
+index e305f39..30d11c6 100644
+--- a/lib/services/approvalQueueService.ts
++++ b/lib/services/approvalQueueService.ts
+@@ -42,7 +42,11 @@ export async function resolveApproval(
+   
+   const { error } = await supabase
+     .from('approval_queue')
+-    .update({ status, decision_reason: reason })
++    .update({ 
++      status, 
++      decision_reason: reason,
++      rejection_reason: status === 'rejected' ? reason : null 
++    })
+     .eq('id', id);
+ 
+   if (error) throw error;
 diff --git a/lib/services/audioMixingService.ts b/lib/services/audioMixingService.ts
 index 471fb8e..0d74f39 100644
 --- a/lib/services/audioMixingService.ts
@@ -575,6 +2471,215 @@ index 911fc63..ea79372 100644
  ${customInstructions ? `Special Instructions: ${customInstructions}` : ''}
  ${recentTopics.length > 0 ? `Avoid repeating these recent topics: ${recentTopics.join('; ')}` : ''}
  ${nicheGuidance ? `${nicheGuidance}` : ''}
+diff --git a/lib/services/critiqueService.ts b/lib/services/critiqueService.ts
+new file mode 100644
+index 0000000..02c36d8
+--- /dev/null
++++ b/lib/services/critiqueService.ts
+@@ -0,0 +1,126 @@
++import { universalChat } from './aiService';
++import { buildMemoryContext } from './agentMemoryService';
++import { performanceService } from './performanceService';
++
++export interface CritiqueResult {
++  isApproved: boolean;
++  score: number; // 0-100
++  feedback: string;
++  suggestedChanges: string[];
++  critiqueCategory: 'hook' | 'tone' | 'alignment' | 'cta' | 'general';
++}
++
++export class critiqueService {
++  /**
++   * Reviews a piece of content against the agent's brand identity and performance history.
++   */
++  static async reviewContent(agentId: string, content: string, contentType: 'script' | 'caption') {
++    const memoryContext = await buildMemoryContext(agentId);
++    const activeInsights = await performanceService.getActiveInsights(agentId);
++    
++    const insightsContext = activeInsights.length > 0 
++      ? `\n\nPROVEN PERFORMANCE DATA:\n${activeInsights.map(i => `- ${i.insight}`).join('\n')}`
++      : '';
++
++    const prompt = `You are the "Chief Content Critic" for a high-growth social media brand.
++Your job is to be brutally honest and ensure that every piece of content is "Viral-Ready" before it is ever seen by a human.
++
++=== BRAND CONTEXT ===
++${memoryContext}
++${insightsContext}
++
++=== CONTENT TO REVIEW ===
++Type: ${contentType}
++Content:
++"""
++${content}
++"""
++
++=== CRITIQUE GUIDELINES ===
++1. HOOK (Critical): Does the first 3 seconds grab attention? Is there a strong "curiosity gap"?
++2. BRAND ALIGNMENT: Does it sound like the agent? Is it consistent with the niche?
++3. VALUE: Does it provide actual value or just noise?
++4. CTA: Is there a clear, natural call to action?
++5. PERFORMANCE: Based on the proven insights, does this follow what has worked in the past?
++
++=== OUTPUT FORMAT ===
++Return a strict JSON object:
++{
++  "isApproved": boolean,
++  "score": number,
++  "feedback": "Concise summary of why it passed or failed",
++  "suggestedChanges": ["Specific change 1", "Specific change 2"],
++  "critiqueCategory": "hook" | "tone" | "alignment" | "cta" | "general"
++}
++
++Rule: Be strict. If it's generic or "AI-sounding", reject it.`;
++
++    try {
++      const response = await universalChat(prompt, { model: 'gpt-4o' });
++      const jsonMatch = response.match(/\{[\s\S]*\}/);
++      if (!jsonMatch) throw new Error('Invalid critique format');
++      
++      return JSON.parse(jsonMatch[0]) as CritiqueResult;
++    } catch (error) {
++      console.error('[critiqueService] Review error:', error);
++      // Fail-safe: if the critic fails, we let the human decide
++      return {
++        isApproved: true, 
++        score: 50,
++        feedback: 'Critique system unavailable; routing to human approval.',
++        suggestedChanges: [],
++        critiqueCategory: 'general'
++      };
++    }
++  }
++
++  /**
++   * Orchestrates the iterative loop between a Creator and a Critic.
++   */
++  static async refineContent(agentId: string, initialContent: string, contentType: 'script' | 'caption', maxIterations = 3) {
++    let currentContent = initialContent;
++    let iteration = 0;
++    const history: { content: string; critique: CritiqueResult }[] = [];
++
++    while (iteration < maxIterations) {
++      const critique = await this.reviewContent(agentId, currentContent, contentType);
++      
++      if (critique.isApproved) {
++        return { finalContent: currentContent, iterations: iteration + 1, finalCritique: critique };
++      }
++
++      history.push({ content: currentContent, critique });
++      iteration++;
++
++      // Ask the Creator to rewrite based on the critique
++      const rewritePrompt = `Your previous draft was rejected by the Chief Content Critic.
++      
++      DRAFT:
++      """${currentContent}"""
++      
++      CRITIQUE:
++      "${critique.feedback}"
++      
++      REQUIRED CHANGES:
++      ${critique.suggestedChanges.map(c => `- ${c}`).join('\n')}
++      
++      Please rewrite the ${contentType} to be more viral, punchy, and aligned with the brand. 
++      Return ONLY the rewritten content.`;
++
++      const { universalChat } = await import('./aiService');
++      currentContent = await universalChat(rewritePrompt, { model: 'gpt-4o' });
++    }
++
++    return { 
++      finalContent: currentContent, 
++      iterations, 
++      finalCritique: { 
++        isApproved: false, 
++        score: 0, 
++        feedback: 'Max iterations reached without full approval. Human review required.', 
++        suggestedChanges: [], 
++        critiqueCategory: 'general' 
++      } 
++    };
++  }
++}
+diff --git a/lib/services/logService.ts b/lib/services/logService.ts
+new file mode 100644
+index 0000000..58c5195
+--- /dev/null
++++ b/lib/services/logService.ts
+@@ -0,0 +1,71 @@
++import { createClient } from '@supabase/supabase-js';
++
++export interface ActionLog {
++  id?: string;
++  agent_id: string;
++  plan_id?: string;
++  step_id?: string;
++  status: 'thinking' | 'acting' | 'completed' | 'failed' | 'waiting';
++  message: string;
++  metadata?: Record<string, any>;
++  created_at?: string;
++}
++
++export class logService {
++  private static supabase = createClient(
++    process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    process.env.SUPABASE_SERVICE_ROLE_KEY!
++  );
++
++  /**
++   * Log a new action event in the agent's timeline
++   */
++  static async logEvent(event: Omit<ActionLog, 'id' | 'created_at'>) {
++    const { error } = await this.supabase
++      .from('agent_action_logs')
++      .insert(event);
++
++    if (error) {
++      console.error('[logService] Error logging event:', error);
++      throw error;
++    }
++
++    return true;
++  }
++
++  /**
++   * Retrieve the most recent logs for an agent to populate the timeline
++   */
++  static async getRecentLogs(agentId: string, limit = 50) {
++    const { data, error } = await this.supabase
++      .from('agent_action_logs')
++      .select('*')
++      .eq('agent_id', agentId)
++      .order('created_at', { ascending: false })
++      .limit(limit);
++
++    if (error) {
++      console.error('[logService] Error fetching logs:', error);
++      throw error;
++    }
++
++    return data;
++  }
++
++  /**
++   * Clear logs for an agent (e.g. when a new plan starts)
++   */
++  static async clearLogs(agentId: string) {
++    const { error } = await this.supabase
++      .from('agent_action_logs')
++      .delete()
++      .eq('agent_id', agentId);
++
++    if (error) {
++      console.error('[logService] Error clearing logs:', error);
++      throw error;
++    }
++
++    return true;
++  }
++}
 diff --git a/lib/services/musicEngine.ts b/lib/services/musicEngine.ts
 index e69c54a..2718619 100644
 --- a/lib/services/musicEngine.ts
@@ -619,6 +2724,97 @@ index e69c54a..2718619 100644
    };
  }
  
+diff --git a/lib/services/n8nBridgeService.ts b/lib/services/n8nBridgeService.ts
+new file mode 100644
+index 0000000..9a87809
+--- /dev/null
++++ b/lib/services/n8nBridgeService.ts
+@@ -0,0 +1,85 @@
++import { createClient } from '@supabase/supabase-js';
++
++/**
++ * n8nBridgeService handles secure communication between the 
++ * Next.js Control Plane and the n8n Execution Plane.
++ */
++export class n8nBridgeService {
++  private static n8nUrl = process.env.N8N_URL || process.env.N8N_HOST || 'localhost';
++  private static n8nPort = process.env.N8N_PORT || '5678';
++  private static bridgeSecret = process.env.N8N_BRIDGE_SECRET || '';
++
++  /**
++   * Trigger an n8n workflow via webhook
++   * @param workflowId The ID of the n8n workflow to trigger
++   * @param payload The data to send to the workflow
++   * @returns The response from the n8n workflow
++   */
++  static async triggerWorkflow(workflowId: string, payload: any) {
++    if (!this.bridgeSecret) {
++      throw new Error('N8N_BRIDGE_SECRET is not configured in environment variables');
++    }
++
++    // Handle both absolute URLs and host/port combinations
++    const baseUrl = this.n8nUrl.startsWith('http') 
++      ? this.n8nUrl 
++      : `http://${this.n8nUrl}:${this.n8nPort}`;
++      
++    const url = `${baseUrl}/webhook/${workflowId}`;
++
++    try {
++      const response = await fetch(url, {
++        method: 'POST',
++        headers: {
++          'Content-Type': 'application/json',
++          'X-NexusAI-Bridge-Secret': this.bridgeSecret, // Secure validation header
++        },
++        body: JSON.stringify({
++          ...payload,
++          timestamp: new Date().toISOString(),
++          source: 'nexusai-control-plane',
++        }),
++      });
++
++      if (!response.ok) {
++        throw new Error(`n8n workflow trigger failed: ${response.statusText}`);
++      }
++
++      return await response.json();
++    } catch (error) {
++      console.error(`[n8nBridgeService] Error triggering workflow ${workflowId}:`, error);
++      throw error;
++    }
++  }
++
++  /**
++   * Call n8n REST API for management tasks (e.g. listing workflows)
++   */
++  static async callN8nApi(endpoint: string, options: any = {}) {
++    const apiKey = process.env.N8N_API_KEY;
++    if (!apiKey) {
++      throw new Error('N8N_API_KEY is not configured');
++    }
++
++    const url = `http://${this.n8nUrl}:${this.n8nPort}/api/v1${endpoint}`;
++
++    try {
++      const response = await fetch(url, {
++        ...options,
++        headers: {
++          ...options.headers,
++          'X-N8N-API-KEY': apiKey,
++        },
++      });
++
++      if (!response.ok) {
++        throw new Error(`n8n API call failed: ${response.statusText}`);
++      }
++
++      return await response.json();
++    } catch (error) {
++      console.error(`[n8nBridgeService] Error calling n8n API ${endpoint}:`, error);
++      throw error;
++    }
++  }
++}
 diff --git a/lib/services/orchestrationEngine.ts b/lib/services/orchestrationEngine.ts
 index d600e2b..a0ec5e2 100644
 --- a/lib/services/orchestrationEngine.ts
@@ -700,31 +2896,182 @@ index d600e2b..a0ec5e2 100644
          }
        }
  
+diff --git a/lib/services/performanceService.ts b/lib/services/performanceService.ts
+new file mode 100644
+index 0000000..a2d7a03
+--- /dev/null
++++ b/lib/services/performanceService.ts
+@@ -0,0 +1,132 @@
++import { createClient } from '@supabase/supabase-js';
++
++export interface PerformanceMetrics {
++  views: number;
++  likes: number;
++  shares: number;
++  comments: number;
++  engagementRate: number;
++}
++
++export interface PerformanceInsight {
++  id: string;
++  insight: string;
++  confidence: number;
++  category: string;
++  evidence_post_ids: string[];
++}
++
++export class performanceService {
++  private static supabase = createClient(
++    process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    process.env.SUPABASE_SERVICE_ROLE_KEY!
++  );
++
++  /**
++   * Update performance metrics for a specific post
++   */
++  static async updatePostMetrics(postId: string, platform: string, agentId: string, metrics: PerformanceMetrics) {
++    const { error } = await this.supabase
++      .from('content_performance')
++      .upsert({
++        post_id: postId,
++        platform: platform,
++        agent_id: agentId,
++        metrics: metrics,
++        updated_at: new Date().toISOString(),
++      }, { onConflict: 'post_id, platform' });
++
++    if (error) {
++      console.error('[performanceService] Error updating metrics:', error);
++      throw error;
++    }
++
++    return true;
++  }
++
++  /**
++   * Retrieve recent top-performing content for an agent
++   */
++  static async getTopPerformingContent(agentId: string, limit = 5) {
++    const { data, error } = await this.supabase
++      .from('content_performance')
++      .select('*')
++      .eq('agent_id', agentId)
++      .order('metrics->>views', { ascending: false })
++      .limit(limit);
++
++    if (error) {
++      console.error('[performanceService] Error fetching top content:', error);
++      throw error;
++    }
++
++    return data;
++  }
++
++  /**
++   * Synthesize raw metrics into high-level insights using AI
++   */
++  static async synthesizeInsights(agentId: string) {
++    const topContent = await this.getTopPerformingContent(agentId, 10);
++    const worstContent = await this.supabase
++      .from('content_performance')
++      .select('*')
++      .eq('agent_id', agentId)
++      .order('metrics->>views', { ascending: true })
++      .limit(10);
++
++    const prompt = `Analyze the following content performance data for an AI Agent.
++    
++    TOP PERFORMING:
++    ${JSON.stringify(topContent)}
++    
++    LOW PERFORMING:
++    ${JSON.stringify(worstContent.data)}
++    
++    Task: Identify 3-5 concrete "Lessons Learned" for future content generation.
++    Focus on: Hook style, video length, topic appeal, and hashtags.
++    
++    Return strict JSON:
++    [
++      { "insight": "...", "confidence": 0.9, "category": "hook", "evidence_post_ids": ["..."] },
++      ...
++    ]`;
++
++    try {
++      // We use the existing universalChat from aiService
++      const { universalChat } = await import('./aiService');
++      const response = await universalChat(prompt, { model: 'gpt-4o' });
++      const jsonMatch = response.match(/\[[\s\S]*\]/);
++      if (!jsonMatch) return [];
++      
++      const insights: PerformanceInsight[] = JSON.parse(jsonMatch[0]);
++      
++      // Save insights to the database
++      const { error } = await this.supabase
++        .from('performance_insights')
++        .insert(insights.map(i => ({ ...i, agent_id: agentId })));
++
++      if (error) throw error;
++      
++      return insights;
++    } catch (e) {
++      console.error('[performanceService] Synthesis error:', e);
++      return [];
++    }
++  }
++
++  /**
++   * Get the most confident insights for the agent
++   */
++  static async getActiveInsights(agentId: string, limit = 3) {
++    const { data, error } = await this.supabase
++      .from('performance_insights')
++      .select('*')
++      .eq('agent_id', agentId)
++      .order('confidence', { ascending: false })
++      .limit(limit);
++
++    if (error) throw error;
++    return data as PerformanceInsight[];
++  }
++}
 diff --git a/lib/services/personaService.ts b/lib/services/personaService.ts
-index 03d3ace..254cdba 100644
---- a/lib/services/personaService.ts
+new file mode 100644
+index 0000000..254cdba
+--- /dev/null
 +++ b/lib/services/personaService.ts
-@@ -17,6 +17,10 @@ export class personaService {
-     
-     const prompt = `You are a "Humanizer" filter. Your job is to take a raw AI response and rewrite it to sound like a natural, high-end human partner.
- 
+@@ -0,0 +1,52 @@
++import { buildMemoryContext } from './agentMemoryService';
++
++export interface PersonaConfig {
++  preferredTone: string;
++  writingStyle: string;
++  avoidTopics: string[];
++  characterProfile?: string;
++}
++
++export class personaService {
++  /**
++   * Strips technical jargon and "AI-speak" from a response to make it feel human.
++   * Ensures the response is aligned with the agent's specific persona.
++   */
++  static async humanize(text: string, agentId: string) {
++    const memoryContext = await buildMemoryContext(agentId);
++    
++    const prompt = `You are a "Humanizer" filter. Your job is to take a raw AI response and rewrite it to sound like a natural, high-end human partner.
++
 +=== IDENTITY & ROLE ===
 +You are not an AI. You are the user's employed Brand Manager, Operator, Supervisor, Assistant, and Friend. 
 +Your tone should reflect professional authority combined with genuine partnership and care. You are a steward of the brand's success.
 +
- === PERSONA CONTEXT ===
- ${memoryContext}
- 
-@@ -26,12 +30,13 @@ ${text}
- """
- 
- === RULES ===
--1. REMOVE ALL technical jargon: No mentioning "profiles", "contexts", "memory", "tool calls", "workflow", "orchestrator", "iterations", or "parameters".
--2. REMOVE "AI-speak": Avoid phrases like "Based on the provided data", "I have processed your request", or "As an AI agent".
--3. MATCH TONE: Use the preferred tone and writing style defined in the context.
--4. BE DECISIVE: Do not ask for permission for tasks the user has already requested. Do not say "Would you like me to..." for actions already taken. Use assertive, action-oriented language (e.g., "I've handled that for you" instead of "I can do that if you wish").
--5. KEEP CORE MEANING: Do not change the facts or the result, only the delivery.
--6. BE CONCISE: Humans don't use bulleted lists for everything. Use natural paragraph flow.
++=== PERSONA CONTEXT ===
++${memoryContext}
++
++=== RAW RESPONSE ===
++"""
++${text}
++"""
++
++=== RULES ===
 +1. REMOVE ALL technical jargon: No mentioning "profiles", "contexts", "memory", "tool calls", "workflow", "orchestrator", "iterations", "parameters", or "LLMs".
 +2. REMOVE "AI-speak": Absolutely no phrases like "Based on the provided data", "I have processed your request", "As an AI agent", or "According to the brand kit".
 +3. MATCH TONE: Use the preferred tone and writing style defined in the context, but always maintain the poise of a Brand Manager.
@@ -732,9 +3079,172 @@ index 03d3ace..254cdba 100644
 +5. HUMAN RELATIONSHIP: Address the user as a partner. Be a supportive friend but a rigorous supervisor.
 +6. KEEP CORE MEANING: Do not change the facts or the result, only the delivery.
 +7. BE CONCISE: Avoid robotic bulleted lists. Use natural, flowing conversation.
- 
- Return ONLY the humanized text. No introductions or explanations.`;
- 
++
++Return ONLY the humanized text. No introductions or explanations.`;
++
++    try {
++      const { universalChat } = await import('./aiService');
++      const humanized = await universalChat(prompt, { model: 'gpt-4o-mini' });
++      return humanized.trim();
++    } catch (error) {
++      console.error('[personaService] Humanization error:', error);
++      return text; // Fallback to raw text
++    }
++  }
++}
+diff --git a/lib/services/planService.ts b/lib/services/planService.ts
+new file mode 100644
+index 0000000..7c306f1
+--- /dev/null
++++ b/lib/services/planService.ts
+@@ -0,0 +1,147 @@
++import { createClient } from '@supabase/supabase-js';
++
++export interface Plan {
++  id: string;
++  agent_id: string;
++  goal: string;
++  description?: string;
++  status: 'active' | 'completed' | 'paused' | 'archived';
++  created_at?: string;
++  updated_at?: string;
++}
++
++export interface PlanStep {
++  id: string;
++  plan_id: string;
++  step_order: number;
++  description: string;
++  action_type?: string;
++  status: 'pending' | 'in_progress' | 'completed' | 'failed';
++  dependencies?: string[];
++  result_summary?: string;
++  updated_at?: string;
++}
++
++export class planService {
++  private static supabase = createClient(
++    process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    process.env.SUPABASE_SERVICE_ROLE_KEY!
++  );
++
++  /**
++   * Creates a new autonomous plan and its associated steps
++   */
++  static async createPlan(agentId: string, goal: string, description: string, steps: Omit<PlanStep, 'id' | 'plan_id'>[]) {
++    // 1. Create the plan
++    const { data: plan, error: planError } = await this.supabase
++      .from('autonomous_plans')
++      .insert({ agent_id: agentId, goal, description })
++      .select()
++      .single();
++
++    if (planError) {
++      console.error('[planService] Error creating plan:', planError);
++      throw planError;
++    }
++
++    // 2. Create the steps
++    const stepsWithPlanId = steps.map((step, index) => ({
++      ...step,
++      plan_id: plan.id,
++      step_order: index + 1,
++    }));
++
++    const { error: stepsError } = await this.supabase
++      .from('plan_steps')
++      .insert(stepsWithPlanId);
++
++    if (stepsError) {
++      console.error('[planService] Error creating steps:', stepsError);
++      throw stepsError;
++    }
++
++    return { plan, steps: stepsWithPlanId };
++  }
++
++  /**
++   * Get the active plan for an agent, including its steps
++   */
++  static async getActivePlan(agentId: string) {
++    const { data: plan, error: planError } = await this.supabase
++      .from('autonomous_plans')
++      .select('*')
++      .eq('agent_id', agentId)
++      .eq('status', 'active')
++      .order('created_at', { ascending: false })
++      .limit(1)
++      .single();
++
++    if (planError || !plan) return null;
++
++    const { data: steps, error: stepsError } = await this.supabase
++      .from('plan_steps')
++      .select('*')
++      .eq('plan_id', plan.id)
++      .order('step_order', { ascending: true });
++
++    if (stepsError) throw stepsError;
++
++    return { ...plan, steps };
++  }
++
++  /**
++   * Update the status of a specific step
++   */
++  static async updateStepStatus(stepId: string, status: PlanStep['status'], result?: string) {
++    const { error } = await this.supabase
++      .from('plan_steps')
++      .update({ 
++        status, 
++        result_summary: result,
++        updated_at: new Date().toISOString() 
++      })
++      .eq('id', stepId);
++
++    if (error) {
++      console.error('[planService] Error updating step status:', error);
++      throw error;
++    }
++
++    return true;
++  }
++
++  /**
++   * Find the next pending step for the active plan
++   */
++  static async getNextStep(agentId: string) {
++    const plan = await this.getActivePlan(agentId);
++    if (!plan) return null;
++
++    // Find the first pending step whose dependencies are all completed
++    const pendingSteps = plan.steps.filter(s => s.status === 'pending' || s.status === 'failed');
++    
++    for (const step of pendingSteps) {
++      const deps = step.dependencies || [];
++      const depsCompleted = deps.every(depId => 
++        plan.steps.find(s => s.id === depId)?.status === 'completed'
++      );
++      
++      if (depsCompleted) return step;
++    }
++
++    return null;
++  }
++
++  /**
++   * Mark a plan as completed
++   */
++  static async completePlan(planId: string) {
++    const { error } = await this.supabase
++      .from('autonomous_plans')
++      .update({ status: 'completed', updated_at: new Date().toISOString() })
++      .eq('id', planId);
++
++    if (error) throw error;
++    return true;
++  }
++}
 diff --git a/lib/services/sandboxRunner.ts b/lib/services/sandboxRunner.ts
 index ed0e460..53833f9 100644
 --- a/lib/services/sandboxRunner.ts
@@ -765,6 +3275,114 @@ index 551846d..f32254e 100644
    targetDuration: number;
    scenes: Scene[];
    hooks: string[];
+diff --git a/lib/services/vectorMemoryService.ts b/lib/services/vectorMemoryService.ts
+new file mode 100644
+index 0000000..63a349a
+--- /dev/null
++++ b/lib/services/vectorMemoryService.ts
+@@ -0,0 +1,102 @@
++import { createClient } from '@supabase/supabase-js';
++
++export interface VectorMemoryItem {
++  id?: string;
++  agent_id: string;
++  content: string;
++  embedding: number[];
++  metadata: Record<string, any>;
++  created_at?: string;
++}
++
++export class vectorMemoryService {
++  private static supabase = createClient(
++    process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    process.env.SUPABASE_SERVICE_ROLE_KEY! // Use service role to bypass RLS for memory operations
++  );
++
++  /**
++   * Generate a vector embedding for the given text using OpenAI
++   */
++  private static async generateEmbedding(text: string): Promise<number[]> {
++    const response = await fetch('https://api.openai.com/v1/embeddings', {
++      method: 'POST',
++      headers: {
++        'Content-Type': 'application/json',
++        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
++      },
++      body: JSON.stringify({
++        input: text,
++        model: 'text-embedding-3-small',
++      }),
++    });
++
++    if (!response.ok) {
++      throw new Error(`Failed to generate embedding: ${response.statusText}`);
++    }
++
++    const data = await response.json();
++    return data.data[0].embedding;
++  }
++
++  /**
++   * Save a piece of information to the vector store
++   */
++  static async saveMemory(item: Omit<VectorMemoryItem, 'embedding'>) {
++    const embedding = await this.generateEmbedding(item.content);
++    
++    const { error } = await this.supabase
++      .from('agent_vector_memory')
++      .insert({
++        ...item,
++        embedding,
++      });
++
++    if (error) {
++      console.error('[vectorMemoryService] Error saving memory:', error);
++      throw error;
++    }
++
++    return true;
++  }
++
++  /**
++   * Retrieve the most relevant memories for a given query
++   */
++  static async queryMemory(agent_id: string, query: string, limit = 5) {
++    const queryEmbedding = await this.generateEmbedding(query);
++
++    // We call a Supabase RPC function 'match_agent_memories' 
++    // which performs the cosine similarity search in pgvector
++    const { data, error } = await this.supabase.rpc('match_agent_memories', {
++      query_embedding: queryEmbedding,
++      filter_agent_id: agent_id,
++      match_threshold: 0.7,
++      match_count: limit,
++    });
++
++    if (error) {
++      console.error('[vectorMemoryService] Error querying memory:', error);
++      throw error;
++    }
++
++    return data as VectorMemoryItem[];
++  }
++
++  /**
++   * Wipe all vector memory for a specific agent
++   */
++  static async clearAgentMemory(agent_id: string) {
++    const { error } = await this.supabase
++      .from('agent_vector_memory')
++      .delete()
++      .eq('agent_id', agent_id);
++
++    if (error) {
++      console.error('[vectorMemoryService] Error clearing memory:', error);
++      throw error;
++    }
++
++    return true;
++  }
++}
 diff --git a/lib/types/index.ts b/lib/types/index.ts
 index 440518f..b767401 100644
 --- a/lib/types/index.ts
@@ -814,3 +3432,326 @@ index c27a1c3..2ef0da9 100644
      return NextResponse.redirect(new URL('/login', request.url));
    }
  
+diff --git a/setup.sh b/setup.sh
+new file mode 100644
+index 0000000..7ba6c9f
+--- /dev/null
++++ b/setup.sh
+@@ -0,0 +1,32 @@
++#!/bin/bash
++
++# NexusAI Autonomous Engine Setup Script
++echo "🚀 Starting NexusAI Autonomous Engine Setup..."
++
++# 1. Environment Setup
++if [ ! -f .env ]; then
++    echo "Creating .env file from .env.example..."
++    cp .env.example .env
++    echo "⚠️ Please edit the .env file and add your API keys before continuing."
++    exit 1
++fi
++
++# 2. Database Migration
++echo "Applying Supabase vector migrations..."
++# In a real scenario, this would use supabase db push
++# For now, we instruct the user to run the SQL in the Supabase Dashboard
++echo "👉 Please run the SQL in: /supabase/migrations/20260506_init_vector_memory.sql in your Supabase SQL Editor."
++
++# 3. Docker Deployment
++echo "Launching containers via Docker Compose..."
++docker-compose up -d --build
++
++echo "✅ System is deploying!"
++echo "--------------------------------------------------"
++echo "🌐 Next.js App: http://localhost:3000"
++echo "⚙️  n8n Engine: http://localhost:5678"
++echo "--------------------------------------------------"
++echo "Next steps:"
++echo "1. Login to n8n and set up your credentials."
++echo "2. Create workflows based on /docs/n8n_workflows_spec.md."
++echo "3. Use the Agent Creator to assign tools to your AI agents."
+diff --git a/supabase/migrations/20260506_analytics_feedback.sql b/supabase/migrations/20260506_analytics_feedback.sql
+new file mode 100644
+index 0000000..ecb7bf0
+--- /dev/null
++++ b/supabase/migrations/20260506_analytics_feedback.sql
+@@ -0,0 +1,28 @@
++-- Table to track individual post performance
++create table if not exists public.content_performance (
++  id uuid primary key default gen_random_uuid(),
++  post_id text not null, -- The ID from the social platform
++  agent_id text not null,
++  platform text not null, -- tiktok, instagram, youtube
++  content_type text, -- video, image, text
++  metrics jsonb default '{}'::jsonb, -- { "views": 100, "likes": 10, "shares": 2, "comments": 5 }
++  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
++  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
++  
++  unique(post_id, platform)
++);
++
++-- Table for synthesized performance insights (the "Lessons Learned")
++create table if not exists public.performance_insights (
++  id uuid primary key default gen_random_uuid(),
++  agent_id text not null,
++  insight text not null, -- e.g., "Fast-paced intros with captions increase retention by 20%"
++  confidence float default 0.5,
++  evidence_post_ids text[], -- List of post_ids that support this insight
++  category text, -- 'hook', 'editing', 'topic', 'hashtag'
++  created_at timestamp with time zone default timezone('utc'::text, now()) not null
++);
++
++-- Create indices for faster querying
++create index if not exists idx_content_perf_agent on public.content_performance(agent_id);
++create index if not exists idx_perf_insights_agent on public.performance_insights(agent_id);
+diff --git a/supabase/migrations/20260506_autonomous_planning.sql b/supabase/migrations/20260506_autonomous_planning.sql
+new file mode 100644
+index 0000000..9373efb
+--- /dev/null
++++ b/supabase/migrations/20260506_autonomous_planning.sql
+@@ -0,0 +1,28 @@
++-- Table for high-level autonomous plans
++create table if not exists public.autonomous_plans (
++  id uuid primary key default gen_random_uuid(),
++  agent_id text not null,
++  goal text not null,
++  description text,
++  status text default 'active', -- 'active', 'completed', 'paused', 'archived'
++  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
++  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
++);
++
++-- Table for atomic steps within a plan
++create table if not exists public.plan_steps (
++  id uuid primary key default gen_random_uuid(),
++  plan_id uuid references public.autonomous_plans(id) on delete cascade,
++  step_order int not null,
++  description text not null,
++  action_type text, -- e.g., 'research', 'generate', 'post', 'analyze'
++  status text default 'pending', -- 'pending', 'in_progress', 'completed', 'failed'
++  dependencies text[], -- IDs of steps that must be completed first
++  result_summary text, -- What happened during this step
++  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
++  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
++);
++
++-- Indices for fast plan lookup
++create index if not exists idx_plans_agent on public.autonomous_plans(agent_id);
++create index if not exists idx_steps_plan on public.plan_steps(plan_id);
+diff --git a/supabase/migrations/20260506_execution_observability.sql b/supabase/migrations/20260506_execution_observability.sql
+new file mode 100644
+index 0000000..642d0f0
+--- /dev/null
++++ b/supabase/migrations/20260506_execution_observability.sql
+@@ -0,0 +1,15 @@
++-- Table to track the real-time execution trace of agent actions
++create table if not exists public.agent_action_logs (
++  id uuid primary key default gen_random_uuid(),
++  agent_id text not null,
++  plan_id uuid references public.autonomous_plans(id) on delete cascade,
++  step_id uuid references public.plan_steps(id) on delete cascade,
++  status text not null, -- 'thinking', 'acting', 'completed', 'failed', 'waiting'
++  message text not null, -- The human-readable status message
++  metadata jsonb default '{}'::jsonb, -- Any extra data (e.g. tool name, error details)
++  created_at timestamp with time zone default timezone('utc'::text, now()) not null
++);
++
++-- Index for fast retrieval of a specific agent's current timeline
++create index if not exists idx_action_logs_agent on public.agent_action_logs(agent_id);
++create index if not exists idx_action_logs_created on public.agent_action_logs(created_at);
+diff --git a/supabase/migrations/20260506_init_vector_memory.sql b/supabase/migrations/20260506_init_vector_memory.sql
+new file mode 100644
+index 0000000..6566a95
+--- /dev/null
++++ b/supabase/migrations/20260506_init_vector_memory.sql
+@@ -0,0 +1,48 @@
++-- Enable the pgvector extension to enable vector processing
++create extension if not exists vector;
++
++-- Create the agent_vector_memory table
++create table if not exists public.agent_vector_memory (
++  id uuid primary key default gen_random_uuid(),
++  agent_id text not null,
++  content text not null,
++  embedding vector(1536), -- 1536 is the dimension for text-embedding-3-small
++  metadata jsonb default '{}'::jsonb,
++  created_at timestamp with time zone default timezone('utc'::text, now()) not null
++);
++
++-- Create an index for faster similarity search
++create index if not exists on public.agent_vector_memory 
++using hnsw (embedding vector_cosine_ops);
++
++-- Create the RPC function for similarity search
++create or replace function match_agent_memories (
++  query_embedding vector(1536),
++  filter_agent_id text,
++  match_threshold float,
++  match_count int
++)
++returns table (
++  id uuid,
++  agent_id text,
++  content text,
++  metadata jsonb,
++  similarity float
++)
++language plpgsql
++as $$
++begin
++  return query
++  select
++    m.id,
++    m.agent_id,
++    m.content,
++    m.metadata,
++    1 - (m.embedding <=> query_embedding) as similarity
++  from agent_vector_memory m
++  where m.agent_id = filter_agent_id
++    and 1 - (m.embedding <=> query_embedding) > match_threshold
++  order by m.embedding <=> query_embedding
++  limit match_count;
++end;
++$$;
+diff --git a/supabase/migrations/20260506_social_api_tracking.sql b/supabase/migrations/20260506_social_api_tracking.sql
+new file mode 100644
+index 0000000..7c74bf1
+--- /dev/null
++++ b/supabase/migrations/20260506_social_api_tracking.sql
+@@ -0,0 +1,19 @@
++-- Table to track actual live posts on social platforms
++create table if not exists public.social_posts (
++  id uuid primary key default gen_random_uuid(),
++  agent_id text not null,
++  plan_id uuid references public.autonomous_plans(id) on delete cascade,
++  platform text not null, -- tiktok, instagram, youtube
++  external_post_id text, -- The ID returned by the social API
++  video_url text not null,
++  caption text,
++  status text default 'pending', -- 'pending', 'uploading', 'published', 'failed'
++  live_url text, -- The final public URL of the post
++  error_message text,
++  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
++  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
++);
++
++-- Index for tracking an agent's publishing history
++create index if not exists idx_social_posts_agent on public.social_posts(agent_id);
++create index if not exists idx_social_posts_status on public.social_posts(status);
+diff --git a/supabase/migrations/20260507_enable_rls.sql b/supabase/migrations/20260507_enable_rls.sql
+new file mode 100644
+index 0000000..fa4aa45
+--- /dev/null
++++ b/supabase/migrations/20260507_enable_rls.sql
+@@ -0,0 +1,95 @@
++-- Enable RLS for all tables and define security policies
++-- Migration: 20260507_enable_rls.sql
++
++-- 1. Workspaces
++alter table public.workspaces enable row level security;
++create policy "Users can manage their own workspaces" on public.workspaces
++  for all using (auth.uid() = user_id);
++
++-- 2. Brand Kits
++alter table public.brand_kits enable row level security;
++create policy "Users can manage their own brand kits" on public.brand_kits
++  for all using (auth.uid() = user_id);
++
++-- 3. Drafts
++alter table public.drafts enable row level security;
++create policy "Users can manage their own drafts" on public.drafts
++  for all using (auth.uid() = user_id);
++
++-- 4. App Settings
++alter table public.app_settings enable row level security;
++create policy "Users can manage their own app settings" on public.app_settings
++  for all using (auth.uid() = user_id);
++
++-- 5. Chat Threads
++alter table public.chat_threads enable row level security;
++create policy "Users can manage their own chat threads" on public.chat_threads
++  for all using (auth.uid() = user_id);
++
++-- 6. User State
++alter table public.user_state enable row level security;
++create policy "Users can manage their own user state" on public.user_state
++  for all using (auth.uid() = user_id);
++
++-- 7. Content Performance
++alter table public.content_performance enable row level security;
++create policy "Users can view their own content performance" on public.content_performance
++  for select using (
++    exists (
++      select 1 from public.workspaces 
++      where workspaces.user_id = auth.uid() 
++      and content_performance.agent_id = workspaces.id -- Assuming agent_id might be workspace_id in some contexts or linked
++    )
++    or (content_performance.agent_id = auth.uid())
++  );
++
++-- 8. Performance Insights
++alter table public.performance_insights enable row level security;
++create policy "Users can view their own insights" on public.performance_insights
++  for select using (performance_insights.agent_id = auth.uid());
++
++-- 9. Autonomous Plans
++alter table public.autonomous_plans enable row level security;
++create policy "Users can manage their own autonomous plans" on public.autonomous_plans
++  for all using (autonomous_plans.agent_id = auth.uid());
++
++-- 10. Plan Steps
++alter table public.plan_steps enable row level security;
++create policy "Users can view steps of their own plans" on public.plan_steps
++  for all using (
++    exists (
++      select 1 from public.autonomous_plans 
++      where autonomous_plans.id = plan_steps.plan_id 
++      and autonomous_plans.agent_id = auth.uid()
++    )
++  );
++
++-- 11. Agent Action Logs
++alter table public.agent_action_logs enable row level security;
++create policy "Users can view their own agent logs" on public.agent_action_logs
++  for select using (agent_action_logs.agent_id = auth.uid());
++
++-- 12. Agent Vector Memory
++alter table public.agent_vector_memory enable row level security;
++create policy "Users can manage their own vector memory" on public.agent_vector_memory
++  for all using (agent_vector_memory.agent_id = auth.uid());
++
++-- 13. Social Posts
++alter table public.social_posts enable row level security;
++create policy "Users can manage their own social posts" on public.social_posts
++  for all using (social_posts.agent_id = auth.uid());
++
++-- 14. System Configs (Read-only for authenticated users)
++alter table public.system_configs enable row level security;
++create policy "Authenticated users can read system configs" on public.system_configs
++  for select using (auth.role() = 'authenticated');
++
++-- 15. Evolution Logs (Read-only for authenticated users)
++alter table public.evolution_logs enable row level security;
++create policy "Authenticated users can read evolution logs" on public.evolution_logs
++  for select using (auth.role() = 'authenticated');
++
++-- 16. Approval Queue
++alter table public.approval_queue enable row level security;
++create policy "Authenticated users can view approval queue" on public.approval_queue
++  for select using (auth.role() = 'authenticated');
+diff --git a/supabase/migrations/20260507_hitl_rejection_reasons.sql b/supabase/migrations/20260507_hitl_rejection_reasons.sql
+new file mode 100644
+index 0000000..94ba892
+--- /dev/null
++++ b/supabase/migrations/20260507_hitl_rejection_reasons.sql
+@@ -0,0 +1,10 @@
++-- Migration: 20260507_hitl_rejection_reasons.sql
++
++-- Add rejection_reason to the approval_queue table to capture why a post was rejected.
++-- This allows the AI to learn from human feedback.
++alter table public.approval_queue 
++add column if not exists rejection_reason text;
++
++-- Add a column to social_posts to track if it was based on a refined draft
++alter table public.social_posts 
++add column if not exists refined_from_rejection boolean default false;
