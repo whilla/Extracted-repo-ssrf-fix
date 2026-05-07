@@ -19,7 +19,7 @@ export interface BrandKit {
   uniqueSellingPoint: string;
   language: string;
   hashtagStrategy?: string | string[];
-  contentPreferences: UserContentPreference[];
+  contentPreferences?: UserContentPreference[];
 }
 
 export interface UserContentPreference {

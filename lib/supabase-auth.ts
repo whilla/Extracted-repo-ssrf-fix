@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Database } from '@/supabase/client';
+import { Database } from '@/types/supabase';
 
 export const getSupabaseClient = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

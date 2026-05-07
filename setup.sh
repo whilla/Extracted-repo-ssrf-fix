@@ -15,7 +15,7 @@ fi
 echo "Applying Supabase vector migrations..."
 # In a real scenario, this would use supabase db push
 # For now, we instruct the user to run the SQL in the Supabase Dashboard
-echo "👉 Please run the SQL in: /supabase/migrations/20260506_init_vector_memory.sql in your Supabase SQL Editor."
+echo "👉 Please run the SQL in: /supabase/schema.sql in your Supabase SQL Editor."
 
 # 3. Docker Deployment
 echo "Launching containers via Docker Compose..."

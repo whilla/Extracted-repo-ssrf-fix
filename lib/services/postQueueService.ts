@@ -2,7 +2,7 @@
 
 import type { Platform } from '@/lib/types';
 import { generateId } from './memoryService';
-import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 import type { QueuedPostJob } from '@/lib/types';
 
 export async function enqueuePostJob(input: {
@@ -15,7 +15,6 @@ export async function enqueuePostJob(input: {
   hook?: string;
   scheduledAt?: string;
 }): Promise<QueuedPostJob> {
-  const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error('Supabase client not initialized');
 
   const now = new Date().toISOString();
@@ -44,7 +43,6 @@ export async function enqueuePostJob(input: {
 }
 
 export async function loadQueuedPostJobs(): Promise<QueuedPostJob[]> {
-  const supabase = getSupabaseBrowserClient();
   if (!supabase) return [];
 
   const { data, error } = await supabase
@@ -61,7 +59,6 @@ export async function loadQueuedPostJobs(): Promise<QueuedPostJob[]> {
 }
 
 export async function updateQueuedPostJob(jobId: string, updates: Partial<QueuedPostJob>): Promise<void> {
-  const supabase = getSupabaseBrowserClient();
   if (!supabase) throw new Error('Supabase client not initialized');
 
   const { error } = await supabase
@@ -73,7 +70,6 @@ export async function updateQueuedPostJob(jobId: string, updates: Partial<Queued
 }
 
 export async function removeQueuedPostJob(jobId: string): Promise<boolean> {
-  const supabase = getSupabaseBrowserClient();
   if (!supabase) return false;
 
   const { error } = await supabase

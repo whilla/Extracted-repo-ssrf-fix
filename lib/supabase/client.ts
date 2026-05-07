@@ -1,23 +1,14 @@
 'use client';
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { Database } from '@/types/supabase';
 
-let browserClient: SupabaseClient | null = null;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-export function getSupabaseBrowserClient(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !anonKey) return null;
-
-  if (!browserClient) {
-    browserClient = createClient(url, anonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-      },
-    });
-  }
-
-  return browserClient;
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Supabase URL or anon key is missing. Check your environment variables.');
 }
+
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+export type SupabaseBrowserClient = SupabaseClient<Database>;

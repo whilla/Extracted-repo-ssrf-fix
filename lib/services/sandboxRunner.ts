@@ -35,19 +35,20 @@ export async function runSandboxedCode<T = any>(
       __filename: undefined,
     };
 
-    vm.createContext(sandbox);
+    const context = vm.createContext(sandbox);
     
     // Wrap code in an async function to allow await
     const wrappedCode = `async function __sandbox_main(input, context) { ${code} }`;
     const script = new vm.Script(wrappedCode);
-    const mainFn = script.runInContext(sandbox);
-
+    
     // Execute with a timeout
     const result = await Promise.race([
       (async () => {
-        // Use vm's native timeout to stop infinite loops on the main thread
-        const execution = script.runInContext(sandbox, { timeout: timeoutMs });
-        return await execution(input, sandbox.context);
+        const mainFn = script.runInContext(context, { timeout: timeoutMs });
+        if (typeof mainFn !== 'function') {
+          throw new Error('Sandbox script must return a function');
+        }
+        return await mainFn(input, context);
       })(),
       new Promise<never>((_, reject) => 
         setTimeout(() => reject(new Error('Execution timed out')), timeoutMs)

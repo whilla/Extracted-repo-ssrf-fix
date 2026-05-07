@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { signIn, signOut, getUser, isSignedIn, getCachedAuthUser, hasCachedAuthSession, clearCachedAuth } from '@/lib/services/puterService';
 import { initMemory, isOnboardingComplete, loadBrandKit } from '@/lib/services/memoryService';
+import { supabase } from '@/lib/supabase/client';
 import type { BrandKit } from '@/lib/types';
 
 const GUEST_MODE_KEY = 'nexus:guest-mode';
@@ -284,7 +285,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginWithSupabase = useCallback(async (provider: 'google' | 'github' | 'discord') => {
-    const supabase = getSupabaseBrowserClient();
     if (!supabase) {
       console.error('Supabase client not available');
       return;

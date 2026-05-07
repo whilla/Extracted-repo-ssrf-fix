@@ -37,7 +37,7 @@ The app has a multi-agent content generation system with Governor Mode, brand ki
 
 **Hosting:** Supabase Cloud
 
-**Migrations:** Managed via Supabase CLI in `supabase/migrations/` — version-controlled, pushed to Supabase on deploy via CI (`supabase db push`).
+**Migrations:** Managed via a single consolidated schema in `supabase/schema.sql` — version-controlled, pushed to Supabase on deploy via CI (`supabase db push`).
 
 **Row-Level Security (RLS):** All tables enforce `user_id` scoping so users only see their own data.
 
@@ -299,7 +299,7 @@ CRON_SECRET=...
 
 **Deployment steps:**
 1. Create Supabase project
-2. Link repo to Supabase CLI, push migrations from `supabase/migrations/`
+2. Link repo to Supabase CLI, push schema from `supabase/schema.sql`
 3. Create Clerk application
 4. Set up Resend API key
 5. Connect Vercel project, add all env vars
