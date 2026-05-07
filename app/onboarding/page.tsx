@@ -223,6 +223,7 @@ function OnboardingContent() {
         tone: brandKit.tone || 'professional',
         avoidTopics: brandKit.avoidTopics || [],
         contentPillars: brandKit.contentPillars || [],
+        contentPreferences: brandKit.contentPreferences || [],
         uniqueSellingPoint: brandKit.uniqueSellingPoint || '',
         language: brandKit.language || 'en',
       };

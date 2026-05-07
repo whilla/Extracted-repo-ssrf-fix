@@ -2,13 +2,46 @@ export const dynamic = "force-dynamic";
 import { NextResponse, type NextRequest } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 
 
 // Basic SSRF protection: allowed protocols and blocked hosts
 const ALLOWED_PROTOCOLS = ['http:', 'https:'];
-const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254'];
+const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254', 'metadata.google.internal', 'metadata.azure.microsoft.com', 'instance-data'];
 
-function validateTargetUrl(urlStr: string): { valid: boolean; error?: string } {
+function isPrivateIP(ip: string): boolean {
+  // IPv4 Private Ranges
+  const ipv4PrivatePatterns = [
+    /^127\./,               // Loopback
+    /^10\./,                // Class A
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // Class B
+    /^192\.168\./,          // Class C
+    /^169\.254\./,          // Link-local
+    /^0\./,                 // This network
+  ];
+
+  if (net.isIPv4(ip)) {
+    return ipv4PrivatePatterns.some(pattern => pattern.test(ip));
+  }
+
+  // IPv6 Private Ranges
+  if (net.isIPv6(ip)) {
+    const normalizedIp = ip.toLowerCase();
+    return (
+      normalizedIp === '::1' ||                 // Loopback
+      normalizedIp.startsWith('fc00:') ||       // Unique Local Address (ULA)
+      normalizedIp.startsWith('fd00:') ||       // ULA
+      normalizedIp.startsWith('fe80:') ||       // Link-local
+      normalizedIp.startsWith('fec0:') ||       // Site-local (deprecated)
+      normalizedIp === '::'                     // Unspecified
+    );
+  }
+
+  return true; // Treat unknown formats as private/invalid
+}
+
+async function validateTargetUrl(urlStr: string): Promise<{ valid: boolean; error?: string }> {
   try {
     const url = new URL(urlStr);
     if (!ALLOWED_PROTOCOLS.includes(url.protocol)) {
@@ -16,16 +49,21 @@ function validateTargetUrl(urlStr: string): { valid: boolean; error?: string } {
     }
     const hostname = url.hostname.toLowerCase();
     
-    // Block common local/private hostnames and IP patterns
-    const privatePatterns = [
-      /^127\./, /^10\./, /^172\.(1[6-9]|2[0-9]|3[0-1])\./, /^192\.168\./,
-      /^fc00:/, /^fe80:/, /^::1$/, /^0\.0\.0\.0$/, /^localhost$/
-    ];
-    
-    if (BLOCKED_HOSTS.some(blocked => hostname === blocked || hostname.endsWith(`.${blocked}`)) || 
-        privatePatterns.some(pattern => pattern.test(hostname))) {
-      return { valid: false, error: 'Access to local or private networks is prohibited.' };
+    if (BLOCKED_HOSTS.some(blocked => hostname === blocked || hostname.endsWith(`.${blocked}`))) {
+      return { valid: false, error: 'Access to this host is prohibited.' };
     }
+
+    // DNS Resolution and IP Validation
+    try {
+      const lookup = await dns.lookup(hostname, { all: false });
+      const ip = lookup.address;
+      if (isPrivateIP(ip)) {
+        return { valid: false, error: 'Access to local or private networks is prohibited.' };
+      }
+    } catch (dnsError) {
+      return { valid: false, error: 'Could not resolve hostname.' };
+    }
+
     return { valid: true };
   } catch (e) {
     return { valid: false, error: 'Invalid URL format.' };
@@ -48,7 +86,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
     }
 
-    const validation = validateTargetUrl(targetUrl);
+    const validation = await validateTargetUrl(targetUrl);
     if (!validation.valid) {
       return NextResponse.json({ error: validation.error }, { status: 403 });
     }
@@ -90,7 +128,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
     }
 
-    const validation = validateTargetUrl(targetUrl);
+    const validation = await validateTargetUrl(targetUrl);
     if (!validation.valid) {
       return NextResponse.json({ error: validation.error }, { status: 403 });
     }

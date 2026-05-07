@@ -14,13 +14,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Role Check: Only allow admins/managers to access the approval queue
-    const { data: userData } = await supabase
+    const { data: userData, error: roleError } = await supabase
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (userData?.role !== 'admin' && userData?.role !== 'manager') {
+    if (roleError) {
+      console.error('Role check failed:', roleError);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+
+    if (!userData) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (userData.role !== 'admin' && userData.role !== 'manager') {
       return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 });
     }
 
@@ -49,13 +58,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Role Check
-    const { data: userData } = await supabase
+    const { data: userData, error: roleError } = await supabase
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (userData?.role !== 'admin' && userData?.role !== 'manager') {
+    if (roleError) {
+      console.error('Role check failed:', roleError);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+
+    if (!userData) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (userData.role !== 'admin' && userData.role !== 'manager') {
       return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 });
     }
 
