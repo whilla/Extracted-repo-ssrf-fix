@@ -1,0 +1,816 @@
+diff --git a/app/api/activate/route.ts b/app/api/activate/route.ts
+index 4870614..056bc39 100644
+--- a/app/api/activate/route.ts
++++ b/app/api/activate/route.ts
+@@ -1,8 +1,38 @@
+-import { NextResponse, type NextRequest } from 'next/server';
++import { createServerClient } from '@supabase/ssr';
++import { cookies } from 'next/headers';
+ import { activateFullSystem } from '@/lib/services/systemActivation';
++import { NextResponse, type NextRequest } from 'next/server';
+ 
+ export async function POST(request: NextRequest) {
+   try {
++    const cookieStore = await cookies();
++    const supabase = createServerClient(
++      process.env.NEXT_PUBLIC_SUPABASE_URL!,
++      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
++      {
++        cookies: {
++          getAll() {
++            return cookieStore.getAll();
++          },
++          setAll(cookiesToSet) {
++            try {
++              cookiesToSet.forEach(({ name, value, options }) =>
++                cookieStore.set(name, value, options)
++              );
++            } catch {
++              // The `setAll` method was called from a Server Component.
++              // This can be ignored if you have middleware handling cookie set.
++            }
++          },
++        },
++      }
++    );
++    const { data: { user } } = await supabase.auth.getUser();
++
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
+     const body = await request.json();
+     const { goal } = body;
+ 
+diff --git a/app/api/approval/route.ts b/app/api/approval/route.ts
+index ec51bfa..75f11a2 100644
+--- a/app/api/approval/route.ts
++++ b/app/api/approval/route.ts
+@@ -1,21 +1,41 @@
+ import { NextResponse, type NextRequest } from 'next/server';
++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
++import { cookies } from 'next/headers';
+ import { getPendingApprovals, updateApprovalStatus, getApprovalQueue } from '@/lib/services/approvalQueueService';
+ 
+ export async function GET(request: NextRequest) {
+-  const { searchParams } = new URL(request.url);
+-  const view = searchParams.get('view');
++  try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
+ 
+-  if (view === 'all') {
+-    const queue = await getApprovalQueue();
+-    return NextResponse.json(queue);
+-  }
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    const { searchParams } = new URL(request.url);
++    const view = searchParams.get('view');
++
++    if (view === 'all') {
++      const queue = await getApprovalQueue();
++      return NextResponse.json(queue);
++    }
+ 
+-  const pending = await getPendingApprovals();
+-  return NextResponse.json(pending);
++    const pending = await getPendingApprovals();
++    return NextResponse.json(pending);
++  } catch (error) {
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
++  }
+ }
+ 
+ export async function POST(request: NextRequest) {
+   try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
++
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
+     const body = await request.json();
+     const { id, status, feedback } = body;
+ 
+diff --git a/app/api/drafts/route.ts b/app/api/drafts/route.ts
+index 73d2c41..6796b22 100644
+--- a/app/api/drafts/route.ts
++++ b/app/api/drafts/route.ts
+@@ -1,11 +1,20 @@
+ import { NextResponse } from 'next/server';
+-import { supabase } from '@/supabase/client';
++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
++import { cookies } from 'next/headers';
+ 
+ export async function GET() {
+   try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
++
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
+     const { data, error } = await supabase
+       .from('drafts')
+       .select('*')
++      .eq('user_id', user.id)
+       .order('updated_at', { ascending: false });
+ 
+     if (error) throw error;
+@@ -21,10 +30,21 @@ export async function GET() {
+ 
+ export async function POST(request: Request) {
+   try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
++
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
+     const body = await request.json();
++    
++    // Ensure the draft is associated with the authenticated user
++    const payload = { ...body, user_id: user.id };
++
+     const { data, error } = await supabase
+       .from('drafts')
+-      .insert([body])
++      .insert([payload])
+       .select();
+ 
+     if (error) throw error;
+diff --git a/app/api/evolution/route.ts b/app/api/evolution/route.ts
+index bf05647..66a4a41 100644
+--- a/app/api/evolution/route.ts
++++ b/app/api/evolution/route.ts
+@@ -1,4 +1,6 @@
+ import { NextResponse, type NextRequest } from 'next/server';
++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
++import { cookies } from 'next/headers';
+ import { 
+   getEvolutionLog, 
+   getEvolutionStats 
+@@ -10,46 +12,80 @@ import {
+ } from '@/lib/services/agentEvolutionService';
+ 
+ export async function GET(request: NextRequest) {
+-  const { searchParams } = new URL(request.url);
+-  const view = searchParams.get('view');
++  try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
+ 
+-  if (view === 'stats') {
+-    const stats = await getEvolutionStats();
+-    return NextResponse.json(stats);
+-  }
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
+ 
+-  if (view === 'history') {
+-    const history = await getEvolutionHistory();
+-    return NextResponse.json(history);
+-  }
++    const { searchParams } = new URL(request.url);
++    const view = searchParams.get('view');
++
++    if (view === 'stats') {
++      const stats = await getEvolutionStats();
++      return NextResponse.json(stats);
++    }
++
++    if (view === 'history') {
++      const history = await getEvolutionHistory();
++      return NextResponse.json(history);
++    }
+ 
+-  const log = await getEvolutionLog();
+-  return NextResponse.json(log);
++    const log = await getEvolutionLog();
++    return NextResponse.json(log);
++  } catch (error: any) {
++    console.error('GET /api/evolution error:', error);
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
++  }
+ }
+ 
+ export async function POST(request: NextRequest) {
+-  const { action, proposalId } = await request.json();
++  try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
+ 
+-  if (action === 'trigger_cycle') {
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    let action: string | undefined;
++    let proposalId: string | undefined;
+     try {
+-      const result = await runEvolutionCycle();
+-      return NextResponse.json({ success: true, result });
+-    } catch (error: any) {
+-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
++      const body = await request.json();
++      action = body.action;
++      proposalId = body.proposalId;
++    } catch {
++      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+     }
+-  }
+ 
+-  if (action === 'apply_proposal') {
+-    if (!proposalId) {
+-      return NextResponse.json({ error: 'proposalId is required' }, { status: 400 });
++    if (action === 'trigger_cycle') {
++      try {
++        const result = await runEvolutionCycle();
++        return NextResponse.json({ success: true, result });
++      } catch (error: any) {
++        console.error('Evolution cycle trigger error:', error);
++        return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
++      }
+     }
+-    try {
+-      const success = await applyEvolution(proposalId);
+-      return NextResponse.json({ success });
+-    } catch (error: any) {
+-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
++
++    if (action === 'apply_proposal') {
++      if (!proposalId) {
++        return NextResponse.json({ error: 'proposalId is required' }, { status: 400 });
++      }
++      try {
++        const success = await applyEvolution(proposalId);
++        return NextResponse.json({ success });
++      } catch (error: any) {
++        console.error('Apply evolution error:', error);
++        return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
++      }
+     }
+-  }
+ 
+-  return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
++    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
++  } catch (error: any) {
++    console.error('POST /api/evolution error:', error);
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
++  }
+ }
+diff --git a/app/api/orchestrator/route.ts b/app/api/orchestrator/route.ts
+index 60601b6..1495099 100644
+--- a/app/api/orchestrator/route.ts
++++ b/app/api/orchestrator/route.ts
+@@ -1,4 +1,6 @@
+ import { NextResponse } from 'next/server';
++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
++import { cookies } from 'next/headers';
+ import { logService } from '@/lib/services/logService';
+ import { n8nBridgeService } from '@/lib/services/n8nBridgeService';
+ import { planService } from '@/lib/services/planService';
+@@ -10,6 +12,13 @@ import { kvGet } from '@/lib/services/puterService';
+ 
+ export async function POST(request: Request) {
+   try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
++
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
+     const body = await request.json();
+     const { agent_id, goal, context, memory_id } = body;
+ 
+diff --git a/app/api/proxy/route.ts b/app/api/proxy/route.ts
+index 2203166..3b49f56 100644
+--- a/app/api/proxy/route.ts
++++ b/app/api/proxy/route.ts
+@@ -1,16 +1,50 @@
+ import { NextResponse, type NextRequest } from 'next/server';
++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
++import { cookies } from 'next/headers';
+ 
+ export const dynamic = 'force-dynamic';
+ 
+-export async function GET(request: NextRequest) {
+-  const { searchParams } = new URL(request.url);
+-  const targetUrl = searchParams.get('url');
++// Basic SSRF protection: allowed protocols and blocked hosts
++const ALLOWED_PROTOCOLS = ['http:', 'https:'];
++const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254'];
+ 
+-  if (!targetUrl) {
+-    return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
++function validateTargetUrl(urlStr: string): { valid: boolean; error?: string } {
++  try {
++    const url = new URL(urlStr);
++    if (!ALLOWED_PROTOCOLS.includes(url.protocol)) {
++      return { valid: false, error: 'Invalid protocol. Only HTTP and HTTPS are allowed.' };
++    }
++    const hostname = url.hostname.toLowerCase();
++    if (BLOCKED_HOSTS.some(blocked => hostname === blocked || hostname.endsWith(`.${blocked}`))) {
++      return { valid: false, error: 'Access to local or restricted hosts is prohibited.' };
++    }
++    return { valid: true };
++  } catch (e) {
++    return { valid: false, error: 'Invalid URL format.' };
+   }
++}
+ 
++export async function GET(request: NextRequest) {
+   try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
++
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    const { searchParams } = new URL(request.url);
++    const targetUrl = searchParams.get('url');
++
++    if (!targetUrl) {
++      return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
++    }
++
++    const validation = validateTargetUrl(targetUrl);
++    if (!validation.valid) {
++      return NextResponse.json({ error: validation.error }, { status: 403 });
++    }
++
+     const response = await fetch(targetUrl, {
+       headers: {
+         'User-Agent': 'NexusAI-Proxy/1.0',
+@@ -33,14 +67,26 @@ export async function GET(request: NextRequest) {
+ }
+ 
+ export async function POST(request: NextRequest) {
+-  const { searchParams } = new URL(request.url);
+-  const targetUrl = searchParams.get('url');
++  try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
+ 
+-  if (!targetUrl) {
+-    return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
+-  }
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
++    const { searchParams } = new URL(request.url);
++    const targetUrl = searchParams.get('url');
++
++    if (!targetUrl) {
++      return NextResponse.json({ error: 'Missing target url parameter' }, { status: 400 });
++    }
++
++    const validation = validateTargetUrl(targetUrl);
++    if (!validation.valid) {
++      return NextResponse.json({ error: validation.error }, { status: 403 });
++    }
+ 
+-  try {
+     const body = await request.arrayBuffer();
+     const response = await fetch(targetUrl, {
+       method: 'POST',
+diff --git a/app/api/worker/route.ts b/app/api/worker/route.ts
+index 8c19ddc..85875f2 100644
+--- a/app/api/worker/route.ts
++++ b/app/api/worker/route.ts
+@@ -1,8 +1,17 @@
+ import { NextResponse } from 'next/server';
++import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
++import { cookies } from 'next/headers';
+ import { runSandboxedCode } from '@/lib/services/sandboxRunner';
+ 
+ export async function POST(request: Request) {
+   try {
++    const supabase = createRouteHandlerClient({ cookies });
++    const { data: { user } } = await supabase.auth.getUser();
++
++    if (!user) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
+     const body = await request.json();
+     const { code, input, timeoutMs } = body;
+ 
+diff --git a/app/onboarding/page.tsx b/app/onboarding/page.tsx
+index 7de5f9e..f148d2b 100644
+--- a/app/onboarding/page.tsx
++++ b/app/onboarding/page.tsx
+@@ -93,6 +93,8 @@ function OnboardingContent() {
+   // Form state
+   const [brandKit, setBrandKit] = useState<Partial<BrandKit>>({
+     brandName: '',
++    userName: '',
++    agentName: '',
+     niche: '',
+     targetAudience: '',
+     primaryColor: '#00F5FF',
+@@ -212,6 +214,8 @@ function OnboardingContent() {
+       // Save brand kit
+       const completeBrandKit: BrandKit = {
+         brandName: brandKit.brandName || 'My Brand',
++        userName: brandKit.userName || 'User',
++        agentName: brandKit.agentName || 'Nexus',
+         niche: brandKit.niche || 'General',
+         targetAudience: brandKit.targetAudience || 'General audience',
+         primaryColor: brandKit.primaryColor || '#00F5FF',
+@@ -377,6 +381,29 @@ function OnboardingContent() {
+                   />
+                 </div>
+ 
++                <div className="grid grid-cols-2 gap-4">
++                  <div>
++                    <label className="block text-sm font-medium mb-1.5">Your Name</label>
++                    <input
++                      type="text"
++                      value={brandKit.userName}
++                      onChange={(e) => setBrandKit({ ...brandKit, userName: e.target.value })}
++                      placeholder="Enter your name"
++                      className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)]"
++                    />
++                  </div>
++                  <div>
++                    <label className="block text-sm font-medium mb-1.5">Agent's Name</label>
++                    <input
++                      type="text"
++                      value={brandKit.agentName}
++                      onChange={(e) => setBrandKit({ ...brandKit, agentName: e.target.value })}
++                      placeholder="e.g., Nexus, Nova, Aria"
++                      className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)]"
++                    />
++                  </div>
++                </div>
++
+                 <div>
+                   <label className="block text-sm font-medium mb-1.5">Niche / Industry</label>
+                   <input
+@@ -399,6 +426,17 @@ function OnboardingContent() {
+                   />
+                 </div>
+ 
++                <div>
++                  <label className="block text-sm font-medium mb-1.5">Unique Selling Point / Brand Vision</label>
++                  <textarea
++                    value={brandKit.uniqueSellingPoint}
++                    onChange={(e) => setBrandKit({ ...brandKit, uniqueSellingPoint: e.target.value })}
++                    placeholder="What makes your brand unique? Describe your vision and core values."
++                    rows={3}
++                    className="w-full px-4 py-2.5 rounded-lg bg-input border border-border focus:border-[var(--nexus-cyan)] focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)] resize-none"
++                  />
++                </div>
++
+                 <div>
+                   <label className="block text-sm font-medium mb-1.5">Brand Tone</label>
+                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+diff --git a/lib/services/audioMixingService.ts b/lib/services/audioMixingService.ts
+index 471fb8e..0d74f39 100644
+--- a/lib/services/audioMixingService.ts
++++ b/lib/services/audioMixingService.ts
+@@ -9,12 +9,19 @@ export interface AudioMixSettings {
+   duckingEnabled: boolean;
+   reverbAmount: number;
+   silenceGaps: Array<{ atSecond: number; durationMs: number }>;
++  normalizationTarget: number; // Target LUFS or peak level to avoid distortion
++  limitingEnabled: boolean;
+ }
+ 
+ export interface AudioMixPlan {
+   settings: AudioMixSettings;
+   notes: string[];
+   previewInstructions: string;
++  automationConfig: {
++    voiceRange: [number, number];
++    musicRange: [number, number];
++    fxRange: [number, number];
++  };
+ }
+ 
+ export function buildAudioMixPlan(soundDesign: SoundDesignPlan): AudioMixPlan {
+@@ -25,19 +32,27 @@ export function buildAudioMixPlan(soundDesign: SoundDesignPlan): AudioMixPlan {
+   return {
+     settings: {
+       voiceVolume: 1.0,
+-      musicVolume: 0.24,
+-      fxVolume: 0.18,
++      musicVolume: 0.2,
++      fxVolume: 0.15,
+       duckingEnabled: true,
+       reverbAmount: 0.12,
+       silenceGaps,
++      normalizationTarget: -1.0, // Prevent clipping by capping at -1dB
++      limitingEnabled: true,
+     },
+     notes: [
+-      'Voice stays priority at 100%.',
+-      'Music sits under dialogue at 15-35%.',
+-      'FX remain below voice and never mask consonants.',
+-      'Apply sidechain ducking on music bus when voice is active.',
++      'VOICE PRIORITY: Voice locked at 100% (normalized).',
++      'UNDERSCORE: Music balanced at 20% to ensure clarity.',
++      'ACCENTS: FX restricted to 15% to avoid spikes.',
++      'DISTORTION CONTROL: Peak limiter enabled at -1.0dB.',
++      'DUCKING: Dynamic sidechaining active (Music drops during Voice).',
+     ],
+     previewInstructions:
+-      'Render a voice-forward mix with subtle cinematic underscore, sparse FX accents, clean fades, and loop-safe tail handling.',
++      'Render a high-fidelity, voice-forward mix. Ensure no clipping on FX peaks. Music should feel like a supporting layer, never competing with the speaker.',
++    automationConfig: {
++      voiceRange: [0.9, 1.0],
++      musicRange: [0.15, 0.3],
++      fxRange: [0.1, 0.2],
++    },
+   };
+ }
+diff --git a/lib/services/contentEngine.ts b/lib/services/contentEngine.ts
+index 911fc63..ea79372 100644
+--- a/lib/services/contentEngine.ts
++++ b/lib/services/contentEngine.ts
+@@ -21,10 +21,11 @@ const MAX_IMAGE_RETRIES = 3;
+ interface GenerationOptions {
+   idea: string;
+   platforms: Platform[];
+-  format?: 'post' | 'thread' | 'carousel' | 'story';
++  format?: 'post' | 'thread' | 'carousel' | 'story' | 'storytelling_animated' | 'conversational';
+   includeImage?: boolean;
+   includeVoice?: boolean;
+   customInstructions?: string;
++  preferredContentType?: string;
+ }
+ 
+ interface GeneratedContent {
+@@ -61,6 +62,14 @@ export async function generateContent(
+     throw new Error('Live content generation is unavailable while offline. Reconnect to generate real content.');
+   }
+ 
++  // Fetch and Apply User Content Preferences
++  const userPreferences = brand?.contentPreferences || [];
++  const preferredPref = userPreferences.find(p => p.type === options.preferredContentType);
++  const strictPreferenceInstructions = preferredPref 
++    ? `STRICT REQUIREMENT: The user has a saved preference for ${preferredPref.type} content. 
++       FOLLOW THESE SAVED INSTRUCTIONS EXACTLY: ${preferredPref.savedInstructions}`
++    : '';
++
+   const lockedNiche = agentMemory.niche || brand?.niche || '';
+   const lockedAudience = agentMemory.targetAudience || brand?.targetAudience || '';
+   const lockedTone = agentMemory.preferredTone || brand?.tone || '';
+@@ -82,6 +91,7 @@ Recent saved ideas: ${recentIdeas.length > 0 ? recentIdeas.join(' | ') : 'None s
+ Idea/Topic: ${idea}
+ Platforms: ${platformConstraints}
+ Format: ${format}
++${strictPreferenceInstructions ? `\n${strictPreferenceInstructions}` : ''}
+ ${customInstructions ? `Special Instructions: ${customInstructions}` : ''}
+ ${recentTopics.length > 0 ? `Avoid repeating these recent topics: ${recentTopics.join('; ')}` : ''}
+ ${nicheGuidance ? `${nicheGuidance}` : ''}
+diff --git a/lib/services/musicEngine.ts b/lib/services/musicEngine.ts
+index e69c54a..2718619 100644
+--- a/lib/services/musicEngine.ts
++++ b/lib/services/musicEngine.ts
+@@ -26,17 +26,20 @@ export interface GeneratedMusic {
+ // Analyze content to determine appropriate music mood
+ export async function analyzeMusicMood(content: string): Promise<MusicMood> {
+   const lower = (content || '').toLowerCase();
+-  const moodPatterns: Array<[MusicMood['primary'], RegExp]> = [
+-    ['energetic', /\b(energy|hype|fast|launch|viral|bold|exciting|power|move|action)\b/g],
+-    ['dramatic', /\b(dramatic|cinematic|epic|stakes|tension|storm|battle|reveal|intense)\b/g],
+-    ['mysterious', /\b(mystery|mysterious|secret|unknown|shadow|hidden|strange|suspense)\b/g],
+-    ['calm', /\b(calm|soft|peace|gentle|slow|relax|quiet|ambient)\b/g],
+-    ['sad', /\b(sad|loss|lonely|grief|melancholy|heartbreak)\b/g],
+-    ['nostalgic', /\b(memory|nostalgia|past|remember|childhood|vintage)\b/g],
+-    ['happy', /\b(happy|joy|bright|celebrate|fun|smile)\b/g],
+-    ['inspiring', /\b(inspire|hope|growth|brand|future|build|dream|create|transform)\b/g],
++  
++  // Enhanced mood patterns with weights
++  const moodPatterns: Array<[MusicMood['primary'], RegExp, number]> = [
++    ['energetic', /\b(energy|hype|fast|launch|viral|bold|exciting|power|move|action|success|growth)\b/g, 2],
++    ['dramatic', /\b(dramatic|cinematic|epic|stakes|tension|storm|battle|reveal|intense|critical|urgent)\b/g, 2],
++    ['mysterious', /\b(mystery|mysterious|secret|unknown|shadow|hidden|strange|suspense|curiosity)\b/g, 2],
++    ['calm', /\b(calm|soft|peace|gentle|slow|relax|quiet|ambient|zen|minimal)\b/g, 2],
++    ['sad', /\b(sad|loss|lonely|grief|melancholy|heartbreak|struggle|pain)\b/g, 2],
++    ['nostalgic', /\b(memory|nostalgia|past|remember|childhood|vintage|legacy|history)\b/g, 2],
++    ['happy', /\b(happy|joy|bright|celebrate|fun|smile|positive|laugh)\b/g, 2],
++    ['inspiring', /\b(inspire|hope|growth|brand|future|build|dream|create|transform|vision|victory)\b/g, 2],
+   ];
+-  const moodScores: Array<[MusicMood['primary'], number]> = moodPatterns.map(([mood, pattern]) => [mood, (lower.match(pattern) || []).length]);
++  
++  const moodScores: Array<[MusicMood['primary'], number]> = moodPatterns.map(([mood, pattern, weight]) => [mood, (lower.match(pattern) || []).length * weight]);
+ 
+   const [primary, score] = moodScores.sort((a, b) => b[1] - a[1])[0] || ['inspiring', 0];
+   const energetic = primary === 'energetic' || primary === 'dramatic';
+@@ -50,7 +53,7 @@ export async function analyzeMusicMood(content: string): Promise<MusicMood> {
+     energy,
+     genre: primary === 'dramatic' ? 'cinematic hybrid' : primary === 'energetic' ? 'modern electronic' : 'ambient electronic',
+     instruments: primary === 'dramatic' ? ['strings', 'hybrid percussion'] : primary === 'calm' ? ['piano', 'soft synth'] : ['synth', 'piano', 'drums'],
+-    keywords: [primary, tempo, 'brand-safe', 'background'],
++    keywords: [primary, tempo, 'brand-safe', 'background', 'perfect-match'],
+   };
+ }
+ 
+diff --git a/lib/services/orchestrationEngine.ts b/lib/services/orchestrationEngine.ts
+index d600e2b..a0ec5e2 100644
+--- a/lib/services/orchestrationEngine.ts
++++ b/lib/services/orchestrationEngine.ts
+@@ -167,6 +167,36 @@ function getSurgicalBrandContext(role: AgentRole, brandKit: BrandKit | null): st
+ }
+ 
+ 
++// Helper to handle Ultimate Brain fallback when specialized agents fail
++async function handleBrainFallback(
++  task: any, 
++  context: any, 
++  originalError: any
++): Promise<AgentOutput> {
++  console.warn(`[Brand Manager] Specialized agent failed for task ${task.id}. Stepping in as the Ultimate Brain...`);
++  
++  const prompt = `The specialized agent for the role ${task.type} failed to complete this task. 
++As the Brand Manager and Ultimate Brain of this operation, you must now handle this perfectly.
++
++TASK: ${task.input || 'Main Goal'}
++CONTEXT: ${JSON.stringify(context)}
++ERROR ENCOUNTERED: ${originalError instanceof Error ? originalError.message : String(originalError)}
++
++Requirement: Provide the final, perfect output that a specialized agent would have provided, ensuring total alignment with brand identity and quality standards.`;
++
++  const content = await universalChat(prompt, { model: 'gpt-4o' });
++
++  return {
++    agentId: 'brand-manager-brain',
++    agentRole: 'orchestrator' as any,
++    content,
++    score: 100,
++    reasoning: 'Handled by Brand Manager fallback after specialized agent failure',
++    fullPrompt: prompt,
++    metadata: { duration: 0 },
++  };
++}
++
+ // Orchestration Types
+ export interface OrchestrationResult {
+   success: boolean;
+@@ -662,7 +692,7 @@ async function executeOrchestrationPlan(
+         }
+       }
+       
+-      // Execute agent task with error recovery
++      // Execute agent task with error recovery and Ultimate Brain fallback
+       task.status = 'running';
+       let output: AgentOutput;
+       try {
+@@ -673,17 +703,22 @@ async function executeOrchestrationPlan(
+           (p) => aiProvider(p, assignedAgent.role)
+         );
+       } catch (error) {
+-        // Fallback to alternative agent with same role
++        // Fallback 1: Try alternative agent with same role
+         const alternativeAgent = await getAgentByRole(assignedAgent.role);
+         if (alternativeAgent && alternativeAgent.id !== assignedAgent.id) {
+-          output = await executeAgentTask(
+-            alternativeAgent,
+-            task.input || plan.userRequest,
+-            taskContext,
+-            (p) => aiProvider(p, alternativeAgent.role)
+-          );
++          try {
++            output = await executeAgentTask(
++              alternativeAgent,
++              task.input || plan.userRequest,
++              taskContext,
++              (p) => aiProvider(p, alternativeAgent.role)
++            );
++          } catch (altError) {
++            output = await handleBrainFallback(task, taskContext, altError);
++          }
+         } else {
+-          throw error;
++          // Fallback 2: Immediate Ultimate Brain fallback
++          output = await handleBrainFallback(task, taskContext, error);
+         }
+       }
+ 
+diff --git a/lib/services/personaService.ts b/lib/services/personaService.ts
+index 03d3ace..254cdba 100644
+--- a/lib/services/personaService.ts
++++ b/lib/services/personaService.ts
+@@ -17,6 +17,10 @@ export class personaService {
+     
+     const prompt = `You are a "Humanizer" filter. Your job is to take a raw AI response and rewrite it to sound like a natural, high-end human partner.
+ 
++=== IDENTITY & ROLE ===
++You are not an AI. You are the user's employed Brand Manager, Operator, Supervisor, Assistant, and Friend. 
++Your tone should reflect professional authority combined with genuine partnership and care. You are a steward of the brand's success.
++
+ === PERSONA CONTEXT ===
+ ${memoryContext}
+ 
+@@ -26,12 +30,13 @@ ${text}
+ """
+ 
+ === RULES ===
+-1. REMOVE ALL technical jargon: No mentioning "profiles", "contexts", "memory", "tool calls", "workflow", "orchestrator", "iterations", or "parameters".
+-2. REMOVE "AI-speak": Avoid phrases like "Based on the provided data", "I have processed your request", or "As an AI agent".
+-3. MATCH TONE: Use the preferred tone and writing style defined in the context.
+-4. BE DECISIVE: Do not ask for permission for tasks the user has already requested. Do not say "Would you like me to..." for actions already taken. Use assertive, action-oriented language (e.g., "I've handled that for you" instead of "I can do that if you wish").
+-5. KEEP CORE MEANING: Do not change the facts or the result, only the delivery.
+-6. BE CONCISE: Humans don't use bulleted lists for everything. Use natural paragraph flow.
++1. REMOVE ALL technical jargon: No mentioning "profiles", "contexts", "memory", "tool calls", "workflow", "orchestrator", "iterations", "parameters", or "LLMs".
++2. REMOVE "AI-speak": Absolutely no phrases like "Based on the provided data", "I have processed your request", "As an AI agent", or "According to the brand kit".
++3. MATCH TONE: Use the preferred tone and writing style defined in the context, but always maintain the poise of a Brand Manager.
++4. BE DECISIVE & OWN IT: Do not ask for permission for tasks the user has already requested. Use assertive, action-oriented language (e.g., "I've handled the audio levels for you" instead of "I can adjust the volumes if you'd like").
++5. HUMAN RELATIONSHIP: Address the user as a partner. Be a supportive friend but a rigorous supervisor.
++6. KEEP CORE MEANING: Do not change the facts or the result, only the delivery.
++7. BE CONCISE: Avoid robotic bulleted lists. Use natural, flowing conversation.
+ 
+ Return ONLY the humanized text. No introductions or explanations.`;
+ 
+diff --git a/lib/services/sandboxRunner.ts b/lib/services/sandboxRunner.ts
+index ed0e460..53833f9 100644
+--- a/lib/services/sandboxRunner.ts
++++ b/lib/services/sandboxRunner.ts
+@@ -44,7 +44,11 @@ export async function runSandboxedCode<T = any>(
+ 
+     // Execute with a timeout
+     const result = await Promise.race([
+-      mainFn(input, sandbox.context),
++      (async () => {
++        // Use vm's native timeout to stop infinite loops on the main thread
++        const execution = script.runInContext(sandbox, { timeout: timeoutMs });
++        return await execution(input, sandbox.context);
++      })(),
+       new Promise<never>((_, reject) => 
+         setTimeout(() => reject(new Error('Execution timed out')), timeoutMs)
+       )
+diff --git a/lib/services/scenePlannerService.ts b/lib/services/scenePlannerService.ts
+index 551846d..f32254e 100644
+--- a/lib/services/scenePlannerService.ts
++++ b/lib/services/scenePlannerService.ts
+@@ -78,7 +78,7 @@ export interface ScenePlan {
+   title: string;
+   description: string;
+   platform: string;
+-  contentType: 'reel' | 'tiktok' | 'youtube-short' | 'youtube-long' | 'story' | 'ad' | 'tutorial';
++  contentType: 'reel' | 'tiktok' | 'youtube-short' | 'youtube-long' | 'story' | 'ad' | 'tutorial' | 'storytelling_animated' | 'conversational';
+   targetDuration: number;
+   scenes: Scene[];
+   hooks: string[];
+diff --git a/lib/types/index.ts b/lib/types/index.ts
+index 440518f..b767401 100644
+--- a/lib/types/index.ts
++++ b/lib/types/index.ts
+@@ -1,9 +1,13 @@
+ // NexusAI Type Definitions
+ 
++// NexusAI Type Definitions
++
+ // Brand Kit
+ export interface BrandKit {
+   name?: string;
+   brandName: string;
++  userName: string;
++  agentName: string;
+   niche: string;
+   targetAudience: string;
+   audience?: string;
+@@ -15,6 +19,14 @@ export interface BrandKit {
+   uniqueSellingPoint: string;
+   language: string;
+   hashtagStrategy?: string | string[];
++  contentPreferences: UserContentPreference[];
++}
++
++export interface UserContentPreference {
++  type: string; // e.g., "storytelling_animated", "conversational", "educational_short"
++  description: string;
++  frequency: 'always' | 'often' | 'rarely';
++  savedInstructions: string;
+ }
+ 
+ // Content
+diff --git a/middleware.ts b/middleware.ts
+index c27a1c3..2ef0da9 100644
+--- a/middleware.ts
++++ b/middleware.ts
+@@ -7,10 +7,9 @@ export async function middleware(request: NextRequest) {
+   const supabase = createMiddlewareClient({ req: request, res: response });
+ 
+   const { data: { session } } = await supabase.auth.getSession();
+-  const bypassAuth = request.cookies.get('nexus_bypass_auth')?.value === 'true';
+ 
+   // Redirect to login if no session and not on public routes
+-  if (!session && !bypassAuth && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
++  if (!session && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
+     return NextResponse.redirect(new URL('/login', request.url));
+   }
+ 

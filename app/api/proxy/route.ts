@@ -15,8 +15,16 @@ function validateTargetUrl(urlStr: string): { valid: boolean; error?: string } {
       return { valid: false, error: 'Invalid protocol. Only HTTP and HTTPS are allowed.' };
     }
     const hostname = url.hostname.toLowerCase();
-    if (BLOCKED_HOSTS.some(blocked => hostname === blocked || hostname.endsWith(`.${blocked}`))) {
-      return { valid: false, error: 'Access to local or restricted hosts is prohibited.' };
+    
+    // Block common local/private hostnames and IP patterns
+    const privatePatterns = [
+      /^127\./, /^10\./, /^172\.(1[6-9]|2[0-9]|3[0-1])\./, /^192\.168\./,
+      /^fc00:/, /^fe80:/, /^::1$/, /^0\.0\.0\.0$/, /^localhost$/
+    ];
+    
+    if (BLOCKED_HOSTS.some(blocked => hostname === blocked || hostname.endsWith(`.${blocked}`)) || 
+        privatePatterns.some(pattern => pattern.test(hostname))) {
+      return { valid: false, error: 'Access to local or private networks is prohibited.' };
     }
     return { valid: true };
   } catch (e) {
