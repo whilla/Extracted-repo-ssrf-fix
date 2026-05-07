@@ -95,6 +95,7 @@ export async function GET(request: NextRequest) {
       headers: {
         'User-Agent': 'NexusAI-Proxy/1.0',
       },
+      redirect: 'error',
     });
 
     const data = await response.arrayBuffer();
@@ -141,6 +142,7 @@ export async function POST(request: NextRequest) {
         'User-Agent': 'NexusAI-Proxy/1.0',
       },
       body,
+      redirect: 'error',
     });
 
     const data = await response.arrayBuffer();

@@ -1,7 +1,5 @@
 // NexusAI Type Definitions
 
-// NexusAI Type Definitions
-
 // Brand Kit
 export interface BrandKit {
   name?: string;

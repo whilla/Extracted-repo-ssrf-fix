@@ -44,11 +44,15 @@ export async function runSandboxedCode<T = any>(
     // Execute with a timeout
     const result = await Promise.race([
       (async () => {
-        const mainFn = script.runInContext(context, { timeout: timeoutMs });
-        if (typeof mainFn !== 'function') {
-          throw new Error('Sandbox script must return a function');
+        try {
+          const resultValue = script.runInContext(context, { timeout: timeoutMs });
+          if (typeof resultValue === 'function') {
+            return await resultValue(input, context);
+          }
+          return resultValue;
+        } catch (vmError: any) {
+          throw new Error(`VM Execution Error: ${vmError.message}`);
         }
-        return await mainFn(input, context);
       })(),
       new Promise<never>((_, reject) => 
         setTimeout(() => reject(new Error('Execution timed out')), timeoutMs)
