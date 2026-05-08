@@ -4,10 +4,12 @@ import { createClient } from '@supabase/supabase-js';
 import { aiService } from '@/lib/services/aiService';
 
 function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    return null;
+  }
+  return createClient(url, key);
 }
 
 export async function POST(request: Request) {
@@ -17,6 +19,15 @@ export async function POST(request: Request) {
 
     if (!agent_id) {
       return NextResponse.json({ error: 'Missing agent_id' }, { status: 400 });
+    }
+
+    // If Supabase not configured, return a demo response
+    if (!supabase) {
+      return NextResponse.json({ 
+        success: true, 
+        insights: 'Reflection requires Supabase configuration.',
+        message: 'Supabase not configured - demo mode.' 
+      });
     }
 
     // 1. Fetch performance data for the agent

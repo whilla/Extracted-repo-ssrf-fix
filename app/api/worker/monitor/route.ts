@@ -3,15 +3,28 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    return null;
+  }
+  return createClient(url, key);
 }
 
 export async function GET() {
   try {
     const supabase = getSupabaseClient();
+    
+    // Demo mode: return empty result if Supabase not configured
+    if (!supabase) {
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Supabase not configured - demo mode.',
+        stalled_count: 0,
+        affected_ids: []
+      });
+    }
+    
     // Define a "stalled" post as one that has been in 'uploading' or 'pending' 
     // for more than 30 minutes without an update.
     const STALL_THRESHOLD_MINUTES = 30;

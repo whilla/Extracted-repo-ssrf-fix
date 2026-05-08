@@ -1,7 +1,5 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import { logService } from '@/lib/services/logService';
 import { n8nBridgeService } from '@/lib/services/n8nBridgeService';
 import { planService } from '@/lib/services/planService';
@@ -11,12 +9,36 @@ import { aiService } from '@/lib/services/aiService';
 import { buildMemoryContext } from '@/lib/services/agentMemoryService';
 import { kvGet } from '@/lib/services/puterService';
 
-export async function POST(request: Request) {
+async function getAuthenticatedUser() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null;
+  }
+  
   try {
+    const { createRouteHandlerClient } = await import('@supabase/auth-helpers-nextjs');
+    const { cookies } = await import('next/headers');
     const supabase = createRouteHandlerClient({ cookies });
     const { data: { user } } = await supabase.auth.getUser();
+    return user;
+  } catch {
+    return null;
+  }
+}
 
-    if (!user) {
+export async function POST(request: Request) {
+  try {
+    const user = await getAuthenticatedUser();
+    
+    // Demo mode: allow access without auth if Supabase not configured
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!user && (!supabaseUrl || !supabaseAnonKey)) {
+      // Demo mode - proceed without auth
+    } else if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

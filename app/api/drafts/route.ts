@@ -1,15 +1,62 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+
+async function getAuthenticatedUser() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null;
+  }
+  
+  try {
+    const { createRouteHandlerClient } = await import('@supabase/auth-helpers-nextjs');
+    const { cookies } = await import('next/headers');
+    const supabase = createRouteHandlerClient({ cookies });
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+async function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    return null;
+  }
+  
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    return createClient(supabaseUrl, supabaseKey);
+  } catch {
+    return null;
+  }
+}
 
 export async function GET() {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
-
+    const user = await getAuthenticatedUser();
+    
+    // Demo mode: create mock user if Supabase not configured
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!user && (!supabaseUrl || !supabaseAnonKey)) {
+      // Return empty array in demo mode
+      return NextResponse.json([]);
+    }
+    
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const supabase = await getSupabaseClient();
+    
+    if (!supabase) {
+      return NextResponse.json([]);
     }
 
     const { data, error } = await supabase
@@ -31,11 +78,26 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
-
+    const user = await getAuthenticatedUser();
+    
+    // Demo mode: create mock user if Supabase not configured
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!user && (!supabaseUrl || !supabaseAnonKey)) {
+      // In demo mode, just accept the payload
+      const body = await request.json();
+      return NextResponse.json({ ...body, id: 'demo-draft', user_id: 'demo-user' }, { status: 201 });
+    }
+    
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const supabase = await getSupabaseClient();
+    
+    if (!supabase) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
     }
 
     const body = await request.json();
