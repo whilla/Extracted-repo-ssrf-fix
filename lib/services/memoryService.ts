@@ -31,10 +31,8 @@ export async function initMemory(): Promise<void> {
 
 // Brand Kit
 export async function saveBrandKit(brandKit: BrandKit): Promise<boolean> {
-  const [localSaved, cloudSaved] = await Promise.all([
-    writeFile(PATHS.brandKit, brandKit),
-    saveCloudBrandKit(brandKit).catch(() => false),
-  ]);
+  const localSaved = await writeFile(PATHS.brandKit, brandKit).catch(() => false);
+  const cloudSaved = await saveCloudBrandKit(brandKit).catch(() => false);
   return localSaved || cloudSaved;
 }
 

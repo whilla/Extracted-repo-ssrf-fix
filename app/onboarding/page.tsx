@@ -89,6 +89,7 @@ function OnboardingContent() {
   
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   
   // Form state
   const [brandKit, setBrandKit] = useState<Partial<BrandKit>>({
@@ -209,6 +210,7 @@ function OnboardingContent() {
 
   const handleComplete = async () => {
     setIsSubmitting(true);
+    setSubmitError(null);
     
     try {
       // Save brand kit
@@ -253,6 +255,7 @@ function OnboardingContent() {
       router.push('/dashboard');
     } catch (error) {
       console.error('Onboarding error:', error);
+      setSubmitError(error instanceof Error ? error.message : 'Failed to complete setup. Please try again.');
       setIsSubmitting(false);
     }
   };
@@ -644,6 +647,12 @@ function OnboardingContent() {
                   {!isSubmitting && <Check className="w-4 h-4 ml-2" />}
                 </NeonButton>
               </div>
+              
+              {submitError && (
+                <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                  <p className="text-sm text-destructive">{submitError}</p>
+                </div>
+              )}
             </div>
           )}
         </GlassCard>
