@@ -1,11 +1,20 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+
+// Check if Supabase is configured before importing
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
   
+  // Skip middleware if Supabase is not configured (demo mode)
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return response;
+  }
+  
   try {
+    const { createMiddlewareClient } = await import('@supabase/auth-helpers-nextjs');
     const supabase = createMiddlewareClient({ req: request, res: response });
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -20,7 +29,6 @@ export async function middleware(request: NextRequest) {
     }
   } catch (error) {
     // If Supabase configuration is missing, allow request to proceed
-    // This handles cases where env vars are not set in serverless environment
     console.error('Middleware error:', error);
   }
 
