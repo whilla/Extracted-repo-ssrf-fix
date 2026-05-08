@@ -1,14 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types/supabase';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Supabase URL or anon key is missing. Check your environment variables.');
+// Create client only if configured, otherwise export null
+let supabase: ReturnType<typeof createClient<Database>> | null = null;
+
+if (supabaseUrl && supabaseAnonKey) {
+  supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+export { supabase };
 
 export type Database = {
   public: {
