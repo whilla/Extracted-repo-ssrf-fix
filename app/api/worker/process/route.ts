@@ -72,8 +72,22 @@ async function processJob(supabase: any, job: any) {
   };
 }
 
-export async function GET() {
+export async function POST(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  const expectedToken = process.env.WORKER_SECRET;
+  if (expectedToken) {
+    if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.slice(7) !== expectedToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  }
+
   const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return NextResponse.json({
+      status: 'error',
+      error: 'Supabase not configured',
+    }, { status: 503 });
+  }
   const now = new Date().toISOString();
 
   try {

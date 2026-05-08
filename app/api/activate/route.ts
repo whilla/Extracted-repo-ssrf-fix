@@ -34,41 +34,48 @@ export async function POST(request: NextRequest) {
     let user = null;
     
     // Try to authenticate if Supabase is configured
-    if (supabaseUrl && supabaseAnonKey) {
-      try {
-        const createServerClient = getSupabaseModule();
-        if (createServerClient) {
-          const { cookies } = await import('next/headers');
-          const cookieStore = await cookies();
-          const supabase = createServerClient(
-            supabaseUrl,
-            supabaseAnonKey,
-            {
-              cookies: {
-                getAll() {
-                  return cookieStore.getAll();
-                },
-                setAll(cookiesToSet: any[]) {
-                  try {
-                    cookiesToSet.forEach(({ name, value, options }: any) =>
-                      cookieStore.set(name, value, options)
-                    );
-                  } catch {
-                    // Ignore cookie set errors
-                  }
-                },
-              },
-            }
-          );
-          const result = await supabase.auth.getUser();
-          user = result.data.user;
-        }
-      } catch {
-        // Auth failed, proceed without user
-      }
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
     }
 
-    // In demo mode, allow activation without auth when supabase not configured
+    try {
+      const createServerClient = getSupabaseModule();
+      if (!createServerClient) {
+        return NextResponse.json({ error: 'Supabase client unavailable' }, { status: 503 });
+      }
+      const { cookies } = await import('next/headers');
+      const cookieStore = await cookies();
+      const supabase = createServerClient(
+        supabaseUrl,
+        supabaseAnonKey,
+        {
+          cookies: {
+            getAll() {
+              return cookieStore.getAll();
+            },
+            setAll(cookiesToSet: any[]) {
+              try {
+                cookiesToSet.forEach(({ name, value, options }: any) =>
+                  cookieStore.set(name, value, options)
+                );
+              } catch {
+                // Ignore cookie set errors
+              }
+            },
+          },
+        }
+      );
+      const result = await supabase.auth.getUser();
+      if (result.error) {
+        console.error('Activation auth error:', result.error.message);
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      user = result.data.user;
+    } catch (error) {
+      console.error('Activation auth error:', error);
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { goal } = body;
 
@@ -76,8 +83,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'A North Star goal is required for activation.' }, { status: 400 });
     }
 
-    // If we have user auth, require it. Otherwise allow demo mode.
-    if (supabaseUrl && supabaseAnonKey && !user) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

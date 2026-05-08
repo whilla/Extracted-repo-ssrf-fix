@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextResponse, type NextRequest } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import dns from 'node:dns/promises';
+import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 
 
@@ -44,7 +44,7 @@ function isPrivateIP(ip: string): boolean {
       normalizedIp === '0:0:0:0:0:0:0:0' ||         // Unspecified (expanded ::)
       normalizedIp.startsWith('fe80:') ||           // Link-local (RFC 4291)
       normalizedIp.startsWith('fec0:') ||           // Site-local (deprecated, RFC 3879)
-      normalizedIp.startsWith('ff00:') ||             // Multicast
+      /^ff[0-9a-f]{2}:/.test(normalizedIp) ||        // Multicast (ff00::/8)
       normalizedIp.startsWith('2001:db8:') ||      // Documentation (RFC 3849)
       normalizedIp.startsWith('2001:10:') ||         // Deprecated (RFC 7421)
       normalizedIp.startsWith('2001:20:') ||         // ORCHID (RFC 7343)
@@ -54,6 +54,115 @@ function isPrivateIP(ip: string): boolean {
 
   // Unknown format - treat as private for safety
   return true;
+}
+
+async function getProxyUser() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { error: NextResponse.json({ error: 'Supabase not configured' }, { status: 503 }) };
+  }
+
+  try {
+    const { createServerClient } = require('@supabase/ssr');
+    const { cookies } = require('next/headers');
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      supabaseUrl,
+      supabaseAnonKey,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet: any[]) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }: any) =>
+                cookieStore.set(name, value, options)
+              );
+            } catch {
+              // Ignore cookie set errors
+            }
+          },
+        },
+      }
+    );
+    const result = await supabase.auth.getUser();
+    const user = result?.data?.user;
+    if (!user) {
+      return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+    }
+    return { user };
+  } catch (authError) {
+    console.error('Auth error:', authError);
+    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+}
+
+function buildPinnedTargetUrl(targetUrl: string, resolvedIP: string) {
+  const url = new URL(targetUrl);
+  return {
+    url,
+    lookup(hostname: string, options: any, callback: any) {
+      const family = net.isIPv6(resolvedIP) ? 6 : 4;
+      callback(null, resolvedIP, family);
+    },
+  };
+}
+
+async function proxyRequest(
+  targetUrl: string,
+  resolvedIP: string,
+  options: { method?: string; headers?: Record<string, string>; body?: Buffer } = {}
+) {
+  const { url, lookup } = buildPinnedTargetUrl(targetUrl, resolvedIP);
+  const client = url.protocol === 'https:' ? https : http;
+
+  const TIMEOUT_MS = 30_000;
+  const MAX_BODY_SIZE = 10 * 1024 * 1024;
+
+  return new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
+    const req = client.request(
+      url,
+      {
+        method: options.method || 'GET',
+        headers: options.headers,
+        lookup,
+        timeout: TIMEOUT_MS,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        let totalSize = 0;
+        res.on('data', (chunk) => {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          totalSize += buf.length;
+          if (totalSize > MAX_BODY_SIZE) {
+            req.destroy(new Error('Response body too large'));
+            return;
+          }
+          chunks.push(buf);
+        });
+        res.on('error', reject);
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode || 502,
+            headers: res.headers,
+            body: Buffer.concat(chunks),
+          });
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error('Request timeout'));
+    });
+    if (options.body) {
+      req.write(options.body);
+    }
+    req.end();
+  });
 }
 
 async function validateTargetUrl(urlStr: string): Promise<{ valid: boolean; error?: string; resolvedIP?: string }> {
@@ -88,20 +197,8 @@ async function validateTargetUrl(urlStr: string): Promise<{ valid: boolean; erro
 
 export async function GET(request: NextRequest) {
   try {
-    let user: any = null;
-    try {
-      const supabase = createRouteHandlerClient({ cookies });
-      const result = await supabase.auth.getUser();
-      user = result?.data?.user;
-    } catch (authError) {
-      // If Supabase is not configured, allow request to proceed
-      console.error('Auth error:', authError);
-    }
-
-    // Allow access for testing when Supabase is not configured
-    if (!user) {
-      console.log('No user - proceeding anyway for testing');
-    }
+    const auth = await getProxyUser();
+    if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);
     const targetUrl = searchParams.get('url');
@@ -114,31 +211,22 @@ export async function GET(request: NextRequest) {
     if (!validation.valid) {
       return NextResponse.json({ error: validation.error }, { status: 403 });
     }
-
-    // DNS Rebinding Protection: Re-resolve hostname and verify IP hasn't changed
-    try {
-      const url = new URL(targetUrl);
-      const secondLookup = await dns.lookup(url.hostname, { all: false });
-      if (secondLookup.address !== validation.resolvedIP) {
-        return NextResponse.json({ error: 'DNS rebinding attack detected.' }, { status: 403 });
-      }
-    } catch (e) {
+    if (!validation.resolvedIP) {
       return NextResponse.json({ error: 'DNS verification failed.' }, { status: 403 });
     }
 
-    const response = await fetch(targetUrl, {
+    const response = await proxyRequest(targetUrl, validation.resolvedIP, {
       headers: {
         'User-Agent': 'NexusAI-Proxy/1.0',
       },
     });
 
-    const data = await response.arrayBuffer();
-    const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
+    const contentType = response.headers['content-type'] || 'application/octet-stream';
 
-    return new NextResponse(data, {
+    return new NextResponse(response.body, {
       status: response.status,
       headers: {
-        'Content-Type': contentType,
+        'Content-Type': Array.isArray(contentType) ? contentType[0] : contentType,
         'Access-Control-Allow-Origin': '*',
       },
     });
@@ -149,20 +237,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    let user: any = null;
-    try {
-      const supabase = createRouteHandlerClient({ cookies });
-      const result = await supabase.auth.getUser();
-      user = result?.data?.user;
-    } catch (authError) {
-      // If Supabase is not configured, allow request to proceed
-      console.error('Auth error:', authError);
-    }
-
-    // Allow access for testing when Supabase is not configured
-    if (!user) {
-      console.log('No user - proceeding anyway for testing');
-    }
+    const auth = await getProxyUser();
+    if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);
     const targetUrl = searchParams.get('url');
@@ -175,20 +251,12 @@ export async function POST(request: NextRequest) {
     if (!validation.valid) {
       return NextResponse.json({ error: validation.error }, { status: 403 });
     }
-
-    // DNS Rebinding Protection: Re-resolve hostname and verify IP hasn't changed
-    try {
-      const url = new URL(targetUrl);
-      const secondLookup = await dns.lookup(url.hostname, { all: false });
-      if (secondLookup.address !== validation.resolvedIP) {
-        return NextResponse.json({ error: 'DNS rebinding attack detected.' }, { status: 403 });
-      }
-    } catch (e) {
+    if (!validation.resolvedIP) {
       return NextResponse.json({ error: 'DNS verification failed.' }, { status: 403 });
     }
 
-    const body = await request.arrayBuffer();
-    const response = await fetch(targetUrl, {
+    const body = Buffer.from(await request.arrayBuffer());
+    const response = await proxyRequest(targetUrl, validation.resolvedIP, {
       method: 'POST',
       headers: {
         'Content-Type': request.headers.get('Content-Type') || 'application/json',
@@ -197,13 +265,12 @@ export async function POST(request: NextRequest) {
       body,
     });
 
-    const data = await response.arrayBuffer();
-    const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
+    const contentType = response.headers['content-type'] || 'application/octet-stream';
 
-    return new NextResponse(data, {
+    return new NextResponse(response.body, {
       status: response.status,
       headers: {
-        'Content-Type': contentType,
+        'Content-Type': Array.isArray(contentType) ? contentType[0] : contentType,
         'Access-Control-Allow-Origin': '*',
       },
     });

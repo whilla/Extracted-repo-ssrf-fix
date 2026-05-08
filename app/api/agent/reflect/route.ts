@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { aiService } from '@/lib/services/aiService';
 
 function getSupabaseClient() {
@@ -9,6 +8,8 @@ function getSupabaseClient() {
   if (!url || !key) {
     return null;
   }
+  // Lazy-load supabase to avoid build-time errors when env vars are missing
+  const { createClient } = require('@supabase/supabase-js');
   return createClient(url, key);
 }
 
@@ -21,13 +22,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing agent_id' }, { status: 400 });
     }
 
-    // If Supabase not configured, return a demo response
     if (!supabase) {
-      return NextResponse.json({ 
-        success: true, 
-        insights: 'Reflection requires Supabase configuration.',
-        message: 'Supabase not configured - demo mode.' 
-      });
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
     }
 
     // 1. Fetch performance data for the agent

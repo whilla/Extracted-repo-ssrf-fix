@@ -58,7 +58,8 @@ export class vectorMemoryService {
   static async saveMemory(item: Omit<VectorMemoryItem, 'embedding'>) {
     const supabase = this.supabase;
     if (!supabase) {
-      return true;
+      console.warn('[vectorMemoryService] Cannot save memory - Supabase not configured');
+      return false;
     }
     
     const embedding = await this.generateEmbedding(item.content);
@@ -84,7 +85,7 @@ export class vectorMemoryService {
   static async queryMemory(agent_id: string, query: string, limit = 5) {
     const supabase = this.supabase;
     if (!supabase) {
-      return [];
+      throw new Error(`[vectorMemoryService] Cannot query memory - Supabase not configured for agent ${agent_id}`);
     }
 
     const queryEmbedding = await this.generateEmbedding(query);
@@ -112,7 +113,8 @@ export class vectorMemoryService {
   static async clearAgentMemory(agent_id: string) {
     const supabase = this.supabase;
     if (!supabase) {
-      return true;
+      console.warn('[vectorMemoryService] Cannot clear memory - Supabase not configured', { agent_id });
+      return false;
     }
 
     const { error } = await supabase

@@ -23,7 +23,11 @@ async function getAuthenticatedUser() {
     const supabase = createRouteHandlerClient({ cookies });
     const { data: { user } } = await supabase.auth.getUser();
     return user;
-  } catch {
+  } catch (error) {
+    console.error(
+      '[api/orchestrator] Authentication error:',
+      error instanceof Error ? error.message : 'Unknown authentication error'
+    );
     return null;
   }
 }
@@ -31,14 +35,8 @@ async function getAuthenticatedUser() {
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser();
-    
-    // Demo mode: allow access without auth if Supabase not configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    
-    if (!user && (!supabaseUrl || !supabaseAnonKey)) {
-      // Demo mode - proceed without auth
-    } else if (!user) {
+
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

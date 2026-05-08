@@ -41,18 +41,19 @@ export class planService {
     return this._supabase;
   }
 
+  private static requireSupabase(method: string) {
+    const supabase = this.supabase;
+    if (!supabase) {
+      throw new Error(`[planService.${method}] Supabase not configured`);
+    }
+    return supabase;
+  }
+
   /**
    * Creates a new autonomous plan and its associated steps
    */
   static async createPlan(agentId: string, goal: string, description: string, steps: Omit<PlanStep, 'id' | 'plan_id'>[]) {
-    const supabase = this.supabase;
-    if (!supabase) {
-      // Demo mode - return mock data
-      return { 
-        plan: { id: 'demo-plan', agent_id: agentId, goal, description, status: 'active' as const },
-        steps: steps.map((s, i) => ({ ...s, id: `demo-step-${i}`, plan_id: 'demo-plan', step_order: i + 1 }))
-      };
-    }
+    const supabase = this.requireSupabase('createPlan');
 
     // 1. Create the plan
     const { data: plan, error: planError } = await supabase
@@ -89,10 +90,7 @@ export class planService {
    * Get the active plan for an agent, including its steps
    */
   static async getActivePlan(agentId: string) {
-    const supabase = this.supabase;
-    if (!supabase) {
-      return null;
-    }
+    const supabase = this.requireSupabase('getActivePlan');
 
     const { data: plan, error: planError } = await supabase
       .from('autonomous_plans')
@@ -120,10 +118,7 @@ export class planService {
    * Update the status of a specific step
    */
   static async updateStepStatus(stepId: string, status: PlanStep['status'], result?: string) {
-    const supabase = this.supabase;
-    if (!supabase) {
-      return true;
-    }
+    const supabase = this.requireSupabase('updateStepStatus');
 
     const { error } = await supabase
       .from('plan_steps')
@@ -168,10 +163,7 @@ export class planService {
    * Mark a plan as completed
    */
   static async completePlan(planId: string) {
-    const supabase = this.supabase;
-    if (!supabase) {
-      return true;
-    }
+    const supabase = this.requireSupabase('completePlan');
 
     const { error } = await supabase
       .from('autonomous_plans')

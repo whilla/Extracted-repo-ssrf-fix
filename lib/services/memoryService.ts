@@ -31,8 +31,16 @@ export async function initMemory(): Promise<void> {
 
 // Brand Kit
 export async function saveBrandKit(brandKit: BrandKit): Promise<boolean> {
-  const localSaved = await writeFile(PATHS.brandKit, brandKit).catch(() => false);
-  const cloudSaved = await saveCloudBrandKit(brandKit).catch(() => false);
+  const [localSaved, cloudSaved] = await Promise.all([
+    writeFile(PATHS.brandKit, brandKit).catch((err) => {
+      console.error('[memoryService] Local brand kit save failed:', err);
+      return false;
+    }),
+    saveCloudBrandKit(brandKit).catch((err) => {
+      console.error('[memoryService] Cloud brand kit save failed:', err);
+      return false;
+    }),
+  ]);
   return localSaved || cloudSaved;
 }
 
@@ -51,7 +59,7 @@ export async function loadBrandKit(): Promise<BrandKit | null> {
 export async function saveDraft(draft: ContentDraft): Promise<boolean> {
   const path = `${PATHS.drafts}/${draft.id}.json`;
   const [localSaved, cloudSaved] = await Promise.all([
-    writeFile(path, draft),
+    writeFile(path, draft).catch(() => false),
     saveCloudDraft(draft).catch(() => false),
   ]);
   return localSaved || cloudSaved;
@@ -105,7 +113,7 @@ export async function listDrafts(): Promise<ContentDraft[]> {
 export async function savePublishedContent(draft: ContentDraft): Promise<boolean> {
   const path = `${PATHS.published}/${draft.id}.json`;
   const [localSaved, cloudSaved] = await Promise.all([
-    writeFile(path, draft),
+    writeFile(path, draft).catch(() => false),
     saveCloudDraft(draft).catch(() => false),
   ]);
   return localSaved || cloudSaved;
@@ -182,7 +190,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 export async function saveSettings(settings: AppSettings): Promise<boolean> {
   const settingsPath = `${PATHS.settings}/app-settings.json`;
   const [localSaved, cloudSaved] = await Promise.all([
-    writeFile(settingsPath, settings),
+    writeFile(settingsPath, settings).catch(() => false),
     saveCloudSettings(settings).catch(() => false),
   ]);
   return localSaved || cloudSaved;
@@ -215,7 +223,7 @@ export async function saveChatMessage(message: ChatMessage): Promise<boolean> {
   const trimmed = messages.slice(-MAX_CHAT_HISTORY);
 
   const [localSaved, cloudSaved] = await Promise.all([
-    writeFile(historyPath, trimmed),
+    writeFile(historyPath, trimmed).catch(() => false),
     saveCloudChatHistory(trimmed).catch(() => false),
   ]);
   return localSaved || cloudSaved;
@@ -243,7 +251,7 @@ export async function loadChatHistory(): Promise<ChatMessage[]> {
 export async function clearChatHistory(): Promise<boolean> {
   const historyPath = `${PATHS.chatHistory}/messages.json`;
   const [localSaved, cloudSaved] = await Promise.all([
-    writeFile(historyPath, []),
+    writeFile(historyPath, []).catch(() => false),
     saveCloudChatHistory([]).catch(() => false),
   ]);
   return localSaved || cloudSaved;

@@ -8,9 +8,9 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
   
-  // Skip middleware if Supabase is not configured (demo mode)
   if (!supabaseUrl || !supabaseAnonKey) {
-    return response;
+    console.error('Middleware error: Supabase authentication is not configured');
+    return new Response('Authentication service unavailable', { status: 503 });
   }
   
   try {
@@ -28,8 +28,11 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
   } catch (error) {
-    // If Supabase configuration is missing, allow request to proceed
     console.error('Middleware error:', error);
+    if (!request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+    return NextResponse.next();
   }
 
   return response;

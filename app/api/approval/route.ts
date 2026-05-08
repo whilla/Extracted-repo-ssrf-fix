@@ -39,40 +39,30 @@ async function getSupabaseClient() {
 
 export async function GET(request: NextRequest) {
   try {
-    // In demo mode without supabase, allow access with a mock user
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    
     let user = await getAuthenticatedUser(request);
-    
-    // Demo mode: create a mock admin user if Supabase not configured
-    if (!user && (!supabaseUrl || !supabaseAnonKey)) {
-      user = { id: 'demo-user', email: 'demo@example.com' };
-    }
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const supabase = await getSupabaseClient();
-    
-    // Demo mode: skip role check if Supabase not configured
-    let userData = null;
-    if (supabase) {
-      const { data, error: roleError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-      
-      if (roleError) {
-        console.error('Role check failed:', roleError);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-      }
-      userData = data;
-    } else {
-      // Demo mode: treat as admin
-      userData = { role: 'admin' };
+    if (!supabase) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+    }
+
+    const { data: userData, error: roleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (roleError) {
+      console.error('Role check failed:', roleError);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+
+    if (userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -93,38 +83,29 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     let user = await getAuthenticatedUser(request);
-    
-    // Demo mode: create a mock admin user if Supabase not configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    
-    if (!user && (!supabaseUrl || !supabaseAnonKey)) {
-      user = { id: 'demo-user', email: 'demo@example.com' };
-    }
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const supabase = await getSupabaseClient();
-    
-    // Demo mode: skip role check if Supabase not configured
-    let userData = null;
-    if (supabase) {
-      const { data, error: roleError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-      
-      if (roleError) {
-        console.error('Role check failed:', roleError);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-      }
-      userData = data;
-    } else {
-      // Demo mode: treat as admin
-      userData = { role: 'admin' };
+    if (!supabase) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+    }
+
+    const { data: userData, error: roleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (roleError) {
+      console.error('Role check failed:', roleError);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+
+    if (userData?.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const body = await request.json();

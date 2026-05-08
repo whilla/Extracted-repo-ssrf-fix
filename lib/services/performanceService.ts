@@ -35,14 +35,23 @@ export class performanceService {
     return this._supabase;
   }
 
+  private static getSupabaseOrNull() {
+    return this.supabase;
+  }
+
+  private static requireSupabaseThrowing(method: string) {
+    const supabase = this.supabase;
+    if (!supabase) {
+      throw new Error(`[performanceService.${method}] Supabase not configured`);
+    }
+    return supabase;
+  }
+
   /**
    * Update performance metrics for a specific post
    */
   static async updatePostMetrics(postId: string, platform: string, agentId: string, metrics: PerformanceMetrics) {
-    const supabase = this.supabase;
-    if (!supabase) {
-      return true;
-    }
+    const supabase = this.requireSupabaseThrowing('updatePostMetrics');
 
     const { error } = await supabase
       .from('content_performance')
@@ -66,10 +75,7 @@ export class performanceService {
    * Retrieve recent top-performing content for an agent
    */
   static async getTopPerformingContent(agentId: string, limit = 5) {
-    const supabase = this.supabase;
-    if (!supabase) {
-      return [];
-    }
+    const supabase = this.requireSupabaseThrowing('getTopPerformingContent');
 
     const { data, error } = await supabase
       .from('content_performance')
@@ -90,10 +96,7 @@ export class performanceService {
    * Synthesize raw metrics into high-level insights using AI
    */
   static async synthesizeInsights(agentId: string) {
-    const supabase = this.supabase;
-    if (!supabase) {
-      return [];
-    }
+    const supabase = this.requireSupabaseThrowing('synthesizeInsights');
 
     const topContent = await this.getTopPerformingContent(agentId, 10);
     const worstContent = await supabase
@@ -147,10 +150,7 @@ export class performanceService {
    * Get the most confident insights for the agent
    */
   static async getActiveInsights(agentId: string, limit = 3) {
-    const supabase = this.supabase;
-    if (!supabase) {
-      return [];
-    }
+    const supabase = this.requireSupabaseThrowing('getActiveInsights');
 
     const { data, error } = await supabase
       .from('performance_insights')

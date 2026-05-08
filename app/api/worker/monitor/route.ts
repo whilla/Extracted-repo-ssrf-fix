@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
 function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,6 +7,8 @@ function getSupabaseClient() {
   if (!url || !key) {
     return null;
   }
+  // Lazy-load supabase to avoid build-time errors when env vars are missing
+  const { createClient } = require('@supabase/supabase-js');
   return createClient(url, key);
 }
 
@@ -15,14 +16,8 @@ export async function GET() {
   try {
     const supabase = getSupabaseClient();
     
-    // Demo mode: return empty result if Supabase not configured
     if (!supabase) {
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Supabase not configured - demo mode.',
-        stalled_count: 0,
-        affected_ids: []
-      });
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
     }
     
     // Define a "stalled" post as one that has been in 'uploading' or 'pending' 

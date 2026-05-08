@@ -40,15 +40,6 @@ export async function GET() {
   try {
     const user = await getAuthenticatedUser();
     
-    // Demo mode: create mock user if Supabase not configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    
-    if (!user && (!supabaseUrl || !supabaseAnonKey)) {
-      // Return empty array in demo mode
-      return NextResponse.json([]);
-    }
-    
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -56,7 +47,7 @@ export async function GET() {
     const supabase = await getSupabaseClient();
     
     if (!supabase) {
-      return NextResponse.json([]);
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
     }
 
     const { data, error } = await supabase
@@ -79,16 +70,6 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser();
-    
-    // Demo mode: create mock user if Supabase not configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    
-    if (!user && (!supabaseUrl || !supabaseAnonKey)) {
-      // In demo mode, just accept the payload
-      const body = await request.json();
-      return NextResponse.json({ ...body, id: 'demo-draft', user_id: 'demo-user' }, { status: 201 });
-    }
     
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

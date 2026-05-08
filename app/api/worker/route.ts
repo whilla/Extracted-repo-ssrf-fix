@@ -4,34 +4,64 @@ import { runSandboxedCode } from '@/lib/services/sandboxRunner';
 
 export async function POST(request: Request) {
   try {
-    // Check if Supabase is configured before trying to use it
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+    }
     
     let user = null;
     
-    if (supabaseUrl && supabaseAnonKey) {
-      try {
-        const { createRouteHandlerClient } = await import('@supabase/auth-helpers-nextjs');
-        const { cookies } = await import('next/headers');
-        const supabase = createRouteHandlerClient({ cookies });
-        const result = await supabase.auth.getUser();
-        user = result.data.user;
-      } catch {
-        // Continue without auth
+    try {
+      const { createServerClient } = await import('@supabase/ssr');
+      const { cookies } = await import('next/headers');
+      const cookieStore = await cookies();
+      const supabase = createServerClient(
+        supabaseUrl,
+        supabaseAnonKey,
+        {
+          cookies: {
+            getAll() {
+              return cookieStore.getAll();
+            },
+            setAll(cookiesToSet: any[]) {
+              try {
+                cookiesToSet.forEach(({ name, value, options }: any) =>
+                  cookieStore.set(name, value, options)
+                );
+              } catch {
+                // Ignore cookie set errors
+              }
+            },
+          },
+        }
+      );
+      const result = await supabase.auth.getUser();
+      if (result.error || !result.data.user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
+      user = result.data.user;
+    } catch (error) {
+      console.error(
+        '[api/worker] Authentication error:',
+        error instanceof Error ? error.message : 'Unknown authentication error'
+      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // In demo mode, allow usage without auth when supabase not configured
-    const body = await request.json();
+    let body: { code?: string; input?: unknown; timeoutMs?: number };
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
     const { code, input, timeoutMs } = body;
 
     if (!code) {
       return NextResponse.json({ error: 'Code is required' }, { status: 400 });
     }
 
-    // If supabase is configured, require auth
-    if (supabaseUrl && supabaseAnonKey && !user) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

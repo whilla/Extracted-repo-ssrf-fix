@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
 function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,6 +7,8 @@ function getSupabaseClient() {
   if (!url || !key) {
     return null;
   }
+  // Lazy-load supabase to avoid build-time errors when env vars are missing
+  const { createClient } = require('@supabase/supabase-js');
   return createClient(url, key);
 }
 
