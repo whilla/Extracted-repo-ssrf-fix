@@ -3,11 +3,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { activateFullSystem } from '@/lib/services/systemActivation';
 
 // Lazy-load supabase to avoid build-time errors when env vars are missing
-let supabaseClient: any = null;
+let createServerClientFn: any = null;
 let supabaseInitialized = false;
 
-function getSupabaseClient() {
-  if (supabaseInitialized) return supabaseClient;
+function getSupabaseModule() {
+  if (supabaseInitialized) return createServerClientFn;
   
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -16,47 +16,53 @@ function getSupabaseClient() {
     try {
       // Use dynamic import to avoid build failures
       const { createServerClient } = require('@supabase/ssr');
-      supabaseClient = createServerClient;
+      createServerClientFn = createServerClient;
     } catch {
       // Module not available, continue without supabase
     }
   }
   
   supabaseInitialized = true;
-  return supabaseClient;
+  return createServerClientFn;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const createServerClient = getSupabaseClient();
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     
     let user = null;
     
     // Try to authenticate if Supabase is configured
-    if (createServerClient && supabaseUrl && supabaseAnonKey) {
+    if (supabaseUrl && supabaseAnonKey) {
       try {
-        const { cookies } = await import('next/headers');
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-          supabaseUrl,
-          supabaseAnonKey,
-          {
-            cookies: {
-              getAll() {
-                return cookieStore.getAll();
+        const createServerClient = getSupabaseModule();
+        if (createServerClient) {
+          const { cookies } = await import('next/headers');
+          const cookieStore = await cookies();
+          const supabase = createServerClient(
+            supabaseUrl,
+            supabaseAnonKey,
+            {
+              cookies: {
+                getAll() {
+                  return cookieStore.getAll();
+                },
+                setAll(cookiesToSet: any[]) {
+                  try {
+                    cookiesToSet.forEach(({ name, value, options }: any) =>
+                      cookieStore.set(name, value, options)
+                    );
+                  } catch {
+                    // Ignore cookie set errors
+                  }
+                },
               },
-              setAll(cookiesToSet: any[]) {
-                cookiesToSet.forEach(({ name, value, options }: any) =>
-                  cookieStore.set(name, value, options)
-                );
-              },
-            },
-          }
-        );
-        const result = await supabase.auth.getUser();
-        user = result.data.user;
+            }
+          );
+          const result = await supabase.auth.getUser();
+          user = result.data.user;
+        }
       } catch {
         // Auth failed, proceed without user
       }
