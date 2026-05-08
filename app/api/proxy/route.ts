@@ -35,13 +35,7 @@ function isPrivateIP(ip: string): boolean {
   }
 
   // IPv6 Private/Reserved Ranges (RFC 4291, RFC 6146, RFC 6147)
-  if (net.isIPv6(ip)) {
-    // Expand common IPv6 shorthand notations for comparison
-    // Handle :: which can represent multiple zeros
-    const expanded = normalizedIp
-      .replace(/::/g, expandIPv6Zeros(normalizedIp))
-      .replace(/:/g, '');
-    
+  if (net.isIPv6(normalizedIp)) {
     return (
       normalizedIp === '::1' ||                     // Loopback
       normalizedIp === '::' ||                      // Unspecified address
@@ -54,21 +48,12 @@ function isPrivateIP(ip: string): boolean {
       normalizedIp.startsWith('2001:db8:') ||      // Documentation (RFC 3849)
       normalizedIp.startsWith('2001:10:') ||         // Deprecated (RFC 7421)
       normalizedIp.startsWith('2001:20:') ||         // ORCHID (RFC 7343)
-      // Handle expanded loopback forms like 0:0:0:0:0:0:0:1
-      normalizedIp.match(/^0(:0){7}1$/) !== null
+      normalizedIp === '0:0:0:0:0:0:0:1'             // Expanded loopback
     );
   }
 
   // Unknown format - treat as private for safety
   return true;
-}
-
-// Helper function to expand IPv6 zero compression (::)
-function expandIPv6Zeros(ip: string): string {
-  // Count the number of zero groups represented by ::
-  const parts = ip.split(':');
-  const zeroCount = 8 - parts.length + 1; // 8 total groups in IPv6
-  return ':'.repeat(Math.max(0, zeroCount) * 5); // Each group is 4 hex digits + colon
 }
 
 async function validateTargetUrl(urlStr: string): Promise<{ valid: boolean; error?: string; resolvedIP?: string }> {
