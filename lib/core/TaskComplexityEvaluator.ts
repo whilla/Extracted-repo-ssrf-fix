@@ -22,11 +22,13 @@ export interface ComplexityAssessment {
   reasoning: string;
 }
 
+export type TaskType = 'full' | 'strategy' | 'optimize' | 'critique';
+
 export class TaskComplexityEvaluator {
   /**
    * Analyze input to determine task complexity
    */
-  static evaluate(userInput: string, taskType: string): ComplexityAssessment {
+  static evaluate(userInput: string, taskType: TaskType): ComplexityAssessment {
     const inputLength = userInput.length;
     const hasComplexKeywords = /strategy|analyze|research|comprehensive|detailed|deep dive/i.test(userInput);
     const isShortInput = inputLength < 50;

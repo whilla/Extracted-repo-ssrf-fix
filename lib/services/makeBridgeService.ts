@@ -8,10 +8,27 @@
  * - Manage connection and template data
  */
 
-export class makeBridgeService {
-  private static apiKey = process.env.MAKE_API_KEY || '';
-  private static organizationId = process.env.MAKE_ORGANIZATION_ID || '';
-  private static baseUrl = 'https://eu1.make.com/api/v1'; // Default EU1, can be parameterized
+export class MakeBridgeService {
+  private static baseUrl = 'https://eu1.make.com/api/v1';
+
+  static get apiKey(): string {
+    return process.env.MAKE_API_KEY || '';
+  }
+
+  static get organizationId(): string {
+    return process.env.MAKE_ORGANIZATION_ID || '';
+  }
+
+  /**
+   * Helper to safely parse JSON responses with content-type check
+   */
+  private static async safeJson(response: Response) {
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      return await response.json();
+    }
+    return await response.text();
+  }
 
   /**
    * Trigger a Make scenario via webhook
@@ -31,12 +48,13 @@ export class makeBridgeService {
       });
 
       if (!response.ok) {
-        throw new Error(`Make webhook trigger failed: ${response.statusText}`);
+        const errorBody = await response.text();
+        throw new Error(`Make webhook trigger failed: ${response.status} ${response.statusText}. ${errorBody}`);
       }
 
-      return await response.json();
+      return await this.safeJson(response);
     } catch (error) {
-      console.error(`[makeBridgeService] Error triggering webhook:`, error);
+      console.error(`[MakeBridgeService] Error triggering webhook:`, error);
       throw error;
     }
   }
@@ -48,6 +66,9 @@ export class makeBridgeService {
   static async createScenario(blueprint: any) {
     if (!this.apiKey) {
       throw new Error('MAKE_API_KEY is not configured');
+    }
+    if (!this.organizationId) {
+      throw new Error('MAKE_ORGANIZATION_ID is not configured');
     }
 
     try {
@@ -65,12 +86,13 @@ export class makeBridgeService {
       });
 
       if (!response.ok) {
-        throw new Error(`Make API create scenario failed: ${response.statusText}`);
+        const errorBody = await response.text();
+        throw new Error(`Make API create scenario failed: ${response.status} ${response.statusText}. ${errorBody}`);
       }
 
-      return await response.json();
+      return await this.safeJson(response);
     } catch (error) {
-      console.error(`[makeBridgeService] Error creating scenario:`, error);
+      console.error(`[MakeBridgeService] Error creating scenario:`, error);
       throw error;
     }
   }
@@ -87,22 +109,23 @@ export class makeBridgeService {
       const response = await fetch(url, {
         ...options,
         headers: {
-          ...options.headers,
+          ...options.headers, // Caller headers win
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
       });
 
       if (!response.ok) {
-        throw new Error(`Make API call failed: ${response.statusText}`);
+        const errorBody = await response.text();
+        throw new Error(`Make API call failed: ${response.status} ${response.statusText}. ${errorBody}`);
       }
 
-      return await response.json();
+      return await this.safeJson(response);
     } catch (error) {
-      console.error(`[makeBridgeService] Error calling Make API ${endpoint}:`, error);
+      console.error(`[MakeBridgeService] Error calling Make API ${endpoint}:`, error);
       throw error;
     }
   }
 }
 
-export { makeBridgeService };
+export { MakeBridgeService as makeBridgeService };

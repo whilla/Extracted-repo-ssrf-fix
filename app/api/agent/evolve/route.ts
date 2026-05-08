@@ -18,7 +18,6 @@ function getSupabaseClient() {
 
 export async function POST(request: Request) {
   try {
-    const supabase = getSupabaseClient();
     const body = await request.json();
     const { action, payload, secret } = body;
 

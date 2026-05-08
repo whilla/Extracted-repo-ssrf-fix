@@ -12,20 +12,22 @@
 import { supabaseServer } from './supabase/server';
 import { nanoid } from 'nanoid';
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface GenerationRecord {
   id: string;
   userId: string;
   workspaceId?: string;
   model: string;
   prompt: string;
-  result: string;
-  mediaUrls: string[];
-  tokenUsage: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-  estimatedCostCents: number;
+  result?: string;
+  mediaUrls?: string[];
+  tokenUsage?: TokenUsage;
+  estimatedCostCents?: number;
   status: 'pending' | 'streaming' | 'complete' | 'error';
   taskType?: string;
   platform?: string;
@@ -60,8 +62,14 @@ export class GenerationPersistenceService {
   /**
    * Update a generation record with the final result and metadata
    */
-  async completeGeneration(id: string, result: string, tokenUsage: any, costCents: number, mediaUrls: string[] = []): Promise<void> {
-    const { error } = await supabaseServer
+  async completeGeneration(
+    id: string, 
+    result: string, 
+    tokenUsage: TokenUsage, 
+    costCents: number, 
+    mediaUrls: string[] = []
+  ): Promise<void> {
+    const { data, error } = await supabaseServer
       .from('generations')
       .update({
         result,
@@ -71,11 +79,16 @@ export class GenerationPersistenceService {
         status: 'complete',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select();
 
     if (error) {
       console.error('[GenerationPersistenceService] Failed to complete record:', error);
       throw error;
+    }
+
+    if (!data || data.length === 0) {
+      throw new Error(`Generation record with id ${id} not found`);
     }
   }
 
@@ -87,20 +100,21 @@ export class GenerationPersistenceService {
       .from('generations')
       .update({
         status: 'error',
-        result: `Error: ${error}`,
+        error_message: error,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id);
 
     if (updateError) {
       console.error('[GenerationPersistenceService] Failed to mark as failed:', updateError);
+      throw updateError;
     }
   }
 
   /**
    * Retrieve a specific generation by ID
    */
-  async getGeneration(id: string) {
+  async getGeneration(id: string): Promise<GenerationRecord | null> {
     const { data, error } = await supabaseServer
       .from('generations')
       .select('*')
@@ -108,13 +122,28 @@ export class GenerationPersistenceService {
       .single();
 
     if (error) throw error;
-    return data;
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      userId: data.user_id,
+      workspaceId: data.workspace_id,
+      model: data.model,
+      prompt: data.prompt,
+      result: data.result,
+      mediaUrls: data.media_urls || [],
+      tokenUsage: data.token_usage,
+      estimatedCostCents: data.estimated_cost_cents,
+      status: data.status,
+      taskType: data.task_type,
+      platform: data.platform,
+    };
   }
 
   /**
    * Get recent generations for a user
    */
-  async getUserGenerations(userId: string, limit = 20) {
+  async getUserGenerations(userId: string, limit = 20): Promise<GenerationRecord[]> {
     const { data, error } = await supabaseServer
       .from('generations')
       .select('*')
@@ -123,7 +152,22 @@ export class GenerationPersistenceService {
       .limit(limit);
 
     if (error) throw error;
-    return data;
+    if (!data) return [];
+
+    return data.map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      workspaceId: row.workspace_id,
+      model: row.model,
+      prompt: row.prompt,
+      result: row.result,
+      mediaUrls: row.media_urls || [],
+      tokenUsage: row.token_usage,
+      estimatedCostCents: row.estimated_cost_cents,
+      status: row.status,
+      taskType: row.task_type,
+      platform: row.platform,
+    }));
   }
 }
 

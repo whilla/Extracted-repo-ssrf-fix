@@ -12,12 +12,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Role Check: Only allow admins/managers to access the approval queue
-    const { data: userData } = await supabase
+    const { data: userData, error: roleError } = await supabase
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single();
+
+    if (roleError) {
+      return NextResponse.json({ error: `Internal server error performing role check: ${roleError.message}` }, { status: 500 });
+    }
 
     if (userData?.role !== 'admin' && userData?.role !== 'manager') {
       return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 });
@@ -48,11 +51,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Role Check
-    const { data: userData } = await supabase
+    const { data: userData, error: roleError } = await supabase
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single();
+
+    if (roleError) {
+      return NextResponse.json({ error: `Internal server error performing role check: ${roleError.message}` }, { status: 500 });
+    }
 
     if (userData?.role !== 'admin' && userData?.role !== 'manager') {
       return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 });

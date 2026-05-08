@@ -20,12 +20,30 @@ export interface ViralTrend {
   dominantEmotionalTriggers: string[];
 }
 
+export interface ProviderPerformance {
+  sum: number;
+  count: number;
+  successCount: number;
+}
+
+export interface AgentPerformance {
+  sum: number;
+  count: number;
+  successCount: number;
+}
+
+export interface TopContentItem {
+  content: string;
+  score: number;
+  provider: string;
+}
+
 export interface QualityReport {
   totalAnalyses: number;
   overallAvgScore: number;
   providerPerformance: Record<string, { avgScore: number; successRate: number }>;
   agentPerformance: Record<string, { avgScore: number; successRate: number }>;
-  topViralContent: { content: string; score: number; provider: string }[];
+  topViralContent: TopContentItem[];
 }
 
 export class ViralAnalyticsService {
@@ -41,21 +59,35 @@ export class ViralAnalyticsService {
     content: string,
     platform: string
   ): Promise<void> {
-    const history = await this.getHistory();
-    
-    history.push({
-      timestamp: new Date().toISOString(),
-      agentId,
-      providerId,
-      score: score.total,
-      breakdown: score.breakdown,
-      content,
-      platform,
-    });
+    let success = false;
+    let attempts = 0;
+    const maxAttempts = 3;
 
-    // Keep last 5000 results for trend analysis
-    const trimmed = history.slice(-5000);
-    await kvSet(this.storageKey, JSON.stringify(trimmed));
+    while (!success && attempts < maxAttempts) {
+      try {
+        const history = await this.getHistory();
+        
+        history.push({
+          timestamp: new Date().toISOString(),
+          agentId,
+          providerId,
+          score: score.total,
+          breakdown: score.breakdown,
+          content,
+          platform,
+        });
+
+        // Keep last 5000 results for trend analysis
+        const trimmed = history.slice(-5000);
+        await kvSet(this.storageKey, JSON.stringify(trimmed));
+        success = true;
+      } catch (error) {
+        attempts++;
+        console.error(`[ViralAnalyticsService] Attempt ${attempts} to record result failed:`, error);
+        if (attempts >= maxAttempts) throw error;
+        await new Promise(r => setTimeout(r, 100 * attempts));
+      }
+    }
   }
 
   /**
@@ -69,42 +101,46 @@ export class ViralAnalyticsService {
 
     const avgScore = history.reduce((sum, h) => sum + h.score, 0) / total;
     
-    const providerPerf: Record<string, any> = {};
-    const agentPerf: Record<string, any> = {};
-    const topContent: any[] = [];
+    const providerPerf: Record<string, ProviderPerformance> = {};
+    const agentPerf: Record<string, AgentPerformance> = {};
+    const topContent: TopContentItem[] = [];
 
     history.forEach(h => {
       // Provider Perf
       if (!providerPerf[h.providerId]) {
-        providerPerf[h.providerId] = { sum: 0, count: 0 };
+        providerPerf[h.providerId] = { sum: 0, count: 0, successCount: 0 };
       }
       providerPerf[h.providerId].sum += h.score;
       providerPerf[h.providerId].count++;
+      if (h.score >= 70) providerPerf[h.providerId].successCount++;
 
       // Agent Perf
       if (!agentPerf[h.agentId]) {
-        agentPerf[h.agentId] = { sum: 0, count: 0 };
+        agentPerf[h.agentId] = { sum: 0, count: 0, successCount: 0 };
       }
       agentPerf[h.agentId].sum += h.score;
       agentPerf[h.agentId].count++;
+      if (h.score >= 70) agentPerf[h.agentId].successCount++;
 
       // Top content
       topContent.push({ content: h.content, score: h.score, provider: h.providerId });
     });
 
-    const processedProviderPerf = {};
+    const processedProviderPerf: Record<string, { avgScore: number; successRate: number }> = {};
     for (const id in providerPerf) {
+      const p = providerPerf[id];
       processedProviderPerf[id] = {
-        avgScore: Math.round(providerPerf[id].sum / providerPerf[id].count),
-        successRate: 100, // Simplification for this version
+        avgScore: Math.round(p.sum / p.count),
+        successRate: Math.round((p.successCount / p.count) * 100),
       };
     }
 
-    const processedAgentPerf = {};
+    const processedAgentPerf: Record<string, { avgScore: number; successRate: number }> = {};
     for (const id in agentPerf) {
+      const a = agentPerf[id];
       processedAgentPerf[id] = {
-        avgScore: Math.round(agentPerf[id].sum / agentPerf[id].count),
-        successRate: 100,
+        avgScore: Math.round(a.sum / a.count),
+        successRate: Math.round((a.successCount / a.count) * 100),
       };
     }
 
@@ -154,7 +190,8 @@ export class ViralAnalyticsService {
     try {
       const data = await kvGet(this.storageKey);
       return data ? JSON.parse(data) : [];
-    } catch {
+    } catch (error) {
+      console.error(`[ViralAnalyticsService] Failed to load viral analytics history from ${this.storageKey}:`, error);
       return [];
     }
   }

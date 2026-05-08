@@ -360,11 +360,37 @@ export class AutomationAgent extends BaseAgent {
   }
 
   protected processOutput(rawOutput: string, context: AgentExecutionContext): string {
-    // Extract JSON blueprint if the agent provided it in a block
-    const jsonMatch = rawOutput.match(/{\s*["']id["']\s*:\s*["'].*["']\s*}/s);
-    if (jsonMatch) {
-      return jsonMatch[0];
+    // Find the first '{' and the matching closing '}'
+    const startIdx = rawOutput.indexOf('{');
+    if (startIdx === -1) return rawOutput.trim();
+
+    let braceCount = 0;
+    let endIdx = -1;
+
+    for (let i = startIdx; i < rawOutput.length; i++) {
+      if (rawOutput[i] === '{') braceCount++;
+      else if (rawOutput[i] === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          endIdx = i;
+          break;
+        }
+      }
     }
+
+    if (endIdx !== -1) {
+      const jsonString = rawOutput.substring(startIdx, endIdx + 1);
+      try {
+        const parsed = JSON.parse(jsonString);
+        // Validate essential blueprint keys
+        if (parsed.id && parsed.platform && parsed.steps) {
+          return jsonString;
+        }
+      } catch (e) {
+        // Invalid JSON, fall back to raw output
+      }
+    }
+
     return rawOutput.trim();
   }
 }
@@ -632,19 +658,28 @@ Request: {{input}}
 Target Platform: {{platform}}
 Brand Context: {{brandContext}}
 
-You must return a valid JSON AutomationBlueprint:
+You must return a valid JSON AutomationBlueprint.
+
+SCHEMA REQUIREMENTS:
+- "platform": must be either "n8n" or "make"
+- "trigger.type": must be "schedule", "webhook", or "event"
+- "trigger.config.frequency": must be "daily", "hourly", or "weekly"
+- "steps": array of step objects with action, params, and dependency
+- Each step's "dependency" references a previous step or is null
+
+EXAMPLE JSON FORMAT:
 {
-  "id": "unique-id",
-  "name": "Name of the workflow",
-  "platform": "n8n" | "make",
+  "id": "wf_12345",
+  "name": "Daily Viral Post Distribution",
+  "platform": "n8n",
   "trigger": {
-    "type": "schedule" | "webhook" | "event",
-    "config": { "frequency": "daily" | "hourly" | "weekly", ... }
+    "type": "schedule",
+    "config": { "frequency": "daily" }
   },
   "steps": [
     { "action": "fetch_content", "params": { "source": "nexusai" }, "dependency": null },
     { "action": "validate_quality", "params": { "threshold": 80 }, "dependency": "step1" },
-    { "action": "post_to_social", "params": { "platform": "{{platform}}" }, "dependency": "step2" }
+    { "action": "post_to_social", "params": { "platform": "tiktok" }, "dependency": "step2" }
   ],
   "metadata": {
     "frequency": "daily",

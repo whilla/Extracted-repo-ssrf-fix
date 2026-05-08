@@ -62,6 +62,7 @@ create table if not exists generations (
   model text not null,
   prompt text,
   result text,
+  error_message text,
   media_urls jsonb default '[]'::jsonb,
   token_usage jsonb default '{}'::jsonb,
   estimated_cost_cents integer,

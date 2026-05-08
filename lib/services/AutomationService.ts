@@ -69,11 +69,8 @@ export class AutomationService {
   }
 
   private async deployToN8N(blueprint: AutomationBlueprint): Promise<DeploymentResult> {
-    // In a real world scenario, this would translate the generic 'steps' 
-    // provided by the agent into n8n node JSON format.
     const n8nBlueprint = this.translateToN8nJson(blueprint);
     
-    // We use the n8n API to create a new workflow
     const response = await n8nBridgeService.callN8nApi('/workflows', {
       method: 'POST',
       body: JSON.stringify({
@@ -83,6 +80,10 @@ export class AutomationService {
         active: true,
       }),
     });
+
+    if (!response || !response.id) {
+      throw new Error(`n8n deployment failed: Invalid response received. ${JSON.stringify(response)}`);
+    }
 
     return {
       success: true,
@@ -95,6 +96,10 @@ export class AutomationService {
     const makeBlueprint = this.translateToMakeJson(blueprint);
     
     const response = await makeBridgeService.createScenario(makeBlueprint);
+
+    if (!response || !response.id) {
+      throw new Error(`Make deployment failed: Invalid response received. ${JSON.stringify(response)}`);
+    }
 
     return {
       success: true,
@@ -111,7 +116,12 @@ export class AutomationService {
     return {
       nodes: [
         {
-          parameters: { interval: blueprint.metadata.frequency === 'daily' ? 1440 : 60 },
+          parameters: { 
+            interval: 
+              blueprint.metadata.frequency === 'daily' ? 1440 :
+              blueprint.metadata.frequency === 'weekly' ? 10080 :
+              60  // hourly
+          },
           type: 'n8n-nodes-base.scheduleTrigger',
           typeVersion: 1,
           position: [0, 0],
@@ -122,7 +132,7 @@ export class AutomationService {
           parameters: {
             method: 'POST',
             url: 'https://api.nexusai.com/api/worker/process',
-            body: JSON.stringify({ task: blueprint.name }),
+            body: { task: blueprint.name },
           },
           type: 'n8n-nodes-base.httpRequest',
           typeVersion: 4,

@@ -244,34 +244,47 @@ export class NexusCore {
           console.error('[NexusCore] Failed to parse media requests', e);
         }
 
-        const mediaAssets: Record<string, string | string[]> = {};
-        await Promise.all(mediaRequests.map(async (req: any) => {
+        const mediaResults = await Promise.all(mediaRequests.map(async (req: any) => {
           try {
             if (req.type === 'image') {
               const img = await generateImage({ prompt: req.prompt, ...req.params });
-              mediaAssets.image = img.url;
+              return { type: 'image', url: img.url };
             } else if (req.type === 'voiceover') {
               const voice = await synthesizeVoice(req.prompt);
-              mediaAssets.voiceover = voice;
+              return { type: 'voiceover', url: voice };
             } else if (req.type === 'music') {
               const music = await generateMusic({ prompt: req.prompt, ...req.params });
-              mediaAssets.music = music.url;
+              return { type: 'music', url: music.url };
             } else if (req.type === 'video') {
               const video = await generateVideo({ prompt: req.prompt, ...req.params });
-              mediaAssets.video = video.url;
+              return { type: 'video', url: video.url };
             }
           } catch (e) {
             console.error(`[NexusCore] Media generation failed for ${req.type}:`, e);
+            return null;
           }
         }));
+
+        const mediaAssets: Record<string, string | string[]> = {};
+        for (const result of mediaResults.filter(Boolean)) {
+          const key = result!.type;
+          if (mediaAssets[key]) {
+            mediaAssets[key] = [].concat(mediaAssets[key] as any, result!.url);
+          } else {
+            mediaAssets[key] = result!.url;
+          }
+        }
 
         bestOutput = {
           ...contentOutput,
           media: mediaAssets,
-          viralScore: { total: 80, breakdown: {}, insights: [], improvements: [], predictedEngagement: 5, viralPotential: 'high' },
+          viralScore: await this.state.scoringEngine.score(contentOutput.content),
         };
         scoredOutputs = [bestOutput];
-        governorValidation = { approved: true, score: 80, issues: [], feedback: 'Multimedia bundle approved', action: 'approve' };
+        governorValidation = await this.state.governor.validate(bestOutput.content, {
+          platform: request.platform,
+          taskType: request.taskType,
+        });
       } else {
         // Standard Multi-Agent Competition Flow
         const agentPromises = selectedAgents.map(agent => 
