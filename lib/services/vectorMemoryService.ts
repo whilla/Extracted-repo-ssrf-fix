@@ -9,11 +9,24 @@ export interface VectorMemoryItem {
   created_at?: string;
 }
 
+function getSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    return null;
+  }
+  return createClient(url, key);
+}
+
 export class vectorMemoryService {
-  private static supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY! // Use service role to bypass RLS for memory operations
-  );
+  private static _supabase: ReturnType<typeof createClient> | null = null;
+
+  private static get supabase() {
+    if (!this._supabase) {
+      this._supabase = getSupabaseClient();
+    }
+    return this._supabase;
+  }
 
   /**
    * Generate a vector embedding for the given text using OpenAI
@@ -43,9 +56,14 @@ export class vectorMemoryService {
    * Save a piece of information to the vector store
    */
   static async saveMemory(item: Omit<VectorMemoryItem, 'embedding'>) {
+    const supabase = this.supabase;
+    if (!supabase) {
+      return true;
+    }
+    
     const embedding = await this.generateEmbedding(item.content);
     
-    const { error } = await this.supabase
+    const { error } = await supabase
       .from('agent_vector_memory')
       .insert({
         ...item,
@@ -64,11 +82,16 @@ export class vectorMemoryService {
    * Retrieve the most relevant memories for a given query
    */
   static async queryMemory(agent_id: string, query: string, limit = 5) {
+    const supabase = this.supabase;
+    if (!supabase) {
+      return [];
+    }
+
     const queryEmbedding = await this.generateEmbedding(query);
 
     // We call a Supabase RPC function 'match_agent_memories' 
     // which performs the cosine similarity search in pgvector
-    const { data, error } = await this.supabase.rpc('match_agent_memories', {
+    const { data, error } = await supabase.rpc('match_agent_memories', {
       query_embedding: queryEmbedding,
       filter_agent_id: agent_id,
       match_threshold: 0.7,
@@ -87,7 +110,12 @@ export class vectorMemoryService {
    * Wipe all vector memory for a specific agent
    */
   static async clearAgentMemory(agent_id: string) {
-    const { error } = await this.supabase
+    const supabase = this.supabase;
+    if (!supabase) {
+      return true;
+    }
+
+    const { error } = await supabase
       .from('agent_vector_memory')
       .delete()
       .eq('agent_id', agent_id);

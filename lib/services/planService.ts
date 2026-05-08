@@ -22,18 +22,40 @@ export interface PlanStep {
   updated_at?: string;
 }
 
+function getSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    return null;
+  }
+  return createClient(url, key);
+}
+
 export class planService {
-  private static supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  private static _supabase: ReturnType<typeof createClient> | null = null;
+
+  private static get supabase() {
+    if (!this._supabase) {
+      this._supabase = getSupabaseClient();
+    }
+    return this._supabase;
+  }
 
   /**
    * Creates a new autonomous plan and its associated steps
    */
   static async createPlan(agentId: string, goal: string, description: string, steps: Omit<PlanStep, 'id' | 'plan_id'>[]) {
+    const supabase = this.supabase;
+    if (!supabase) {
+      // Demo mode - return mock data
+      return { 
+        plan: { id: 'demo-plan', agent_id: agentId, goal, description, status: 'active' as const },
+        steps: steps.map((s, i) => ({ ...s, id: `demo-step-${i}`, plan_id: 'demo-plan', step_order: i + 1 }))
+      };
+    }
+
     // 1. Create the plan
-    const { data: plan, error: planError } = await this.supabase
+    const { data: plan, error: planError } = await supabase
       .from('autonomous_plans')
       .insert({ agent_id: agentId, goal, description })
       .select()
@@ -51,7 +73,7 @@ export class planService {
       step_order: index + 1,
     }));
 
-    const { error: stepsError } = await this.supabase
+    const { error: stepsError } = await supabase
       .from('plan_steps')
       .insert(stepsWithPlanId);
 
@@ -67,7 +89,12 @@ export class planService {
    * Get the active plan for an agent, including its steps
    */
   static async getActivePlan(agentId: string) {
-    const { data: plan, error: planError } = await this.supabase
+    const supabase = this.supabase;
+    if (!supabase) {
+      return null;
+    }
+
+    const { data: plan, error: planError } = await supabase
       .from('autonomous_plans')
       .select('*')
       .eq('agent_id', agentId)
@@ -78,7 +105,7 @@ export class planService {
 
     if (planError || !plan) return null;
 
-    const { data: steps, error: stepsError } = await this.supabase
+    const { data: steps, error: stepsError } = await supabase
       .from('plan_steps')
       .select('*')
       .eq('plan_id', plan.id)
@@ -93,7 +120,12 @@ export class planService {
    * Update the status of a specific step
    */
   static async updateStepStatus(stepId: string, status: PlanStep['status'], result?: string) {
-    const { error } = await this.supabase
+    const supabase = this.supabase;
+    if (!supabase) {
+      return true;
+    }
+
+    const { error } = await supabase
       .from('plan_steps')
       .update({ 
         status, 
@@ -136,7 +168,12 @@ export class planService {
    * Mark a plan as completed
    */
   static async completePlan(planId: string) {
-    const { error } = await this.supabase
+    const supabase = this.supabase;
+    if (!supabase) {
+      return true;
+    }
+
+    const { error } = await supabase
       .from('autonomous_plans')
       .update({ status: 'completed', updated_at: new Date().toISOString() })
       .eq('id', planId);

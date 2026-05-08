@@ -16,17 +16,35 @@ export interface PerformanceInsight {
   evidence_post_ids: string[];
 }
 
+function getSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    return null;
+  }
+  return createClient(url, key);
+}
+
 export class performanceService {
-  private static supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  private static _supabase: ReturnType<typeof createClient> | null = null;
+
+  private static get supabase() {
+    if (!this._supabase) {
+      this._supabase = getSupabaseClient();
+    }
+    return this._supabase;
+  }
 
   /**
    * Update performance metrics for a specific post
    */
   static async updatePostMetrics(postId: string, platform: string, agentId: string, metrics: PerformanceMetrics) {
-    const { error } = await this.supabase
+    const supabase = this.supabase;
+    if (!supabase) {
+      return true;
+    }
+
+    const { error } = await supabase
       .from('content_performance')
       .upsert({
         post_id: postId,
@@ -48,7 +66,12 @@ export class performanceService {
    * Retrieve recent top-performing content for an agent
    */
   static async getTopPerformingContent(agentId: string, limit = 5) {
-    const { data, error } = await this.supabase
+    const supabase = this.supabase;
+    if (!supabase) {
+      return [];
+    }
+
+    const { data, error } = await supabase
       .from('content_performance')
       .select('*')
       .eq('agent_id', agentId)
@@ -67,8 +90,13 @@ export class performanceService {
    * Synthesize raw metrics into high-level insights using AI
    */
   static async synthesizeInsights(agentId: string) {
+    const supabase = this.supabase;
+    if (!supabase) {
+      return [];
+    }
+
     const topContent = await this.getTopPerformingContent(agentId, 10);
-    const worstContent = await this.supabase
+    const worstContent = await supabase
       .from('content_performance')
       .select('*')
       .eq('agent_id', agentId)
@@ -102,7 +130,7 @@ export class performanceService {
       const insights: PerformanceInsight[] = JSON.parse(jsonMatch[0]);
       
       // Save insights to the database
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('performance_insights')
         .insert(insights.map(i => ({ ...i, agent_id: agentId })));
 
@@ -119,7 +147,12 @@ export class performanceService {
    * Get the most confident insights for the agent
    */
   static async getActiveInsights(agentId: string, limit = 3) {
-    const { data, error } = await this.supabase
+    const supabase = this.supabase;
+    if (!supabase) {
+      return [];
+    }
+
+    const { data, error } = await supabase
       .from('performance_insights')
       .select('*')
       .eq('agent_id', agentId)
