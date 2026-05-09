@@ -28,7 +28,7 @@ function AgentIcon({ className }: { className?: string }) {
 }
 
 export function NexusAgentFAB() {
-  const { isOpen, isThinking, toggleAgent, pendingFiles } = useAgent();
+  const { isOpen, closeAgent, isThinking, toggleAgent, pendingFiles } = useAgent();
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [mounted, setMounted] = useState(false);
 
@@ -37,6 +37,27 @@ export function NexusAgentFAB() {
     const timer = setTimeout(() => setMounted(true), 100);
     return () => clearTimeout(timer);
   }, []);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        closeAgent();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || (active as HTMLElement).isContentEditable)) return;
+        e.preventDefault();
+        toggleAgent();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, closeAgent, toggleAgent]);
 
   // Handle virtual keyboard on mobile
   useEffect(() => {

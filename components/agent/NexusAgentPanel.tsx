@@ -2,8 +2,8 @@
 
 import { useAgent } from '@/lib/context/AgentContext';
 import { cn } from '@/lib/utils';
-import { useRef, useEffect, useLayoutEffect, useState, useCallback, type FormEvent, type ChangeEvent } from 'react';
-import { GlassCard } from '@/components/nexus/GlassCard';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, type FormEvent, type ChangeEvent } from 'react';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { 
   X, Send, Paperclip, Trash2, Brain, Zap, 
   Mic, MicOff, Volume2, VolumeX, Download, Copy, 
@@ -48,22 +48,32 @@ function openAttachmentFile(attachment: AttachedFile): void {
   }, 60_000);
 }
 
-// Message component with download option
+// Message component with download option, edit, delete
 function AgentMessage({ 
   message, 
   onDownload, 
   onCopy,
   onSpeak,
-  isSpeaking 
+  onEdit,
+  onDelete,
+  onRetry,
+  isSpeaking,
+  isConsecutive,
 }: { 
   message: ChatMessage;
   onDownload: (content: string) => void;
   onCopy: (content: string) => void;
   onSpeak: (content: string) => void;
+  onEdit?: (id: string, content: string) => void;
+  onDelete?: (id: string) => void;
+  onRetry?: (id: string) => void;
   isSpeaking: boolean;
+  isConsecutive?: boolean;
 }) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(message.content);
 
   const handleCopy = () => {
     onCopy(message.content);
@@ -73,6 +83,18 @@ function AgentMessage({
 
   const handleOpenAttachment = (attachment: AttachedFile) => {
     openAttachmentFile(attachment);
+  };
+
+  const handleSaveEdit = () => {
+    if (editText.trim() && editText !== message.content) {
+      onEdit?.(message.id, editText.trim());
+    }
+    setEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditText(message.content);
+    setEditing(false);
   };
 
   return (
@@ -91,90 +113,159 @@ function AgentMessage({
               : 'glass-card text-foreground'
           )}
         >
-          <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="mt-3 space-y-2">
-              {message.attachments.map((attachment, index) => (
+          {editing ? (
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                className="w-full resize-none rounded-lg bg-background/20 border border-background/30 px-3 py-2 text-sm text-background focus:outline-none focus:ring-2 focus:ring-[var(--nexus-cyan)]"
+                rows={3}
+                autoFocus
+              />
+              <div className="flex gap-2 justify-end">
                 <button
-                  key={`${attachment.name}-${index}`}
-                  onClick={() => handleOpenAttachment(attachment)}
-                  disabled={!attachment.data}
-                  className={cn(
-                    'w-full text-left rounded-lg border px-3 py-2 text-xs',
-                    isUser
-                      ? 'border-background/30 bg-background/10 text-background hover:bg-background/20'
-                      : 'border-border/60 bg-background/30 text-foreground hover:bg-background/50',
-                    !attachment.data && 'cursor-default opacity-70'
-                  )}
-                  title={`Open ${attachment.name}`}
+                  onClick={handleCancelEdit}
+                  className="px-3 py-1 rounded-lg text-xs bg-background/10 text-background/80 hover:bg-background/20"
                 >
-                  <span className="block truncate font-medium">{attachment.name}</span>
-                  <span className={cn('block text-[10px] mt-0.5', isUser ? 'text-background/70' : 'text-muted-foreground')}>
-                    {(attachment.size / 1024).toFixed(1)} KB • {attachment.data ? 'Tap to open' : 'saved summary only'}
-                  </span>
+                  Cancel
                 </button>
-              ))}
+                <button
+                  onClick={handleSaveEdit}
+                  className="px-3 py-1 rounded-lg text-xs bg-[var(--nexus-cyan)] text-background"
+                >
+                  Save
+                </button>
+              </div>
             </div>
-          )}
-          {message.media && message.media.length > 0 && (
-            <div className="mt-3 space-y-3">
-              {message.media.map((asset, index) => (
-                <div key={`${asset.url}-${index}`} className="overflow-hidden rounded-xl border border-border/60 bg-background/30">
-                  {asset.type === 'image' ? (
-                    <img
-                      src={asset.url}
-                      alt={asset.prompt || 'Generated image'}
-                      className="w-full h-auto"
-                    />
-                  ) : asset.type === 'video' ? (
-                    <video
-                      src={asset.url}
-                      controls
-                      playsInline
-                      className="w-full h-auto"
-                      poster={asset.thumbnailUrl}
-                    />
-                  ) : (
-                    <audio src={asset.url} controls className="w-full" />
-                  )}
+          ) : (
+            <>
+              {isUser ? (
+                <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+              ) : (
+                <MarkdownRenderer content={message.content} />
+              )}
+              {message.attachments && message.attachments.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {message.attachments.map((attachment, index) => (
+                    <button
+                      key={`${attachment.name}-${index}`}
+                      onClick={() => handleOpenAttachment(attachment)}
+                      disabled={!attachment.data}
+                      className={cn(
+                        'w-full text-left rounded-lg border px-3 py-2 text-xs',
+                        isUser
+                          ? 'border-background/30 bg-background/10 text-background hover:bg-background/20'
+                          : 'border-border/60 bg-background/30 text-foreground hover:bg-background/50',
+                        !attachment.data && 'cursor-default opacity-70'
+                      )}
+                      title={`Open ${attachment.name}`}
+                    >
+                      <span className="block truncate font-medium">{attachment.name}</span>
+                      <span className={cn('block text-[10px] mt-0.5', isUser ? 'text-background/70' : 'text-muted-foreground')}>
+                        {(attachment.size / 1024).toFixed(1)} KB • {attachment.data ? 'Tap to open' : 'saved summary only'}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+              {message.media && message.media.length > 0 && (
+                <div className="mt-3 space-y-3">
+                  {message.media.map((asset, index) => (
+                    <div key={`${asset.url}-${index}`} className="overflow-hidden rounded-xl border border-border/60 bg-background/30">
+                      {asset.type === 'image' ? (
+                        <img
+                          src={asset.url}
+                          alt={asset.prompt || 'Generated image'}
+                          className="w-full h-auto"
+                        />
+                      ) : asset.type === 'video' ? (
+                        <video
+                          src={asset.url}
+                          controls
+                          playsInline
+                          className="w-full h-auto"
+                          poster={asset.thumbnailUrl}
+                        />
+                      ) : (
+                        <audio src={asset.url} controls className="w-full" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!isConsecutive && (
+                <p className={cn(
+                  'text-[10px] mt-1',
+                  isUser ? 'text-background/70' : 'text-muted-foreground'
+                )}>
+                  {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {message.edited && <span className="ml-1 opacity-60">(edited)</span>}
+                </p>
+              )}
+            </>
           )}
-          <p className={cn(
-            'text-[10px] mt-1',
-            isUser ? 'text-background/70' : 'text-muted-foreground'
-          )}>
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </p>
         </div>
         
-        {/* Action buttons for assistant messages */}
-        {!isUser && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+          {isUser && onEdit && (
             <button
-              onClick={handleCopy}
+              onClick={() => { setEditText(message.content); setEditing(true); }}
               className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground"
-              title="Copy"
+              title="Edit"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              </svg>
             </button>
+          )}
+          {message.originalRequest && onRetry && (
             <button
-              onClick={() => onDownload(message.content)}
-              className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground"
-              title="Download"
+              onClick={() => onRetry(message.id)}
+              className="p-1.5 rounded-lg hover:bg-muted/50 text-amber-400"
+              title="Retry"
             >
-              <Download className="w-3.5 h-3.5" />
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
             </button>
+          )}
+          {onDelete && (
             <button
-              onClick={() => onSpeak(message.content)}
+              onClick={() => onDelete(message.id)}
               className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground"
-              title={isSpeaking ? "Stop speaking" : "Read aloud"}
+              title="Delete"
             >
-              {isSpeaking ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
-          </div>
-        )}
+          )}
+          <button
+            onClick={handleCopy}
+            className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground"
+            title="Copy"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+          {!isUser && (
+            <>
+              <button
+                onClick={() => onDownload(message.content)}
+                className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground"
+                title="Download"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => onSpeak(message.content)}
+                className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground"
+                title={isSpeaking ? "Stop speaking" : "Read aloud"}
+              >
+                {isSpeaking ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -326,11 +417,26 @@ export function NexusAgentPanel() {
     isSpeaking,
     speakResponse,
     stopSpeaking,
+    reasoningEffort,
+    setReasoningEffort,
+    editMessage,
+    deleteMessage,
+    retryMessage,
+    savedConversations,
+    newConversation,
+    restoreConversation,
   } = useAgent();
 
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [disablePuterFallback, setDisablePuterFallback] = useState(false);
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [providerOnline, setProviderOnline] = useState(true);
+  const filteredMessages = useMemo(
+    () => messages.filter(m => !searchQuery || m.content.toLowerCase().includes(searchQuery.toLowerCase())),
+    [messages, searchQuery]
+  );
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -343,6 +449,28 @@ export function NexusAgentPanel() {
     } else {
       messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
     }
+    setIsNearBottom(true);
+  }, []);
+
+  // Track scroll position to show/hide scroll-to-bottom button
+  const handleScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const threshold = 100;
+    setIsNearBottom(container.scrollHeight - container.scrollTop - container.clientHeight < threshold);
+  }, []);
+
+  // Check provider health periodically
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const check = () => setProviderOnline(navigator.onLine);
+    check();
+    window.addEventListener('online', check);
+    window.addEventListener('offline', check);
+    return () => {
+      window.removeEventListener('online', check);
+      window.removeEventListener('offline', check);
+    };
   }, []);
 
   // Voice recognition setup
@@ -370,6 +498,14 @@ export function NexusAgentPanel() {
     if (!isOpen) return;
     scrollMessagesToBottom('auto');
   }, [isOpen, messages.length, isThinking, scrollMessagesToBottom]);
+
+  // Attach scroll listener to container
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
 
   // Media assets can expand after initial render; keep the viewport pinned to latest content.
   useEffect(() => {
@@ -458,7 +594,19 @@ export function NexusAgentPanel() {
     const files = e.target.files;
     if (!files) return;
 
+    const ALLOWED_TYPES = new Set([
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+      'application/pdf',
+      'text/plain', 'text/csv', 'text/markdown',
+      'application/json',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]);
+
     for (const file of Array.from(files)) {
+      if (!ALLOWED_TYPES.has(file.type) && !file.type.startsWith('image/')) {
+        alert(`File ${file.name} has unsupported type (${file.type || 'unknown'}).`);
+        continue;
+      }
       if (file.size > 10 * 1024 * 1024) {
         alert(`File ${file.name} is too large. Maximum size is 10MB.`);
         continue;
@@ -480,7 +628,7 @@ export function NexusAgentPanel() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if ((e.key === 'Enter' && !e.shiftKey) || ((e.metaKey || e.ctrlKey) && e.key === 'Enter')) {
       e.preventDefault();
       handleSubmit(e);
     }
@@ -564,7 +712,11 @@ export function NexusAgentPanel() {
               <p className="text-xs text-muted-foreground">
                 {isThinking ? currentTask || 'Thinking...' : isListening ? 'Listening...' : 'Ready'}
               </p>
-              <p className="text-[11px] text-muted-foreground/80">
+              <p className="text-[11px] text-muted-foreground/80 flex items-center gap-1">
+                <span className={cn(
+                  'inline-block w-1.5 h-1.5 rounded-full',
+                  providerOnline ? 'bg-green-400' : 'bg-red-400'
+                )} />
                 Chat: {activeChatProvider}{' '}
                 {activeChatProvider !== 'puter' && disablePuterFallback ? '| Puter fallback off' : '| Puter fallback available'}
               </p>
@@ -635,6 +787,23 @@ export function NexusAgentPanel() {
               onSelect={(provider) => setVideoProvider(provider as 'ltx23' | 'ltx23-open')}
             />
             
+            {/* Reasoning Effort */}
+            {['low', 'medium', 'high'].map((effort) => (
+              <button
+                key={effort}
+                onClick={() => setReasoningEffort(effort as 'low' | 'medium' | 'high')}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors",
+                  reasoningEffort === effort
+                    ? "bg-[var(--nexus-cyan)]/20 text-[var(--nexus-cyan)]"
+                    : "bg-muted/50 hover:bg-muted text-muted-foreground"
+                )}
+              >
+                <Brain className="w-3 h-3" />
+                <span>{effort}</span>
+              </button>
+            ))}
+
             {/* Automation Toggle */}
             <button
               onClick={toggleAutomation}
@@ -694,9 +863,56 @@ export function NexusAgentPanel() {
                   : 'Create content, generate images, make cinematic videos, or drop in a PDF and I will extract usable ideas.'
                 }
               </p>
+              {!godModeEnabled && (
+                <div className="flex flex-wrap gap-2 justify-center mb-4">
+                  {[
+                    { label: 'Generate a post', prompt: 'Generate a social media post about' },
+                    { label: 'Analyze PDF', prompt: 'Analyze this PDF and extract content ideas' },
+                    { label: 'Create image', prompt: 'Create an image of' },
+                    { label: 'Make video', prompt: 'Make a cinematic video about' },
+                    { label: 'Plan content', prompt: 'Plan a week of content for' },
+                    { label: 'Set niche', prompt: 'My niche is' },
+                  ].map((action) => (
+                    <button
+                      key={action.label}
+                      onClick={() => {
+                        setInput(action.prompt + ' ');
+                        inputRef.current?.focus();
+                      }}
+                      className="px-3 py-1.5 rounded-full text-xs bg-muted/50 hover:bg-muted border border-border/60 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground/80 mb-4">
                 Skills and learned playbooks are stored in {PATHS.skills}.
               </p>
+              {savedConversations.length > 0 && (
+                <div className="w-full max-w-xs mb-4">
+                  <p className="text-[11px] text-muted-foreground/60 mb-2 text-center">Previous conversations</p>
+                  <div className="space-y-1">
+                    {savedConversations.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => restoreConversation(c.id)}
+                        className="w-full text-left px-3 py-2 rounded-lg text-xs bg-muted/30 hover:bg-muted/60 border border-border/40 text-muted-foreground hover:text-foreground transition-colors truncate"
+                        title={`${c.count} messages — ${new Date(c.timestamp).toLocaleDateString()}`}
+                      >
+                        <span className="block truncate">{c.title}</span>
+                        <span className="block text-[10px] text-muted-foreground/50">{c.count} msgs · {new Date(c.timestamp).toLocaleDateString()}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button
+                onClick={newConversation}
+                className="px-4 py-2 rounded-lg text-xs bg-muted/50 hover:bg-muted border border-border/60 text-muted-foreground hover:text-foreground transition-colors mb-4"
+              >
+                + New conversation
+              </button>
               {godModeEnabled && (
                 <div className="flex flex-wrap gap-2 justify-center text-xs">
                   <span className="px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400">Viral Architect</span>
@@ -709,21 +925,64 @@ export function NexusAgentPanel() {
             </div>
           ) : (
             <>
-              {messages.map((message) => (
-                <AgentMessage 
-                  key={message.id} 
-                  message={message}
-                  onDownload={handleDownload}
-                  onCopy={handleCopy}
-                  onSpeak={handleSpeak}
-                  isSpeaking={isSpeaking}
-                />
-              ))}
+              {messages.length > 3 && (
+                <div className="px-4 pb-2 sticky top-0 z-10">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="Search messages..."
+                      className="w-full rounded-lg bg-muted/50 border border-border/60 px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-[var(--nexus-cyan)]"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {filteredMessages.map((message, idx) => {
+                const prevRole = idx > 0 ? filteredMessages[idx - 1].role : null;
+                return (
+                  <AgentMessage 
+                    key={message.id} 
+                    message={message}
+                    isConsecutive={message.role === prevRole}
+                    onDownload={handleDownload}
+                    onCopy={handleCopy}
+                    onSpeak={handleSpeak}
+                    onEdit={editMessage}
+                    onDelete={deleteMessage}
+                    onRetry={retryMessage}
+                    isSpeaking={isSpeaking}
+                  />
+                );
+              })}
+              {searchQuery && filteredMessages.length === 0 && (
+                <div className="px-4 py-8 text-center text-xs text-muted-foreground/60">
+                  No messages match "{searchQuery}"
+                </div>
+              )}
               {isThinking && <ThinkingIndicator task={currentTask} />}
             </>
           )}
           <div ref={messagesEndRef} />
         </div>
+
+        {!isNearBottom && messages.length > 5 && (
+          <button
+            onClick={() => scrollMessagesToBottom('smooth')}
+            className="absolute bottom-36 left-1/2 -translate-x-1/2 z-20 p-2 rounded-full bg-muted/80 border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted shadow-lg transition-all"
+            title="Scroll to bottom"
+          >
+            <ChevronDown className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Attached files preview */}
         {pendingFiles.length > 0 && (

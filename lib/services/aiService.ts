@@ -17,6 +17,7 @@ import {
 // Available models - including custom provider options
 export const AVAILABLE_MODELS: AIModel[] = [
   // Puter native models (free)
+  { provider: 'puter', model: 'gpt-5.5', name: 'GPT-5.5', contextWindow: 256000, supportsVision: true },
   { provider: 'puter', model: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, supportsVision: true },
   { provider: 'puter', model: 'gpt-4o-mini', name: 'GPT-4o Mini', contextWindow: 128000, supportsVision: true },
   { provider: 'puter', model: 'claude-sonnet-4-5', name: 'Claude Sonnet', contextWindow: 200000, supportsVision: true },
@@ -37,10 +38,10 @@ export const AVAILABLE_MODELS: AIModel[] = [
 ];
 
 // Default model priority chain
-const MODEL_PRIORITY = ['gpt-4o', 'claude-sonnet-4-5', 'gpt-4o-mini'];
+const MODEL_PRIORITY = ['gpt-5.5', 'gpt-4o', 'claude-sonnet-4-5'];
 
 const PROVIDER_DEFAULT_MODELS = {
-  puter: ['gpt-4o', 'claude-sonnet-4-5', 'gpt-4o-mini'],
+  puter: ['gpt-5.5', 'gpt-4o', 'claude-sonnet-4-5', 'gpt-4o-mini'],
   openrouter: ['openrouter/auto'],
   githubmodels: ['openai/gpt-4o'],
   poe: ['Claude-Sonnet-4.6'],
@@ -443,12 +444,13 @@ export async function chatWithPuter(
     brandKit?: BrandKit | null;
     stream?: boolean;
     memoryContext?: string;
+    onChunk?: (text: string) => void;
   } = {}
 ): Promise<string> {
   const options = typeof optionsOrModel === 'string'
     ? { model: optionsOrModel }
     : optionsOrModel;
-  const { model = 'gpt-4o', brandKit = null, stream = false, memoryContext } = options;
+  const { model = 'gpt-5.5', brandKit = null, stream = false, memoryContext, onChunk } = options;
 
   const ready = await waitForPuter();
   if (typeof window === 'undefined' || !ready || !window.puter) {
@@ -515,13 +517,20 @@ export async function chatWithPuter(
           
           fullText += text;
           chunkCount++;
+          if (onChunk && text) {
+            onChunk(text);
+          }
         }
       } catch (streamError) {
         if (fullText.length === 0) {
           throw new Error(`[streamChatFromPuter] Stream failed before any content: ${streamError}`);
         }
         console.warn(`[streamChatFromPuter] Stream interrupted after ${chunkCount} chunks and ${fullText.length} chars:`, streamError);
-        // Return partial content if we got something
+        const truncationNote = '\n\n[... response truncated due to streaming error]';
+        fullText += truncationNote;
+        if (onChunk) {
+          onChunk(truncationNote);
+        }
       }
       
       if (fullText.length === 0) {
@@ -868,9 +877,10 @@ export async function universalChat(
     brandKit?: BrandKit | null;
     stream?: boolean;
     avoidPuter?: boolean;
+    onChunk?: (text: string) => void;
   } = {}
 ): Promise<string> {
-  const { model = 'gpt-4o', avoidPuter = false } = options;
+  const { model = 'gpt-5.5', avoidPuter = false, onChunk } = options;
   const configuredProviders = await getConfiguredProviders();
   const allowedProviders = avoidPuter
     ? configuredProviders.filter((provider) => provider !== 'puter')
@@ -1253,7 +1263,7 @@ export async function getCurrentModel(): Promise<string> {
   if (savedModel && AVAILABLE_MODELS.some(m => m.model === savedModel)) {
     return savedModel;
   }
-  return 'gpt-4o';
+  return 'gpt-5.5';
 }
 
 // Chat with vision (convenience wrapper for analyzeImage with custom prompt)

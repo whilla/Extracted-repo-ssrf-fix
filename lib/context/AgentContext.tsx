@@ -854,16 +854,6 @@ function buildCapabilitiesReply(options: {
   ].join('\n');
 }
 
-function humanizeStaticAgentReply(message: string): string {
-  return message
-    .replace(/\bHere is exactly what I can execute right now:/gi, 'Here is what I can actually run from this app:')
-    .replace(/\bHow can I assist you today\??/gi, 'What are we moving forward right now?')
-    .replace(/\bIf you need anything, let me know\.?/gi, 'Send the next piece when you are ready.')
-    .replace(/\bLet me know if you need further assistance\.?/gi, 'Send the next piece when you are ready.')
-    .replace(/\bUnderstood\./gi, 'I have it.')
-    .replace(/\bGot it\./gi, 'I have it.');
-}
-
 function emitAgentLatency(stage: string, durationMs: number, metadata: Record<string, unknown> = {}): void {
   const detail = {
     stage,
@@ -949,6 +939,8 @@ interface AgentState {
   lastOrchestrationResult: OrchestrationResult | null;
   activeAgents: AgentConfig[];
   governorActive: boolean;
+  reasoningEffort: 'low' | 'medium' | 'high';
+  savedConversations: { id: string; title: string; timestamp: string; count: number }[];
 }
 
 interface AgentContextType extends AgentState {
@@ -957,6 +949,9 @@ interface AgentContextType extends AgentState {
   toggleAgent: () => void;
   sendMessage: (content: string, files?: AttachedFile[]) => Promise<void>;
   clearMessages: () => void;
+  editMessage: (id: string, content: string) => void;
+  deleteMessage: (id: string) => void;
+  retryMessage: (id: string) => void;
   attachFile: (file: AttachedFile) => void;
   removeFile: (name: string) => void;
   clearFiles: () => void;
@@ -978,6 +973,11 @@ interface AgentContextType extends AgentState {
   runOrchestration: (request: string, type?: 'content' | 'strategy' | 'full') => Promise<OrchestrationResult | null>;
   getSystemStatus: () => Promise<{ agentsReady: boolean; agentCount: number; governorEnabled: boolean }>;
   triggerEvolution: () => Promise<void>;
+  reasoningEffort: 'low' | 'medium' | 'high';
+  setReasoningEffort: (effort: 'low' | 'medium' | 'high') => void;
+  savedConversations: { id: string; title: string; timestamp: string; count: number }[];
+  newConversation: () => void;
+  restoreConversation: (id: string) => void;
 }
 
 interface AgentSessionSnapshot {
@@ -991,6 +991,7 @@ interface AgentSessionSnapshot {
   isVoiceMode: boolean;
   multiAgentEnabled: boolean;
   lastOpenedAt: string;
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 export const AgentContext = createContext<AgentContextType | null>(null);
@@ -1006,7 +1007,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     lastGodModeResult: null,
     currentMusicMood: null,
     // New features
-    currentModel: 'gpt-4o',
+    currentModel: 'gpt-5.5',
     availableModels: AVAILABLE_MODELS,
     currentImageProvider: 'puter',
     availableImageProviders: IMAGE_ENGINE_OPTIONS,
@@ -1021,7 +1022,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     lastOrchestrationResult: null,
     activeAgents: [],
     governorActive: true,
+    reasoningEffort: 'medium',
+    savedConversations: [],
   });
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const initializedRef = useRef(false);
   const providerCapabilitiesCacheRef = useRef<{
@@ -1040,6 +1046,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       isVoiceMode: nextState.isVoiceMode,
       multiAgentEnabled: nextState.multiAgentEnabled,
       lastOpenedAt: new Date().toISOString(),
+      reasoningEffort: nextState.reasoningEffort,
     };
     await kvSet(AGENT_SESSION_KEY, JSON.stringify(snapshot));
   }, []);
@@ -1100,6 +1107,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         automationEnabled: automationState.isRunning,
         isVoiceMode: sessionSnapshot?.isVoiceMode ?? s.isVoiceMode,
         multiAgentEnabled: sessionSnapshot?.multiAgentEnabled ?? s.multiAgentEnabled,
+        reasoningEffort: sessionSnapshot?.reasoningEffort ?? s.reasoningEffort,
       }));
     } catch (error) {
       console.error('Failed to load chat history:', error);
@@ -1127,6 +1135,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     state.automationEnabled,
     state.isVoiceMode,
     state.multiAgentEnabled,
+    state.reasoningEffort,
     saveSessionSnapshot,
   ]);
 
@@ -1181,8 +1190,58 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearMessages = useCallback(() => {
-    setState(s => ({ ...s, messages: [] }));
+    setState(s => {
+      if (s.messages.length < 2) return { ...s, messages: [] };
+      const id = generateId();
+      const title = s.messages[0].content.slice(0, 60);
+      const entry = { id, title, timestamp: new Date().toISOString(), count: s.messages.length };
+      let saveFailed = false;
+      try { localStorage.setItem(`nexus-conversation-${id}`, JSON.stringify(s.messages)); } catch {
+        console.warn('Failed to save conversation to localStorage - storage may be full');
+        saveFailed = true;
+      }
+      return {
+        ...s,
+        messages: [],
+        savedConversations: saveFailed ? s.savedConversations : [entry, ...s.savedConversations].slice(0, 10),
+      };
+    });
     clearChatHistory();
+  }, []);
+
+  const newConversation = useCallback(() => {
+    clearMessages();
+  }, [clearMessages]);
+
+  const restoreConversation = useCallback((id: string) => {
+    if (typeof window === 'undefined') return;
+    // Auto-save current messages before switching
+    const current = stateRef.current.messages;
+    if (current.length >= 2) {
+      try { localStorage.setItem(`nexus-conversation-${generateId()}`, JSON.stringify(current)); } catch { /* ignore */ }
+    }
+    const raw = localStorage.getItem(`nexus-conversation-${id}`);
+    if (!raw) return;
+    try {
+      const msgs: ChatMessage[] = JSON.parse(raw);
+      setState(s => ({ ...s, messages: msgs }));
+    } catch { /* ignore corrupt data */ }
+  }, []);
+
+  const editMessage = useCallback((id: string, content: string) => {
+    setState(s => ({
+      ...s,
+      messages: s.messages.map(m =>
+        m.id === id ? { ...m, content, edited: true, timestamp: new Date().toISOString() } : m
+      ),
+    }));
+  }, []);
+
+  const deleteMessage = useCallback((id: string) => {
+    setState(s => ({
+      ...s,
+      messages: s.messages.filter(m => m.id !== id),
+    }));
   }, []);
 
   const toggleGodMode = useCallback(() => {
@@ -1249,6 +1308,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const setVideoProvider = useCallback((provider: VideoProvider) => {
     setState(s => ({ ...s, currentVideoProvider: provider }));
     kvSet('video_provider', provider);
+  }, []);
+
+  const setReasoningEffort = useCallback((effort: 'low' | 'medium' | 'high') => {
+    setState(s => ({ ...s, reasoningEffort: effort }));
+    kvSet('reasoning_effort', effort);
   }, []);
 
   // Automation toggle
@@ -2033,13 +2097,20 @@ Rules:
     }
   };
 
+  // Cooldown ref to prevent double-send
+  const sendCooldownRef = useRef(false);
+
   // Main send message function
   const sendMessage = useCallback(async (content: string, files?: AttachedFile[]) => {
+    if (sendCooldownRef.current) return;
+    sendCooldownRef.current = true;
+
     const interactionStartedAt = Date.now();
-    const directFiles = files || state.pendingFiles;
+    const directFiles = files || stateRef.current.pendingFiles;
     const incomingContent = normalizeIncomingMessage(content, directFiles.length > 0);
 
     if (!incomingContent) {
+      sendCooldownRef.current = false;
       return;
     }
 
@@ -2048,7 +2119,7 @@ Rules:
       isContinuationOrRetryCue(incomingContent);
     const continuationSource =
       shouldReplayPrevious
-        ? findContinuationExecutionRequest(state.messages)
+        ? findContinuationExecutionRequest(stateRef.current.messages)
         : null;
     const attachedFiles = directFiles.length > 0
       ? directFiles
@@ -2090,8 +2161,7 @@ Rules:
       };
 
       const postCommandResponse = async (message: string) => {
-        const visibleMessage = humanizeStaticAgentReply(message);
-        await waitForVisibleThinking(getMinimumThinkingDelayMs(visibleMessage));
+        await waitForVisibleThinking(getMinimumThinkingDelayMs(message));
         const assistantMessage: ChatMessage = {
           id: generateId(),
           role: 'assistant',
@@ -2107,20 +2177,41 @@ Rules:
         await saveChatMessage(assistantMessage);
       };
 
+      let lastUpdateMessageId: string | null = null;
       const postProcessUpdate = async (message: string, task?: string) => {
-        const assistantMessage: ChatMessage = {
-          id: generateId(),
-          role: 'assistant',
-          content: isProcessUpdateMessage(message) ? message.trim() : buildProcessUpdate(message),
-          timestamp: new Date().toISOString(),
-        };
-        setState((s) => ({
-          ...s,
-          messages: [...s.messages, assistantMessage],
-          isThinking: true,
-          currentTask: task || s.currentTask,
-        }));
-        await saveChatMessage(assistantMessage);
+        const content = isProcessUpdateMessage(message) ? message.trim() : buildProcessUpdate(message);
+        if (lastUpdateMessageId) {
+          setState((s) => ({
+            ...s,
+            messages: s.messages.map(m =>
+              m.id === lastUpdateMessageId ? { ...m, content, timestamp: new Date().toISOString() } : m
+            ),
+            isThinking: true,
+            currentTask: task || s.currentTask,
+          }));
+          await saveChatMessage({
+            id: lastUpdateMessageId,
+            role: 'assistant',
+            content,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          const newId = generateId();
+          lastUpdateMessageId = newId;
+          const assistantMessage: ChatMessage = {
+            id: newId,
+            role: 'assistant',
+            content,
+            timestamp: new Date().toISOString(),
+          };
+          setState((s) => ({
+            ...s,
+            messages: [...s.messages, assistantMessage],
+            isThinking: true,
+            currentTask: task || s.currentTask,
+          }));
+          await saveChatMessage(assistantMessage);
+        }
       };
 
       const command = parseAgentCommand(incomingContent);
@@ -2249,11 +2340,11 @@ Rules:
       if (attachedFiles.length === 0 && isCapabilitiesRequest(normalizedContent)) {
         await postCommandResponse(
           buildCapabilitiesReply({
-            currentModel: state.currentModel,
-            imageProvider: state.currentImageProvider,
-            videoProvider: state.currentVideoProvider,
-            automationEnabled: state.automationEnabled,
-            multiAgentEnabled: state.multiAgentEnabled,
+            currentModel: stateRef.current.currentModel,
+            imageProvider: stateRef.current.currentImageProvider,
+            videoProvider: stateRef.current.currentVideoProvider,
+            automationEnabled: stateRef.current.automationEnabled,
+            multiAgentEnabled: stateRef.current.multiAgentEnabled,
           })
         );
         return;
@@ -2269,7 +2360,7 @@ Rules:
       }
 
       if (attachedFiles.length === 0 && wantsSavePreviousAsBrandIdentity(normalizedContent)) {
-        const candidate = getLatestBrandIdentityCandidate(state.messages);
+        const candidate = getLatestBrandIdentityCandidate(stateRef.current.messages);
         if (!candidate) {
           await postCommandResponse('I do not have a brand identity to save yet. Paste the brand identity here, and I will lock it into memory.');
           return;
@@ -2454,7 +2545,7 @@ Rules:
         return;
       }
 
-      const lastAssistantMessage = [...state.messages]
+      const lastAssistantMessage = [...stateRef.current.messages]
         .slice()
         .reverse()
         .find((message) => message.role === 'assistant');
@@ -2578,8 +2669,8 @@ Rules:
 
       // Build context from recent messages
       const persistedMessages =
-        state.messages.length > 0
-          ? state.messages
+        stateRef.current.messages.length > 0
+          ? stateRef.current.messages
           : await loadChatHistory().catch(() => []);
       const recentMessages = persistedMessages.slice(-10);
       const contextMessages = recentMessages.map(m => ({
@@ -3188,7 +3279,7 @@ Rules:
         const inlinePayload = extractInlineSchedulePayload(normalizedContent);
         const lastContent = inlinePayload
           ? { text: inlinePayload, mediaUrl: undefined }
-          : getLatestSchedulableContent(state.messages);
+          : getLatestSchedulableContent(stateRef.current.messages);
 
         if (!lastContent?.text) {
           const missingContentResponse = await enforceGovernorApproval(
@@ -3332,7 +3423,7 @@ Rules:
         activeModel = await resolveExecutionModel('creative');
         const platforms = await inferPlatformsFromContext(normalizedContent);
         const rewriteSource = REWRITE_REQUEST_PATTERN.test(normalizedContent)
-          ? buildRewriteSourceFromHistory(state.messages)
+          ? buildRewriteSourceFromHistory(stateRef.current.messages)
           : null;
         const effectiveIdea = rewriteSource
           ? `${normalizedContent}\n\nRewrite source:\n${rewriteSource}`
@@ -3514,16 +3605,57 @@ Rules:
 
       activeModel = await resolveExecutionModel(getConversationalExecutionTask(intent.type));
 
-      // Call AI
+      // Create placeholder message for streaming
+      const streamMessageId = generateId();
+      let streamedContent = '';
+      let hasStreamedContent = false;
+
+      setState(s => ({
+        ...s,
+        messages: [...s.messages, {
+          id: streamMessageId,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date().toISOString(),
+        }],
+        isThinking: false,
+        currentTask: null,
+      }));
+
+      // Call AI with streaming
       const chatGenerationStart = Date.now();
-      const response = await universalChat(
-        [
-          { role: 'system', content: systemPrompt },
-          ...contextMessages,
-          { role: 'user', content: userPrompt },
-        ],
-        { model: activeModel, brandKit }
-      );
+      let response: string;
+      try {
+        response = await universalChat(
+          [
+            { role: 'system', content: systemPrompt },
+            ...contextMessages,
+            { role: 'user', content: userPrompt },
+          ],
+          {
+            model: activeModel,
+            brandKit,
+            stream: true,
+            onChunk: (text: string) => {
+              streamedContent += text;
+              hasStreamedContent = true;
+              setState(s => ({
+                ...s,
+                messages: s.messages.map(m =>
+                  m.id === streamMessageId ? { ...m, content: streamedContent } : m
+                ),
+              }));
+            },
+          }
+        );
+      } catch (streamError) {
+        if (hasStreamedContent) {
+          response = streamedContent;
+          console.warn('Stream interrupted but partial content was received:', streamError);
+        } else {
+          throw streamError;
+        }
+      }
       emitAgentLatency('chat_response_generation', Date.now() - chatGenerationStart, {
         model: activeModel,
         intent: intent.type,
@@ -3533,29 +3665,29 @@ Rules:
           ? buildFileAnalysisEmptyResponseMessage(lastFileContext)
           : response;
 
-      const approvedResponse = await enforceGovernorApproval(responseToApprove, {
-        brandKit,
-        request: normalizedContent,
-      });
+      const isSimpleChat = intent.type === 'answer_question' && response.length < 500;
+      const approvedResponse = hasStreamedContent || isSimpleChat
+        ? response
+        : await enforceGovernorApproval(responseToApprove, {
+            brandKit,
+            request: normalizedContent,
+          });
 
-      // Create assistant message
-      const assistantMessage: ChatMessage = {
-        id: generateId(),
-        role: 'assistant',
-        content: approvedResponse,
-        timestamp: new Date().toISOString(),
-      };
-
-      // Update state with response
+      // Update message with final content
       setState(s => ({
         ...s,
-        messages: [...s.messages, assistantMessage],
-        isThinking: false,
-        currentTask: null,
+        messages: s.messages.map(m =>
+          m.id === streamMessageId ? { ...m, content: approvedResponse } : m
+        ),
       }));
 
       // Save assistant message
-      await saveChatMessage(assistantMessage);
+      await saveChatMessage({
+        id: streamMessageId,
+        role: 'assistant',
+        content: approvedResponse,
+        timestamp: new Date().toISOString(),
+      });
       
       // Extract and save any memory-worthy information from user message and response
       await extractAndSaveMemory(normalizedContent, approvedResponse, intent);
@@ -3612,6 +3744,7 @@ Rules:
         role: 'assistant',
         content: safeFinal,
         timestamp: new Date().toISOString(),
+        originalRequest: normalizedContent,
       };
 
       setState(s => ({
@@ -3621,6 +3754,8 @@ Rules:
         currentTask: null,
       }));
       await saveChatMessage(errorMessage);
+    } finally {
+      sendCooldownRef.current = false;
     }
   }, [
     buildFailureOutput,
@@ -3631,9 +3766,15 @@ Rules:
     state.currentModel,
     state.currentImageProvider,
     state.currentVideoProvider,
-    state.messages,
-    state.pendingFiles,
   ]);
+
+  const retryMessage = useCallback((id: string) => {
+    const msg = stateRef.current.messages.find(m => m.id === id);
+    const request = msg?.originalRequest;
+    if (!request) return;
+    setState(s => ({ ...s, messages: s.messages.filter(m => m.id !== id) }));
+    setTimeout(() => sendMessage(request), 0);
+  }, [sendMessage]);
 
   // Multi-agent system methods
   const toggleMultiAgent = useCallback(() => {
@@ -3722,6 +3863,9 @@ Rules:
         toggleAgent,
         sendMessage,
         clearMessages,
+        editMessage,
+        deleteMessage,
+        retryMessage,
         attachFile,
         removeFile,
         clearFiles,
@@ -3741,6 +3885,11 @@ Rules:
         runOrchestration,
         getSystemStatus,
         triggerEvolution,
+        reasoningEffort: state.reasoningEffort,
+        setReasoningEffort,
+        savedConversations: state.savedConversations,
+        newConversation,
+        restoreConversation,
       }}
     >
       {children}

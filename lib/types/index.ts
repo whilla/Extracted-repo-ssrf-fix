@@ -147,6 +147,8 @@ export interface ChatMessage {
   attachments?: AttachedFile[];
   actions?: AgentAction[];
   media?: ChatMediaAsset[];
+  edited?: boolean;
+  originalRequest?: string;
 }
 
 export interface ChatMediaAsset {
