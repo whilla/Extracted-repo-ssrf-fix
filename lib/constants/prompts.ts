@@ -194,26 +194,46 @@ REASONING EFFORT:
 export function buildSystemPrompt(brandKit: BrandKit | null, recentTopics?: string[], memoryContext?: string): string {
   let prompt = SYSTEM_PROMPT_BASE;
   
-  if (brandKit) {
+  if (brandKit && brandKit.niche) {
     prompt += `
 
-Brand Context:
-- Brand: ${brandKit.brandName}
-- Niche: ${brandKit.niche}
-- Target Audience: ${brandKit.targetAudience}
-- Tone: ${brandKit.tone}
-- USP: ${brandKit.uniqueSellingPoint}
-- Content Pillars: ${brandKit.contentPillars.join(', ')}
-- Language: ${brandKit.language}
-${brandKit.avoidTopics.length > 0 ? `- Avoid Topics: ${brandKit.avoidTopics.join(', ')}` : ''}
-${recentTopics && recentTopics.length > 0 ? `- Recently Covered (avoid repeating): ${recentTopics.join(', ')}` : ''}`;
+=== BRAND CONTEXT (ALWAYS USE THIS) ===
+Brand Name: ${brandKit.brandName || 'Your Brand'}
+Niche: ${brandKit.niche}
+Target Audience: ${brandKit.targetAudience || 'your followers'}
+Tone: ${brandKit.tone || 'conversational'}
+USP/Character: ${brandKit.uniqueSellingPoint || 'your unique voice'}
+Content Pillars: ${brandKit.contentPillars?.join(', ') || 'general content'}
+Language Style: ${brandKit.language || 'English'}
+${brandKit.avoidTopics?.length > 0 ? `AVOID: ${brandKit.avoidTopics.join(', ')}` : ''}
+
+IMPORTANT: 
+- ALWAYS create content aligned with this brand context
+- If user asks for "a script", generate it immediately without asking for more details
+- Use the brand tone automatically - don't ask "what tone"
+- When user provides a topic/idea, generate the content directly
+- Never ask for clarification that can be inferred from the context`;
+
+    if (recentTopics && recentTopics.length > 0) {
+      prompt += `\n- Recently Covered (avoid repeating): ${recentTopics.join(', ')}`;
+    }
   }
   
   // Add persistent memory context
   if (memoryContext) {
-    prompt += memoryContext;
+    prompt += `\n\n=== MEMORY CONTEXT ===\n${memoryContext}`;
   }
-  
+
+  // Make it think and reason like ChatGPT
+  prompt += `
+
+=== RESPONSE STYLE ===
+- Show step-by-step reasoning when solving problems
+- Provide the actual answer/result, not just questions back
+- For content generation: give the full draft immediately
+- After your response, always offer 2-3 helpful next steps as suggestions
+- Be proactive - don't wait to be asked for everything`;
+
   return prompt;
 }
 

@@ -45,9 +45,19 @@ export async function saveBrandKit(brandKit: BrandKit): Promise<boolean> {
 }
 
 export async function loadBrandKit(): Promise<BrandKit | null> {
+  // Check KV store first (newer API saves here)
+  const kvBrand = await kvGet('brand_kit');
+  if (kvBrand) {
+    try {
+      return typeof kvBrand === 'string' ? JSON.parse(kvBrand) : kvBrand as BrandKit;
+    } catch {}
+  }
+
+  // Fall back to file system
   const local = await readFile<BrandKit>(PATHS.brandKit, true);
   if (local) return local;
 
+  // Then cloud
   const cloud = await loadCloudBrandKit().catch(() => null);
   if (cloud) {
     await writeFile(PATHS.brandKit, cloud);
