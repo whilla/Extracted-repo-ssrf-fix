@@ -180,22 +180,99 @@ export class MultiModalPerceptionService {
 
   private async analyzeDocument(data: any): Promise<AssetObservation> {
     return await this.callWithRetry(async () => {
-      const docData = typeof data === 'string' ? data : Buffer.from(data).toString('base64');
+      let extractedText = '';
+      let pageCount = 0;
+      let hasImages = false;
+      let metadata: any = null;
+
+      try {
+        const pdfjsLib = await import('pdfjs-dist');
+        const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.mjs?url');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
+
+        const pdfData = typeof data === 'string' ? Buffer.from(data, 'base64') : Buffer.from(data);
+        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        pageCount = pdf.numPages;
+
+        if (pdf.numPages > 0) {
+          try {
+            const pdfMeta = await pdf.getMetadata();
+            metadata = pdfMeta.info;
+          } catch {}
+        }
+
+        const maxPages = Math.min(pageCount, 20);
+        const textParts: string[] = [];
+
+        for (let i = 1; i <= maxPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(' ')
+            .trim();
+          
+          if (pageText) {
+            textParts.push(`[Page ${i}/${pageCount}]\n${pageText}`);
+          }
+
+          try {
+            const ops = await page.getOperatorList();
+            if (ops.fnArray && ops.fnArray.some((fn: any) => fn === pdfjsLib.OPS.paintImageXObject || fn === pdfjsLib.OPS.paintJpegXObject)) {
+              hasImages = true;
+            }
+          } catch {}
+        }
+
+        extractedText = textParts.join('\n\n');
+
+        if (pageCount > maxPages) {
+          extractedText += `\n\n[Note: Document has ${pageCount - maxPages} more pages that were not processed. Showing first ${maxPages} pages.]`;
+        }
+      } catch (pdfError) {
+        console.warn('[MultiModalPerception] PDF parsing failed, trying as text file:', pdfError);
+        extractedText = typeof data === 'string' ? data : Buffer.from(data).toString('utf-8');
+      }
+
+      if (!extractedText || extractedText.length < 50) {
+        throw new Error('No readable text content found in document. The file may be scanned/image-based or corrupted.');
+      }
+
+      const truncatedText = extractedText.length > 15000 
+        ? extractedText.substring(0, 15000) + '\n\n[Document truncated - showing first 15000 characters]'
+        : extractedText;
 
       const analysis = await universalChat(
-        `Analyze this document. Extract the full text content, identify the structure (headings, paragraphs, tables, lists), summarize the main topics and key information. Note any visual elements like charts, images, or formatted text.`,
-        { 
-          model: 'gpt-4o',
-          attachments: [{ type: 'document', data: docData }]
-        }
+        `Analyze this document thoroughly. 
+
+DOCUMENT CONTENT:
+${truncatedText}
+
+${metadata ? `METADATA: ${JSON.stringify(metadata)}` : ''}
+
+Provide:
+1. Main topics and themes
+2. Document structure (chapters, sections, key headings)
+3. Key information or data presented
+4. Any tables, charts, or visual elements
+5. Overall purpose and message
+6. Tone and style`,
+        { model: 'gpt-4o' }
       );
+
+      const detectedElements: string[] = [];
+      if (hasImages) detectedElements.push('Images/Graphics');
+      if (pageCount > 1) detectedElements.push(`${pageCount} Pages`);
+      if (metadata?.Title) detectedElements.push('Has Title');
+      if (extractedText.includes('\t') || extractedText.includes('|')) detectedElements.push('Tables');
+      detectedElements.push('Text Content');
 
       return {
         assetType: 'document',
         description: analysis,
-        detectedElements: this.extractElements(analysis),
+        detectedElements: detectedElements.length > 0 ? detectedElements : ['Document'],
         sentiment: this.extractSentiment(analysis),
-        technicalNotes: 'Parsed via document analysis with OCR capabilities',
+        technicalNotes: `Parsed ${pageCount > 0 ? pageCount : 1} page(s) via PDF.js text extraction${hasImages ? ', contains images' : ''}`,
       };
     }, 'document');
   }
