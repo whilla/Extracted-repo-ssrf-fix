@@ -25,7 +25,7 @@ async function getAuthenticatedUser() {
     const { data: { user } } = await supabase.auth.getUser();
     return user;
   } catch (error) {
-    console.error('Authentication error:', error);
+    console.error('Authentication error:', error instanceof Error ? error.message : error);
     return null;
   }
 }

@@ -75,8 +75,23 @@ async function processJob(supabase: any, job: any) {
 export async function POST(request: Request) {
   const authHeader = request.headers.get('authorization');
   const expectedToken = process.env.WORKER_SECRET;
+
+  if (process.env.NODE_ENV === 'production') {
+    if (!expectedToken) {
+      console.error('[api/worker/process] WORKER_SECRET not configured in production');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+  }
+
   if (expectedToken) {
-    if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.slice(7) !== expectedToken) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const token = authHeader.slice(7);
+    if (
+      token.length !== expectedToken.length ||
+      !crypto.timingSafeEqual(Buffer.from(token, 'utf8'), Buffer.from(expectedToken, 'utf8'))
+    ) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
   }

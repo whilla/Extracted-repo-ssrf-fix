@@ -20,7 +20,7 @@ function getSupabaseClient() {
   return supabase;
 }
 
-export { supabase, getSupabaseClient };
+export { getSupabaseClient };
 
 export type Database = {
   public: {

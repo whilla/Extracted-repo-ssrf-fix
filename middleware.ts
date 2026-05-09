@@ -20,19 +20,31 @@ export async function middleware(request: NextRequest) {
 
     // Redirect to login if no session and not on public routes
     if (!session && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
-      return NextResponse.redirect(new URL('/login', request.url));
+      const redirectResponse = NextResponse.redirect(new URL('/login', request.url));
+      response.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'set-cookie') {
+          redirectResponse.headers.append('Set-Cookie', value);
+        }
+      });
+      return redirectResponse;
     }
 
     // Redirect to dashboard if session exists and user is on login page
     if (session && request.nextUrl.pathname.startsWith('/login')) {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+      const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url));
+      response.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'set-cookie') {
+          redirectResponse.headers.append('Set-Cookie', value);
+        }
+      });
+      return redirectResponse;
     }
   } catch (error) {
     console.error('Middleware error:', error);
     if (!request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
-    return NextResponse.next();
+    return response;
   }
 
   return response;

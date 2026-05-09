@@ -1,5 +1,4 @@
-// Lazy-load supabase to avoid build-time errors when env vars are missing
-let supabaseClient: any = null;
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export interface ActionLog {
   id?: string;
@@ -12,17 +11,18 @@ export interface ActionLog {
   created_at?: string;
 }
 
-function getSupabaseClient() {
+let supabaseClientInstance: SupabaseClient | null = null;
+
+function getSupabaseClient(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     return null;
   }
-  if (!supabaseClient) {
-    const { createClient } = require('@supabase/supabase-js');
-    supabaseClient = createClient(url, key);
+  if (!supabaseClientInstance) {
+    supabaseClientInstance = createClient(url, key);
   }
-  return supabaseClient;
+  return supabaseClientInstance;
 }
 
 export class logService {

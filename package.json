@@ -6,7 +6,6 @@
   "engines": {
     "node": "20.x"
   },
-  "packageManager": "npm@10.x",
   "scripts": {
     "dev": "next dev", 
     "build": "next build --webpack", 

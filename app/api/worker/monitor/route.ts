@@ -1,15 +1,20 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 
-function getSupabaseClient() {
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+let cachedClient: SupabaseClient | null = null;
+
+function getSupabaseClient(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     return null;
   }
-  // Lazy-load supabase to avoid build-time errors when env vars are missing
-  const { createClient } = require('@supabase/supabase-js');
-  return createClient(url, key);
+  if (!cachedClient) {
+    cachedClient = createClient(url, key);
+  }
+  return cachedClient;
 }
 
 export async function GET() {

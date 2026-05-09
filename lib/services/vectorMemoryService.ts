@@ -85,7 +85,8 @@ export class vectorMemoryService {
   static async queryMemory(agent_id: string, query: string, limit = 5) {
     const supabase = this.supabase;
     if (!supabase) {
-      throw new Error(`[vectorMemoryService] Cannot query memory - Supabase not configured for agent ${agent_id}`);
+      console.warn(`[vectorMemoryService] Cannot query memory - Supabase not configured for agent ${agent_id}`);
+      return [];
     }
 
     const queryEmbedding = await this.generateEmbedding(query);

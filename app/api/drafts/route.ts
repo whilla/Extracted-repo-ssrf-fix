@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 async function getAuthenticatedUser() {
@@ -20,20 +21,15 @@ async function getAuthenticatedUser() {
   }
 }
 
-async function getSupabaseClient() {
+function getSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   
   if (!supabaseUrl || !supabaseKey) {
     return null;
   }
   
-  try {
-    const { createClient } = await import('@supabase/supabase-js');
-    return createClient(supabaseUrl, supabaseKey);
-  } catch {
-    return null;
-  }
+  return createClient(supabaseUrl, supabaseKey);
 }
 
 export async function GET() {
@@ -44,7 +40,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = await getSupabaseClient();
+    const supabase = getSupabaseClient();
     
     if (!supabase) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
@@ -70,12 +66,15 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser();
-    
+
     if (!user) {
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+      }
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = await getSupabaseClient();
+    const supabase = getSupabaseClient();
     
     if (!supabase) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });

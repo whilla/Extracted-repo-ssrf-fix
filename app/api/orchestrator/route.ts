@@ -9,7 +9,9 @@ import { aiService } from '@/lib/services/aiService';
 import { buildMemoryContext } from '@/lib/services/agentMemoryService';
 import { kvGet } from '@/lib/services/puterService';
 
-async function getAuthenticatedUser() {
+import type { User } from '@supabase/supabase-js';
+
+async function getAuthenticatedUser(): Promise<User | null> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   
@@ -24,6 +26,10 @@ async function getAuthenticatedUser() {
     const { data: { user } } = await supabase.auth.getUser();
     return user;
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Cannot find module')) {
+      console.error('[api/orchestrator] Missing Supabase dependencies:', error.message);
+      return null;
+    }
     console.error(
       '[api/orchestrator] Authentication error:',
       error instanceof Error ? error.message : 'Unknown authentication error'
@@ -41,11 +47,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { agent_id, goal, context, memory_id } = body;
-
-    if (!agent_id || !goal) {
-      return NextResponse.json({ error: 'Missing agent_id or goal' }, { status: 400 });
+    
+    // Zod-like manual validation for input
+    const requiredFields = ['agent_id', 'goal'];
+    for (const field of requiredFields) {
+      if (!body[field]) {
+        return NextResponse.json({ error: `Missing required field: ${field}` }, { status: 400 });
+      }
     }
+
+    const { agent_id, goal, context, memory_id } = body;
 
     // 1. Log the "Thinking" phase
     await logService.logEvent({

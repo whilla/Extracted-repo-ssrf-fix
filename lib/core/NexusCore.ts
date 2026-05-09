@@ -203,10 +203,22 @@ export class NexusCore {
       const successfulOutputs = agentOutputs.filter(o => o.success);
       metadata.agentsSucceeded = successfulOutputs.length;
 
-      // Handle no successful outputs
-      if (successfulOutputs.length === 0) {
-        throw new Error('All agents failed to produce output');
-      }
+       // Handle no successful outputs with fallback
+       if (successfulOutputs.length === 0) {
+         console.warn('[NexusCore] All primary agents failed. Attempting fallback to base provider...');
+         
+          const fallbackProvider = await this.state.providerRouter.getFallbackProvider(provider.id);
+          const fallbackOutput = fallbackProvider
+            ? await this.executeAgent(new HybridAgent(), executionContext)
+            : await this.executeAgent(new WriterAgent(), executionContext);
+         
+         if (!fallbackOutput.success) {
+           throw new Error('All agents and fallbacks failed to produce output');
+         }
+         
+         successfulOutputs.push(fallbackOutput);
+         metadata.agentsSucceeded = 1;
+       }
 
       // Step 6: Score all outputs
       const scoredOutputs = await this.scoreOutputs(successfulOutputs);

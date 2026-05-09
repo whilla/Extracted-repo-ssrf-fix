@@ -101,7 +101,14 @@ export class planService {
       .limit(1)
       .single();
 
-    if (planError || !plan) return null;
+    if (planError) {
+      if (planError.code === 'PGRST116') {
+        return null;
+      }
+      console.error('[planService] Error fetching active plan:', planError);
+      throw planError;
+    }
+    if (!plan) return null;
 
     const { data: steps, error: stepsError } = await supabase
       .from('plan_steps')
