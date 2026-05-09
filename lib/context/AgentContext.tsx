@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import type { ChatMessage, AttachedFile, AgentIntent, AIMessage } from '@/lib/types';
-import { universalChat, analyzeImage, getCurrentModel } from '@/lib/services/aiService';
+import { universalChat, analyzeImage, chatWithVision, getCurrentModel } from '@/lib/services/aiService';
 import { saveChatMessage, loadChatHistory, loadBrandKit, generateId, clearChatHistory, addToSchedule, loadSchedule, removeFromSchedule, sanitizeChatMessagesForStorage } from '@/lib/services/memoryService';
 import { 
   loadAgentMemory, 
@@ -1881,6 +1881,80 @@ Rules:
         if (file.mimeType.startsWith('image/')) {
           const analysis = await analyzeImage(file.data, file.mimeType);
           summaries.push(`[Image: ${file.name}]\n${analysis}`);
+        } else if (file.mimeType === 'application/pdf') {
+          const byteCharacters = atob(file.data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const data = new Uint8Array(byteNumbers);
+
+          const browserFile = new File(
+            [data],
+            file.name,
+            { type: file.mimeType }
+          );
+
+          const result = await fileProcessor.processFile(
+            browserFile,
+            FILE_ANALYSIS_PROMPT.replace('{fileType}', 'file'),
+            { skipAiSummary: true }
+          );
+          const extractedText = result.file.extractedText
+            ? buildFileContextPreview(result.file.extractedText)
+            : '';
+
+          const ocrFailure = result.file.metadata?.ocrFailure as string | undefined;
+          const textLayerChars = result.file.metadata?.textLayerChars as number | undefined;
+          const hasLittleText = !extractedText || extractedText.replace(/\s/g, '').length < 200;
+
+          // If text extraction yielded little content, try vision-based page analysis
+          if (hasLittleText) {
+            try {
+              const pdfjsLib = await import('pdfjs-dist');
+              const pdf = await pdfjsLib.getDocument({
+                data,
+                useWorkerFetch: false,
+                isEvalSupported: false,
+              }).promise;
+
+              const visionBlocks: string[] = [];
+              const maxPages = Math.min(pdf.numPages, 5);
+              for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.5 });
+                const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+                if (!canvas) break;
+                canvas.width = Math.ceil(viewport.width);
+                canvas.height = Math.ceil(viewport.height);
+                const ctx = canvas.getContext('2d');
+                if (!ctx) break;
+                await page.render({ canvasContext: ctx, viewport }).promise;
+                const pageImageUrl = canvas.toDataURL('image/png');
+                const analysis = await chatWithVision(
+                  `Analyze this page from "${file.name}". Describe the layout, text, tables, diagrams, and images visible. Extract all text content word for word. Return findings organized by page.`,
+                  pageImageUrl
+                );
+                if (analysis?.trim()) {
+                  visionBlocks.push(`[Page ${pageNum} Visual Analysis]\n${analysis.trim()}`);
+                }
+              }
+
+              if (visionBlocks.length > 0) {
+                summaries.push(`[File: ${file.name}]\n${visionBlocks.join('\n\n')}`);
+              } else {
+                summaries.push(`[File: ${file.name}] No extractable content found via text or vision.`);
+              }
+            } catch (visionError) {
+              if (extractedText) {
+                summaries.push(`[File: ${file.name}]\n${extractedText}`);
+              } else {
+                summaries.push(`[File: ${file.name}] - Error processing: ${visionError}. Text extraction: ${extractedText || 'none'}`);
+              }
+            }
+          } else {
+            summaries.push(`[File: ${file.name}]\n${extractedText}`);
+          }
         } else {
           const byteCharacters = atob(file.data);
           const byteNumbers = new Array(byteCharacters.length);
