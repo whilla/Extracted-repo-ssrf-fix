@@ -184,6 +184,7 @@ export class MultiModalPerceptionService {
       let pageCount = 0;
       let hasImages = false;
       let metadata: any = null;
+      let textExtractionFailed = false;
 
       try {
         const pdfjsLib = await import('pdfjs-dist');
@@ -193,6 +194,7 @@ export class MultiModalPerceptionService {
 
         const pdfData = typeof data === 'string' ? Buffer.from(data, 'base64') : Buffer.from(data);
         const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        pageCount = pdf.numPages;
         pageCount = pdf.numPages;
 
         if (pdf.numPages > 0) {
@@ -236,7 +238,36 @@ export class MultiModalPerceptionService {
       }
 
       if (!extractedText || extractedText.length < 50) {
-        throw new Error('No readable text content found in document. The file may be scanned/image-based or corrupted.');
+        // PDF is likely scanned/image-based - use vision AI to analyze it
+        console.warn('[MultiModalPerception] No text extracted, using vision AI to analyze PDF as image');
+        
+        const imagePayload = typeof data === 'string' ? data : Buffer.from(data).toString('base64');
+        
+        const analysis = await universalChat(
+          `You are analyzing a PDF document that appears to be scanned or image-based (no selectable text).
+
+Analyze this document page by page and provide:
+1. What you see on each page - text, diagrams, images, layout
+2. Main topics and themes
+3. Key information, data, or insights
+4. Document structure (chapters, sections, bullets, etc.)
+5. Any visual elements like charts, graphs, or images
+6. Overall purpose and message of the document
+
+Be thorough and extract as much detail as possible from the visual content.`,
+          { 
+            model: 'gpt-4o',
+            attachments: [{ type: 'image', data: imagePayload }]
+          }
+        );
+
+        return {
+          assetType: 'document',
+          description: analysis,
+          detectedElements: ['Scanned PDF', 'Image-based', 'Visual analysis'],
+          sentiment: this.extractSentiment(analysis),
+          technicalNotes: `Analyzed ${pageCount > 0 ? pageCount : 1} page(s) via Vision LLM (no text layer)`,
+        };
       }
 
       const truncatedText = extractedText.length > 15000 
