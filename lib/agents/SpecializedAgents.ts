@@ -503,6 +503,11 @@ export class HybridAgent extends BaseAgent {
   }
 }
 
+import { SynthesisAgent } from './SynthesisAgent';
+export { SynthesisAgent };
+
+const CRITIC_PROMPT = `You are a ruthless but fair content critic. Your job is to make good content GREAT.
+...`
 const CRITIC_PROMPT = `You are a ruthless but fair content critic. Your job is to make good content GREAT.
 
 Content to analyze:

@@ -68,6 +68,9 @@ export interface AgentExecutionContext {
   provider: Provider;
   governorFeedback?: string;
   previousContent?: string;
+  blackboard?: import('../core/AgentBlackboard').AgentBlackboard;
+  perceptionService?: import('../services/multiModalPerceptionService').MultiModalPerceptionService;
+  cameraAngles?: string; // controls for visual assets
 }
 
 export interface PerformanceRecord {

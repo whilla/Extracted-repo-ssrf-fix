@@ -11,6 +11,11 @@
     "build": "next build --webpack", 
     "start": "next start",
     "lint": "eslint app components hooks lib types *.mjs",
+    "lint:fix": "eslint app components hooks lib types *.mjs --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs}\" --ignore-path .gitignore",
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky install",
     "test": "npm run test:agent && npm run test:agent-progress && npm run test:behavior-upgrade && npm run test:retry && npm run test:puter-service && npm run test:chat-storage && npm run test:orchestration && npm run test:ai-routing && npm run test:media-assets && npm run test:video-generation && npm run test:brand-identity && npm run test:provider-credentials && npm run test:upload-worker && npm run test:publishing-readiness && npm run test:server-ai-proxy",
     "test:agent": "node --eval \"import('./tests/agent-behavior.test.mjs')\"",
     "test:agent-progress": "node --eval \"import('./tests/agent-progress.test.mjs')\"",
@@ -94,9 +99,16 @@
     "@types/react-dom": "19.2.3",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.2.4",
+    "husky": "^9.1.0",
+    "lint-staged": "^15.2.0",
     "postcss": "^8.5",
+    "prettier": "^3.3.0",
     "tailwindcss": "^4.2.0",
     "tw-animate-css": "1.3.3",
     "typescript": "5.7.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": ["eslint --fix", "prettier --write"],
+    "*.{json,md,yml,yaml}": "prettier --write"
   }
 }

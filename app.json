@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "NexusAI",
+    "slug": "nexusai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./public/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./public/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nexusai.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "NexusAI needs camera access to take photos and videos for content creation",
+        "NSPhotoLibraryUsageDescription": "NexusAI needs photo library access to upload media for posts",
+        "NSMicrophoneUsageDescription": "NexusAI needs microphone access for voice recording and voice commands"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./public/icon.png",
+        "backgroundColor": "#0a0a0a"
+      },
+      "package": "com.nexusai.app",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECORD_AUDIO",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
+    },
+    "web": {
+      "favicon": "./public/favicon.ico",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-camera",
+      "expo-image-picker",
+      "expo-av",
+      [
+        "expo-notifications",
+        {
+          "icon": "./public/notification-icon.png",
+          "color": "#6366f1"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "nexusai-mobile"
+      }
+    }
+  }
+}

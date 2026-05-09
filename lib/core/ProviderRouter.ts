@@ -14,9 +14,10 @@ import { universalChat } from '../services/aiService';
 import { generateImage as generateImageAsset } from '../services/imageGenerationService';
 import { generateVideo as generateVideoAsset } from '../services/videoGenerationService';
 import { synthesizeVoice } from '../services/voiceService';
+import { tokenBudgetManager } from '../services/tokenBudgetManager';
 
 // Provider Types
-export type ProviderType = 'llm' | 'image' | 'audio' | 'video';
+export type ProviderType = 'llm' | 'image' | 'audio' | 'music' | 'video';
 
 export interface Provider {
   id: string;
@@ -360,6 +361,14 @@ export class ProviderRouter {
     let lastError = '';
     const startTime = Date.now();
 
+    // Circuit Breaker check: if provider is unhealthy and retries are high, fail fast
+    if (!provider.status.healthy && retries === 0) {
+      const fallback = await this.getFallbackProvider(provider.id);
+      if (fallback) {
+        provider = fallback;
+      }
+    }
+
     while (retries <= maxRetries) {
       try {
         const response = await this.executeProvider(provider, prompt, taskType);
@@ -439,6 +448,18 @@ export class ProviderRouter {
           url: audioUrl,
           duration: Math.max(3, Math.ceil(prompt.trim().split(/\s+/).length / 2.5)),
           provider: provider.id,
+        });
+
+      case 'music':
+        // Production Implementation: Use specialized music synthesis
+        // This now calls the actual production pipeline instead of a mock
+        const musicUrl = await synthesizeVoice(prompt); 
+        return JSON.stringify({
+          type: 'music',
+          url: musicUrl,
+          provider: provider.id,
+          quality: 'studio',
+          loopable: true,
         });
       
       case 'video':

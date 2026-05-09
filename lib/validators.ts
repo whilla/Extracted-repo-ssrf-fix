@@ -16,9 +16,13 @@ export type Platform = z.infer<typeof PlatformSchema>;
 
 // Brand Kit Validation
 export const BrandKitSchema = z.object({
+  name: z.string().optional(),
   brandName: z.string().min(1, 'Brand name is required').max(100),
+  userName: z.string().optional(),
+  agentName: z.string().optional(),
   niche: z.string().min(1, 'Niche is required').max(100),
   targetAudience: z.string().min(1, 'Target audience is required').max(200),
+  audience: z.string().optional(),
   primaryColor: z.string().regex(/^#[0-9A-F]{6}$/i, 'Invalid hex color'),
   secondaryColor: z.string().regex(/^#[0-9A-F]{6}$/i, 'Invalid hex color'),
   tone: z.enum(['professional', 'casual', 'humorous', 'inspirational', 'educational']),
@@ -27,6 +31,12 @@ export const BrandKitSchema = z.object({
   uniqueSellingPoint: z.string().min(1, 'USP is required').max(300),
   language: z.string().default('en'),
   hashtagStrategy: z.union([z.string(), z.array(z.string())]).optional(),
+  contentPreferences: z.array(z.object({
+    type: z.string(),
+    description: z.string(),
+    frequency: z.enum(['always', 'often', 'rarely']),
+    savedInstructions: z.string(),
+  })).optional().default([]),
 });
 
 export type BrandKit = z.infer<typeof BrandKitSchema>;

@@ -2747,10 +2747,26 @@ Rules:
           ? stateRef.current.messages
           : await loadChatHistory().catch(() => []);
       const recentMessages = persistedMessages.slice(-10);
-      const contextMessages = recentMessages.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      }));
+      const contextMessages = recentMessages.map(m => {
+        let enriched = m.content;
+        if (m.media && m.media.length > 0) {
+          const mediaDescriptions = m.media.map(asset => {
+            const parts = [`[Generated ${asset.type}: ${asset.prompt || 'media'}`];
+            if (asset.url) parts.push(`URL: ${asset.url}`);
+            if (asset.provider) parts.push(`provider: ${asset.provider}`);
+            if (asset.thumbnailUrl) parts.push(`thumbnail: ${asset.thumbnailUrl}`);
+            return parts.join(', ') + ']';
+          });
+          enriched += '\n\n' + mediaDescriptions.join('\n');
+        }
+        if (m.attachments && m.attachments.length > 0) {
+          enriched += '\n\n[Attached files: ' + m.attachments.map(a => a.name).join(', ') + ']';
+        }
+        return {
+          role: m.role as 'user' | 'assistant',
+          content: enriched,
+        };
+      });
 
       // Process files if attached
       let fileContext = '';

@@ -11,7 +11,20 @@ services:
       - .env
     restart: always
     depends_on:
-      - n8n
+      n8n:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    environment:
+      - NODE_ENV=production
+    networks:
+      - nexus-network
+    volumes:
+      - nexus-data:/app/data
 
   n8n:
     image: n8nio/n8n:latest
@@ -23,10 +36,39 @@ services:
       - N8N_PROTOCOL=http
       - NODE_ENV=production
       - WEBHOOK_URL=http://${N8N_HOST:-localhost}:5678/
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-change-me-in-production}
     volumes:
       - n8n_data:/home/node/.n8n
     restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nexus-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - nexus-network
 
 volumes:
   n8n_data:
+  redis-data:
+  nexus-data:
+
+networks:
+  nexus-network:
+    driver: bridge

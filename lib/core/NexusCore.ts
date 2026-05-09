@@ -18,6 +18,10 @@ import { ProviderRouter, type ProviderResponse } from './ProviderRouter';
 import { ViralScoringEngine, type ViralScore } from './ViralScoringEngine';
 import { LearningSystem } from './LearningSystem';
 import { MemoryManager, type MemoryContext } from './MemoryManager';
+import { AgentBlackboard } from './AgentBlackboard';
+import { tokenBudgetManager } from '../services/tokenBudgetManager';
+import { perceptionService } from '../services/multiModalPerceptionService';
+import { trendScoutService } from '../services/trendScoutService';
 import { 
   BaseAgent, 
   StrategistAgent, 
@@ -122,6 +126,7 @@ export class NexusCore {
       this.state.governor.initialize(),
       this.state.memoryManager.initialize(),
       this.state.learningSystem.initialize(),
+      trendScoutService.initialize(),
     ]);
 
     // Initialize default agents
@@ -142,6 +147,7 @@ export class NexusCore {
       new CriticAgent(),
       new OptimizerAgent(),
       new HybridAgent(),
+      new SynthesisAgent(),
     ];
 
     agents.forEach(agent => {
@@ -171,6 +177,12 @@ export class NexusCore {
     };
 
     try {
+      // Budget check before starting execution
+      const budgetCheck = await tokenBudgetManager.checkBudgetAvailability();
+      if (!budgetCheck.allowed) {
+        throw new Error(`Budget Execution Blocked: ${budgetCheck.reason}`);
+      }
+
       // Step 1: Build memory context
       const memoryContext = await this.state.memoryManager.buildContext(request.userInput);
 
@@ -186,20 +198,45 @@ export class NexusCore {
       metadata.agentsSpawned = selectedAgents.length;
 
       // Step 4: Build execution context
+      const blackboard = new AgentBlackboard(`req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
       const executionContext: AgentExecutionContext = {
         userInput: request.userInput,
         memoryContext,
         platform: request.platform || 'twitter',
         customInstructions: request.customInstructions,
         provider,
+        blackboard,
+        perceptionService,
       };
 
-      // Step 5: Run agents in parallel
-      const agentPromises = selectedAgents.map(agent => 
-        this.executeAgent(agent, executionContext)
+      // Step 5: Collaborative Execution Pipeline
+      
+      // Phase 1: Analysis & Observation (Strategists/Hybrid)
+      const analysisAgents = selectedAgents.filter(a => ['strategist', 'hybrid'].includes(a.getRole()));
+      await Promise.all(analysisAgents.map(agent => this.executeAgent(agent, executionContext)));
+
+      // Phase 2: Generation (Writers/Hooks)
+      const generationAgents = selectedAgents.filter(a => ['writer', 'hook', 'hybrid'].includes(a.getRole()));
+      const generationOutputs = await Promise.all(
+        generationAgents.map(agent => this.executeAgent(agent, executionContext))
       );
 
-      const agentOutputs = await Promise.all(agentPromises);
+      // Phase 3: Refinement (Critics/Optimizers)
+      const refinementAgents = selectedAgents.filter(a => ['critic', 'optimizer'].includes(a.getRole()));
+      const refinementOutputs = await Promise.all(
+        refinementAgents.map(agent => this.executeAgent(agent, executionContext))
+      );
+
+      // Phase 4: Genetic Synthesis (Combine the best of all worlds)
+      const synthesisAgent = this.state.activeAgents.get('optimizer') || new SynthesisAgent(); 
+      // Note: Using a synthesis agent to la-la a final version based on all previous outputs
+      const synthesisContext = {
+        ...executionContext,
+        previousContent: generationOutputs.map(o => o.content).join('\\n---\\n'),
+      };
+      const finalOutput = await this.executeAgent(new SynthesisAgent(), synthesisContext);
+
+      const agentOutputs = [...generationOutputs, ...refinementOutputs, finalOutput];
       const successfulOutputs = agentOutputs.filter(o => o.success);
       metadata.agentsSucceeded = successfulOutputs.length;
 
