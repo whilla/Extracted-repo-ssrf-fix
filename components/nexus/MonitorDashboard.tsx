@@ -169,7 +169,7 @@ export function MonitorDashboard() {
               <Activity className="w-4 h-4" />
               Task Success
             </div>
-            <div className="text-2xl font-bold">{metrics?.averages.taskCompletionRate || 100}%</div>
+            <div className="text-2xl font-bold">{metrics?.averages.taskCompletionRate != null ? `${metrics.averages.taskCompletionRate}%` : 'N/A'}</div>
             {metrics?.trends.tasks && getTrendIcon(metrics.trends.tasks)}
           </div>
 

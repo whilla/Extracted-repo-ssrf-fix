@@ -124,7 +124,13 @@ async function networkFirst(request) {
 self.addEventListener('push', (event) => {
   if (!event.data) return;
 
-  const data = event.data.json();
+  let data;
+  try {
+    data = event.data.json();
+  } catch (e) {
+    console.error('[ServiceWorker] Failed to parse push data:', e);
+    data = { title: 'NexusAI', body: event.data.text() || 'New notification' };
+  }
   
   const options = {
     body: data.body || 'New notification from NexusAI',

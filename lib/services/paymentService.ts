@@ -151,6 +151,11 @@ export async function createCustomer(email: string, name?: string, metadata?: Re
       }),
     });
     
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Stripe error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
+    
     const data = await response.json();
     
     return {

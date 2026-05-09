@@ -232,6 +232,7 @@ export async function getServiceHealthSummary(): Promise<{
 }
 
 export async function resetServiceMetrics(): Promise<void> {
+  latencySamples.clear();
   await saveMetrics({});
 }
 

@@ -19,8 +19,26 @@ export class RateLimiter {
     const key = `rl_${userId}`;
     const now = Date.now();
     
-    let record = await kvGet(key);
-    let { requests, windowStart } = record ? JSON.parse(record) : { requests: [], windowStart: now };
+    let record;
+    try {
+      record = await kvGet(key);
+    } catch (error) {
+      console.error('[RateLimiter] KV get failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
+    
+    let requests: number[] = [];
+    let windowStart = now;
+    
+    try {
+      if (record) {
+        const parsed = JSON.parse(record);
+        requests = parsed.requests || [];
+        windowStart = parsed.windowStart || now;
+      }
+    } catch (error) {
+      console.warn('[RateLimiter] Failed to parse stored record, starting fresh');
+      requests = [];
+    }
 
     // Slide window: remove expired requests
     requests = requests.filter(timestamp => timestamp > now - config.windowMs);
@@ -30,7 +48,12 @@ export class RateLimiter {
     }
 
     requests.push(now);
-    await kvSet(key, JSON.stringify({ requests, windowStart }));
+    
+    try {
+      await kvSet(key, JSON.stringify({ requests, windowStart }));
+    } catch (error) {
+      console.error('[RateLimiter] KV set failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
     
     return { allowed: true, remaining: config.limit - requests.length };
   }

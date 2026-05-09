@@ -71,7 +71,7 @@ export function MediaGallery({ assets, onSelect, onDelete, onDownload, loading }
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex gap-2">
-          {(['all', 'image', 'video', 'audio', 'music', 'document'] as const).map(type => (
+          {(['all', 'image', 'video', 'audio', 'music', 'document', 'text'] as const).map(type => (
             <button
               key={type}
               onClick={() => setFilter(type)}

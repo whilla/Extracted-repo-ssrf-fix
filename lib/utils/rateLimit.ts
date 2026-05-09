@@ -19,7 +19,7 @@ export function rateLimit(config: RateLimitConfig): RateLimitResult {
   
   const entry = rateLimitStore.get(key);
   
-  if (!entry || now > entry.resetAt) {
+  if (!entry || now >= entry.resetAt) {
     const resetAt = now + windowMs;
     rateLimitStore.set(key, { count: 1, resetAt });
     return {
