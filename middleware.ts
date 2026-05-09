@@ -1,9 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/middleware';
+import { updateSession } from '@/utils/supabase/middleware';
 
 export async function middleware(request: NextRequest) {
-  const supabaseResponse = createClient(request);
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
@@ -13,7 +11,8 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    const { data: { session } } = await supabaseResponse.auth.getSession();
+    const { supabase, supabaseResponse } = await updateSession(request);
+    const { data: { session } } = await supabase.auth.getSession();
 
     if (!session && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
       const redirectResponse = NextResponse.redirect(new URL('/login', request.url));
@@ -34,15 +33,15 @@ export async function middleware(request: NextRequest) {
       });
       return redirectResponse;
     }
+
+    return supabaseResponse;
   } catch (error) {
     console.error('Middleware error:', error);
     if (!request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
-    return supabaseResponse;
+    return NextResponse.next();
   }
-
-  return supabaseResponse;
 }
 
 export const config = {
