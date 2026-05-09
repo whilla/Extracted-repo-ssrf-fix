@@ -365,9 +365,15 @@ async function getProviderStatus(providerId: string): Promise<{ status: Provider
   try {
     const statusData = await kvGet(`provider_status_${providerId}`);
     if (statusData) {
-      return JSON.parse(statusData);
+      try {
+        return JSON.parse(statusData);
+      } catch (parseError) {
+        console.warn('[getProviderStatus] Failed to parse provider status:', parseError instanceof Error ? parseError.message : 'Unknown error');
+      }
     }
-  } catch {}
+  } catch (error) {
+    console.warn('[getProviderStatus] Failed to get provider status:', error instanceof Error ? error.message : 'Unknown error');
+  }
 
   return { status: 'unknown', lastCheck: new Date().toISOString() };
 }

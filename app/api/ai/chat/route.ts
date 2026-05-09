@@ -9,7 +9,7 @@ import {
   isServerChatProvider,
   normalizeProxyMessages,
 } from '@/lib/server/aiProviderProxy';
-
+import { RateLimiter } from '@/lib/services/rateLimiter';
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -22,6 +22,13 @@ export async function POST(request: NextRequest) {
     body = await request.json();
   } catch {
     return jsonError('Invalid JSON body.', 400);
+  }
+
+  // Security: Implementation of Rate Limiting
+  const userId = request.headers.get('x-user-id') || 'anonymous';
+  const rateLimit = await RateLimiter.checkLimit(userId);
+  if (!rateLimit.allowed) {
+    return jsonError('Too many requests. Please slow down.', 429);
   }
 
   const provider = body.provider;

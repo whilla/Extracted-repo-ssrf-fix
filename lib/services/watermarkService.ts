@@ -31,7 +31,9 @@ export async function getWatermarkConfig(): Promise<WatermarkConfig> {
   if (saved) {
     try {
       return { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
-    } catch {}
+    } catch (parseError) {
+      console.warn('[getWatermarkConfig] Failed to parse saved config:', parseError instanceof Error ? parseError.message : 'Unknown error');
+    }
   }
   return DEFAULT_CONFIG;
 }

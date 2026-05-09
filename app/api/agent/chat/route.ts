@@ -1,6 +1,19 @@
 export const dynamic = "force-dynamic";
 import { NextResponse, type NextRequest } from 'next/server';
+import { z } from 'zod';
 import { intelligentChat, analyzeScheduling } from '@/lib/services/intelligentChatService';
+
+const ChatRequestSchema = z.object({
+  message: z.string().min(1, 'Message is required'),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']).optional(),
+    content: z.string().optional(),
+    message: z.string().optional(),
+  })).optional(),
+  platform: z.string().optional(),
+  taskType: z.string().optional(),
+  customContext: z.string().optional(),
+});
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -9,11 +22,14 @@ function jsonError(message: string, status: number) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message, history, platform, taskType, customContext } = body;
-
-    if (!message || typeof message !== 'string') {
-      return jsonError('Message is required.', 400);
+    const result = ChatRequestSchema.safeParse(body);
+    
+    if (!result.success) {
+      const errors = result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; ');
+      return jsonError(`Validation failed: ${errors}`, 400);
     }
+    
+    const { message, history, platform, taskType, customContext } = result.data;
 
     // Check if this is a scheduling request
     const isSchedulingRequest = 

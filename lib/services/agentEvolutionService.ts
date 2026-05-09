@@ -13,7 +13,9 @@ import {
   type AgentConfig,
   type AgentRole,
 } from './multiAgentService';
-import { universalChat } from './aiService';
+import { PromptManager } from './promptManager';
+import { stateStore } from './supabaseStore';
+
 import { validateContent, validateEvolutionProposal } from './governorService';
 
 // Evolution Types
@@ -62,36 +64,24 @@ const AGENT_VERSIONS_KEY = 'nexus_agent_versions';
 
 // Load evolution proposals
 export async function loadEvolutionProposals(): Promise<EvolutionProposal[]> {
-  try {
-    const data = await kvGet(EVOLUTION_PROPOSALS_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
-  }
+  return stateStore.loadEvolutionProposals();
 }
 
 // Save evolution proposals
 async function saveEvolutionProposals(proposals: EvolutionProposal[]): Promise<void> {
-  await kvSet(EVOLUTION_PROPOSALS_KEY, JSON.stringify(proposals));
+  for (const p of proposals) {
+    await stateStore.saveEvolutionProposal(p);
+  }
 }
 
 // Load agent versions
 export async function loadAgentVersions(agentId: string): Promise<AgentVersion[]> {
-  try {
-    const data = await kvGet(`${AGENT_VERSIONS_KEY}_${agentId}`);
-    return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
-  }
+  return stateStore.loadAgentVersions(agentId);
 }
 
 // Save agent version
 async function saveAgentVersion(version: AgentVersion): Promise<void> {
-  const versions = await loadAgentVersions(version.agentId);
-  versions.push(version);
-  // Keep last 20 versions
-  const trimmed = versions.slice(-20);
-  await kvSet(`${AGENT_VERSIONS_KEY}_${version.agentId}`, JSON.stringify(trimmed));
+  await stateStore.saveAgentVersion(version);
 }
 
 // Analyze agent performance
@@ -234,21 +224,13 @@ export async function proposeEvolution(agentId: string): Promise<EvolutionPropos
   } else if (analysis.weaknesses.includes('High proportion of low-scoring outputs')) {
     proposalType = 'prompt_update';
     currentValue = agent.promptTemplate;
-    // Enhance prompt with more specific instructions
-    proposedValue = agent.promptTemplate.replace(
-      'Input: {{input}}',
-      `IMPORTANT: Focus on quality over speed. Each output should be unique and engaging.
-
-Input: {{input}}`
-    );
+    proposedValue = PromptManager.updateTemplate(agent.promptTemplate, '', 'enhance');
     reasoning = 'Adding quality emphasis to prompt template';
     expectedImprovement = 10;
   } else if (analysis.weaknesses.includes('Slow response times')) {
     proposalType = 'prompt_update';
     currentValue = agent.promptTemplate;
-    // Simplify prompt
-    const lines = agent.promptTemplate.split('\n');
-    proposedValue = lines.slice(0, Math.ceil(lines.length * 0.8)).join('\n');
+    proposedValue = PromptManager.updateTemplate(agent.promptTemplate, '', 'simplify');
     reasoning = 'Simplifying prompt to improve response time';
     expectedImprovement = 5;
   }

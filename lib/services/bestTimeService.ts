@@ -283,7 +283,9 @@ async function getCustomAnalyticsData(
   if (data) {
     try {
       return JSON.parse(data);
-    } catch {}
+    } catch (parseError) {
+      console.warn('[getCustomAnalyticsData] Failed to parse analytics data:', parseError instanceof Error ? parseError.message : 'Unknown error');
+    }
   }
   return null;
 }

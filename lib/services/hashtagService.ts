@@ -249,7 +249,9 @@ export async function getTrendingHashtags(
       if (Date.now() - timestamp < 3600000) {
         return hashtags;
       }
-    } catch {}
+    } catch (parseError) {
+      console.warn('[getTrendingHashtags] Failed to parse cached hashtags:', parseError instanceof Error ? parseError.message : 'Unknown error');
+    }
   }
   
   const prompt = `What are the top 20 trending hashtags on ${platform} right now for the "${niche}" niche?
@@ -370,7 +372,9 @@ export async function getFavoriteHashtags(): Promise<Record<string, string[]>> {
   if (data) {
     try {
       return JSON.parse(data);
-    } catch {}
+    } catch (parseError) {
+      console.warn('[getFavoriteHashtags] Failed to parse favorite hashtags:', parseError instanceof Error ? parseError.message : 'Unknown error');
+    }
   }
   return {};
 }

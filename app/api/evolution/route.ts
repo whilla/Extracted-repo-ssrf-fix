@@ -19,9 +19,9 @@ async function getAuthenticatedUser() {
   }
   
   try {
-    const { createRouteHandlerClient } = await import('@supabase/auth-helpers-nextjs');
+    const { createServerClient } = await import('@supabase/ssr');
     const { cookies } = await import('next/headers');
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, { cookies });
     const { data: { user } } = await supabase.auth.getUser();
     return user;
   } catch (error) {

@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { logService } from '@/lib/services/logService';
 import { n8nBridgeService } from '@/lib/services/n8nBridgeService';
 import { planService } from '@/lib/services/planService';
@@ -11,6 +12,13 @@ import { kvGet } from '@/lib/services/puterService';
 
 import type { User } from '@supabase/supabase-js';
 
+const OrchestratorRequestSchema = z.object({
+  agent_id: z.string().min(1, 'agent_id is required'),
+  goal: z.string().min(1, 'goal is required'),
+  context: z.string().optional(),
+  memory_id: z.string().optional(),
+});
+
 async function getAuthenticatedUser(): Promise<User | null> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -20,9 +28,9 @@ async function getAuthenticatedUser(): Promise<User | null> {
   }
   
   try {
-    const { createRouteHandlerClient } = await import('@supabase/auth-helpers-nextjs');
+    const { createServerClient } = await import('@supabase/ssr');
     const { cookies } = await import('next/headers');
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, { cookies });
     const { data: { user } } = await supabase.auth.getUser();
     return user;
   } catch (error) {
@@ -47,16 +55,14 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+    const result = OrchestratorRequestSchema.safeParse(body);
     
-    // Zod-like manual validation for input
-    const requiredFields = ['agent_id', 'goal'];
-    for (const field of requiredFields) {
-      if (!body[field]) {
-        return NextResponse.json({ error: `Missing required field: ${field}` }, { status: 400 });
-      }
+    if (!result.success) {
+      const errors = result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; ');
+      return NextResponse.json({ error: `Validation failed: ${errors}` }, { status: 400 });
     }
-
-    const { agent_id, goal, context, memory_id } = body;
+    
+    const { agent_id, goal, context, memory_id } = result.data;
 
     // 1. Log the "Thinking" phase
     await logService.logEvent({

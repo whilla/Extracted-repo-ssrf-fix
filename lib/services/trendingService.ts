@@ -99,7 +99,9 @@ export async function getLiveTrendContext(
       if (Date.now() - new Date(parsed.generatedAt).getTime() < 30 * 60 * 1000) {
         return parsed;
       }
-    } catch {}
+    } catch (parseError) {
+      console.warn('[getLiveContext] Failed to parse cached context:', parseError instanceof Error ? parseError.message : 'Unknown error');
+    }
   }
 
   const [nicheSignals, platformSignals] = await Promise.all([
@@ -203,7 +205,9 @@ export async function getTrendingTopics(
         if (Date.now() - new Date(timestamp).getTime() < 3600000) {
           return topics.slice(0, limit);
         }
-      } catch {}
+      } catch (parseError) {
+        console.warn('[getTrendingTopics] Failed to parse cached topics:', parseError instanceof Error ? parseError.message : 'Unknown error');
+      }
     }
   }
   
@@ -441,7 +445,9 @@ export async function getSavedTopics(): Promise<TrendingTopic[]> {
   if (data) {
     try {
       return JSON.parse(data);
-    } catch {}
+    } catch (parseError) {
+      console.warn('[getSavedTopics] Failed to parse saved topics:', parseError instanceof Error ? parseError.message : 'Unknown error');
+    }
   }
   return [];
 }

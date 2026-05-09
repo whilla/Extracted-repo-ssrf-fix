@@ -375,7 +375,9 @@ Return JSON:
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
-  } catch {}
+  } catch (parseError) {
+    console.warn('[parseTimelineFromScript] Failed to parse AI response as JSON:', parseError instanceof Error ? parseError.message : 'Unknown error');
+  }
 
   return {
     script: response,

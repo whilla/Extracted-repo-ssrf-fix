@@ -2,16 +2,7 @@
  * NEXUS AI CORE ENGINE
  * Central orchestration system that coordinates all AI operations
  * 
- * Responsibilities:
- * 1. Accept user input
- * 2. Inject memory context
- * 3. Select providers dynamically
- * 4. Spawn multiple agents
- * 5. Run agents in parallel (Promise.all)
- * 6. Collect outputs
- * 7. Score outputs via Viral Scoring Engine
- * 8. Pass through Governor validation
- * 9. Return BEST output only
+ * This is the unified core engine replacing the fragmented la-la orchestration services.
  */
 
 import { ProviderRouter, type ProviderResponse } from './ProviderRouter';
@@ -30,10 +21,41 @@ import {
   CriticAgent,
   OptimizerAgent,
   HybridAgent,
+  SynthesisAgent,
   type AgentOutput,
-  type AgentExecutionContext 
+  type AgentExecutionContext,
+  type OrchestrationPlan,
+  type SubTask,
+  type AgentRole
 } from '../agents';
 import { GovernorSystem, type GovernorValidation } from './GovernorSystem';
+import { 
+  initializeAgents, 
+  loadAgents, 
+  getAgentByRole, 
+  executeAgentTask, 
+  createOrchestrationPlan,
+  selectBestOutput,
+  combineOutputs,
+  type AgentConfig 
+} from '../services/multiAgentService';
+import { savePlan, getPlan } from '../services/planStorageService';
+import { gatherNexusContext } from '../services/discoveryService';
+import { addToApprovalQueue } from '../services/approvalQueueService';
+import {
+  loadGovernorConfig,
+  loadGovernorState,
+  validateContent,
+  makeGovernorDecision,
+  recordCost,
+  activateFailsafeMode,
+  type GovernorDecision,
+  type ContentValidation,
+} from '../services/governorService';
+import { loadBrandKit } from '../services/memoryService';
+import { buildMemoryContext } from '../services/agentMemoryService';
+import { universalChat } from '../services/aiService';
+import { BrandKit } from '@/lib/validators';
 
 // Core Types
 export interface NexusRequest {
@@ -80,9 +102,6 @@ export interface NexusState {
   lastError: string | null;
 }
 
-/**
- * NexusCore - The Central AI Engine
- */
 export class NexusCore {
   private state: NexusState;
   private static instance: NexusCore | null = null;
@@ -102,9 +121,6 @@ export class NexusCore {
     };
   }
 
-  /**
-   * Singleton instance getter
-   */
   static getInstance(): NexusCore {
     if (!NexusCore.instance) {
       NexusCore.instance = new NexusCore();
@@ -112,15 +128,8 @@ export class NexusCore {
     return NexusCore.instance;
   }
 
-  /**
-   * Initialize the core system
-   */
   async initialize(): Promise<void> {
     if (this.state.initialized) return;
-
-    console.log('[NexusCore] Initializing system...');
-
-    // Initialize all subsystems in parallel
     await Promise.all([
       this.state.providerRouter.initialize(),
       this.state.governor.initialize(),
@@ -128,17 +137,10 @@ export class NexusCore {
       this.state.learningSystem.initialize(),
       trendScoutService.initialize(),
     ]);
-
-    // Initialize default agents
     this.spawnDefaultAgents();
-
     this.state.initialized = true;
-    console.log('[NexusCore] System initialized successfully');
   }
 
-  /**
-   * Spawn default agent instances
-   */
   private spawnDefaultAgents(): void {
     const agents: BaseAgent[] = [
       new StrategistAgent(),
@@ -149,401 +151,205 @@ export class NexusCore {
       new HybridAgent(),
       new SynthesisAgent(),
     ];
-
-    agents.forEach(agent => {
-      this.state.activeAgents.set(agent.getId(), agent);
-    });
+    agents.forEach(agent => this.state.activeAgents.set(agent.getId(), agent));
   }
 
   /**
-   * Main execution method - orchestrates the entire AI pipeline
+   * Unified entry point for all AI orchestrations.
+   * Integrates Plan-based execution and collaborative state.
    */
   async execute(request: NexusRequest): Promise<NexusResult> {
     const startTime = Date.now();
     this.state.totalRequests++;
 
-    // Ensure initialized
-    if (!this.state.initialized) {
-      await this.initialize();
-    }
-
-    const metadata: NexusMetadata = {
-      totalDuration: 0,
-      agentsSpawned: 0,
-      agentsSucceeded: 0,
-      providersAttempted: [],
-      regenerations: 0,
-      learningUpdated: false,
-    };
+    if (!this.state.initialized) await this.initialize();
 
     try {
-      // Budget check before starting execution
       const budgetCheck = await tokenBudgetManager.checkBudgetAvailability();
-      if (!budgetCheck.allowed) {
-        throw new Error(`Budget Execution Blocked: ${budgetCheck.reason}`);
+      if (!budgetCheck.allowed) throw new Error(`Budget Blocked: ${budgetCheck.reason}`);
+
+      const brandKit = await loadBrandKit();
+      const memoryContext = await buildMemoryContext();
+      const governorState = await loadGovernorState();
+
+      if (governorState.currentMode === 'failsafe') {
+        throw new Error('System is in failsafe mode');
       }
 
-      // Step 1: Build memory context
-      const memoryContext = await this.state.memoryManager.buildContext(request.userInput);
+      const plan = await createOrchestrationPlan(request.userInput, request.taskType as any);
+      let regenerations = 0;
+      let finalResult = null;
 
-      // Step 2: Select provider dynamically
-      const provider = await this.state.providerRouter.selectProvider({
-        taskType: request.taskType,
-        forceProvider: request.forceProvider,
-      });
-      metadata.providersAttempted.push(provider.id);
+      while (regenerations < 3) {
+        const execution = await this.runPlanExecution(plan, memoryContext, brandKit, request);
+        const validation = await this.state.governor.validate(execution.combinedContent, { platform: request.platform });
+        const decision = await makeGovernorDecision(validation, { regenerationCount: regenerations });
 
-      // Step 3: Select and spawn agents based on task type
-      const selectedAgents = this.selectAgentsForTask(request.taskType, request.maxAgents || 4);
-      metadata.agentsSpawned = selectedAgents.length;
-
-      // Step 4: Build execution context
-      const blackboard = new AgentBlackboard(`req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
-      const executionContext: AgentExecutionContext = {
-        userInput: request.userInput,
-        memoryContext,
-        platform: request.platform || 'twitter',
-        customInstructions: request.customInstructions,
-        provider,
-        blackboard,
-        perceptionService,
-      };
-
-      // Step 5: Collaborative Execution Pipeline
-      
-      // Phase 1: Analysis & Observation (Strategists/Hybrid)
-      const analysisAgents = selectedAgents.filter(a => ['strategist', 'hybrid'].includes(a.getRole()));
-      await Promise.all(analysisAgents.map(agent => this.executeAgent(agent, executionContext)));
-
-      // Phase 2: Generation (Writers/Hooks)
-      const generationAgents = selectedAgents.filter(a => ['writer', 'hook', 'hybrid'].includes(a.getRole()));
-      const generationOutputs = await Promise.all(
-        generationAgents.map(agent => this.executeAgent(agent, executionContext))
-      );
-
-      // Phase 3: Refinement (Critics/Optimizers)
-      const refinementAgents = selectedAgents.filter(a => ['critic', 'optimizer'].includes(a.getRole()));
-      const refinementOutputs = await Promise.all(
-        refinementAgents.map(agent => this.executeAgent(agent, executionContext))
-      );
-
-      // Phase 4: Genetic Synthesis (Combine the best of all worlds)
-      const synthesisAgent = this.state.activeAgents.get('optimizer') || new SynthesisAgent(); 
-      // Note: Using a synthesis agent to la-la a final version based on all previous outputs
-      const synthesisContext = {
-        ...executionContext,
-        previousContent: generationOutputs.map(o => o.content).join('\\n---\\n'),
-      };
-      const finalOutput = await this.executeAgent(new SynthesisAgent(), synthesisContext);
-
-      const agentOutputs = [...generationOutputs, ...refinementOutputs, finalOutput];
-      const successfulOutputs = agentOutputs.filter(o => o.success);
-      metadata.agentsSucceeded = successfulOutputs.length;
-
-       // Handle no successful outputs with fallback
-       if (successfulOutputs.length === 0) {
-         console.warn('[NexusCore] All primary agents failed. Attempting fallback to base provider...');
-         
-          const fallbackProvider = await this.state.providerRouter.getFallbackProvider(provider.id);
-          const fallbackOutput = fallbackProvider
-            ? await this.executeAgent(new HybridAgent(), executionContext)
-            : await this.executeAgent(new WriterAgent(), executionContext);
-         
-         if (!fallbackOutput.success) {
-           throw new Error('All agents and fallbacks failed to produce output');
-         }
-         
-         successfulOutputs.push(fallbackOutput);
-         metadata.agentsSucceeded = 1;
-       }
-
-      // Step 6: Score all outputs
-      const scoredOutputs = await this.scoreOutputs(successfulOutputs);
-
-      // Step 7: Select best output
-      let bestOutput = this.selectBestOutput(scoredOutputs);
-
-      // Step 8: Governor validation loop
-      let governorValidation = await this.state.governor.validate(bestOutput.content, {
-        platform: request.platform,
-        taskType: request.taskType,
-      });
-
-      // Regeneration loop if governor rejects
-      while (!governorValidation.approved && metadata.regenerations < 3) {
-        metadata.regenerations++;
-        
-        // Apply governor feedback and regenerate
-        const feedbackContext = {
-          ...executionContext,
-          governorFeedback: governorValidation.feedback,
-          previousContent: bestOutput.content,
-        };
-
-        // Use critic agent to improve
-        const criticAgent = this.state.activeAgents.get('critic') || new CriticAgent();
-        const improvedOutput = await this.executeAgent(criticAgent, feedbackContext);
-
-        if (improvedOutput.success) {
-          const scored = await this.scoreOutputs([improvedOutput]);
-          bestOutput = scored[0];
-          governorValidation = await this.state.governor.validate(bestOutput.content, {
-            platform: request.platform,
-            taskType: request.taskType,
-          });
+        if (decision.approved) {
+          finalResult = { content: execution.combinedContent, outputs: execution.outputs, validation };
+          break;
         }
 
-        // Try provider fallback if still failing
-        if (!governorValidation.approved && metadata.regenerations >= 2) {
-          const fallbackProvider = await this.state.providerRouter.getFallbackProvider(provider.id);
-          if (fallbackProvider) {
-            metadata.providersAttempted.push(fallbackProvider.id);
-            executionContext.provider = fallbackProvider;
-          }
+        if (decision.action === 'regenerate') {
+          regenerations++;
+          // Trigger partial plan invalidation based on governor feedback
+          plan.subtasks.forEach(t => { if(t.status === 'completed') t.status = 'pending'; });
+          continue;
         }
+        break;
       }
 
-      // Step 9: Update learning system
-      if (governorValidation.approved && bestOutput.viralScore && bestOutput.viralScore.total >= 70) {
+      const resultContent = finalResult?.content || '';
+      const resultOutputs = finalResult?.outputs || [];
+      const resultValidation = finalResult?.validation || { approved: false, feedback: 'Rejected' };
+
+      const scoredOutputs = await this.scoreOutputs(resultOutputs);
+      const bestOutput = this.selectBestOutput(scoredOutputs);
+
+      if (resultValidation.approved && bestOutput.viralScore && bestOutput.viralScore.total >= 70) {
         await this.state.learningSystem.recordSuccess(bestOutput, request);
-        metadata.learningUpdated = true;
       }
 
-      // Step 10: Update agent performance
       await this.updateAgentPerformance(scoredOutputs, bestOutput);
 
-      metadata.totalDuration = Date.now() - startTime;
-      this.state.totalSuccesses++;
-
       return {
-        success: governorValidation.approved,
-        output: bestOutput.content,
+        success: resultValidation.approved,
+        output: resultContent,
         score: bestOutput.viralScore?.total || 0,
         allOutputs: scoredOutputs,
         selectedAgent: bestOutput.agentId,
-        provider: provider.id,
-        governorValidation,
+        provider: 'unified-core',
+        governorValidation: resultValidation,
         memoryContext,
-        metadata,
-      };
-
-    } catch (error) {
-      metadata.totalDuration = Date.now() - startTime;
-      this.state.lastError = error instanceof Error ? error.message : 'Unknown error';
-
-      return {
-        success: false,
-        output: '',
-        score: 0,
-        allOutputs: [],
-        selectedAgent: '',
-        provider: metadata.providersAttempted[0] || 'none',
-        governorValidation: {
-          approved: false,
-          score: 0,
-          issues: [{ type: 'error', severity: 'critical', message: this.state.lastError }],
-          feedback: 'System error occurred',
+        metadata: {
+          totalDuration: Date.now() - startTime,
+          agentsSpawned: resultOutputs.length,
+          agentsSucceeded: resultOutputs.filter(o => o.success).length,
+          providersAttempted: ['unified-core'],
+          regenerations,
+          learningUpdated: true,
         },
-        memoryContext: { brandMemory: null, contentHistory: [], performanceLogs: [], agentLogs: [] },
-        metadata,
       };
-    }
-  }
-
-  /**
-   * Select appropriate agents based on task type
-   */
-  private selectAgentsForTask(taskType: string, maxAgents: number): BaseAgent[] {
-    const allAgents = Array.from(this.state.activeAgents.values());
-    
-    const taskAgentMap: Record<string, string[]> = {
-      content: ['writer', 'hook', 'critic', 'optimizer'],
-      strategy: ['strategist', 'critic', 'hybrid'],
-      hook: ['hook', 'writer', 'hybrid'],
-      critique: ['critic', 'optimizer'],
-      full: ['strategist', 'writer', 'hook', 'critic', 'optimizer', 'hybrid'],
-      optimize: ['optimizer', 'critic'],
-    };
-
-    const requiredRoles = taskAgentMap[taskType] || taskAgentMap.full;
-    
-    const selectedAgents = allAgents
-      .filter(agent => requiredRoles.includes(agent.getRole()))
-      .sort((a, b) => b.getPerformanceScore() - a.getPerformanceScore())
-      .slice(0, maxAgents);
-
-    return selectedAgents;
-  }
-
-  /**
-   * Execute a single agent with error handling
-   */
-  private async executeAgent(
-    agent: BaseAgent, 
-    context: AgentExecutionContext
-  ): Promise<AgentOutput> {
-    try {
-      const output = await agent.execute(context);
-      return output;
     } catch (error) {
-      return {
-        agentId: agent.getId(),
-        agentRole: agent.getRole(),
-        content: '',
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        reasoning: 'Agent execution failed',
-        metadata: {},
-      };
+      this.state.lastError = error instanceof Error ? error.message : 'Unknown error';
+      return this.createErrorResult(error);
     }
   }
 
-  /**
-   * Score all outputs using the Viral Scoring Engine
-   */
-  private async scoreOutputs(outputs: AgentOutput[]): Promise<AgentOutput[]> {
-    const scoredOutputs = await Promise.all(
-      outputs.map(async output => {
-        const viralScore = await this.state.scoringEngine.score(output.content);
-        return { ...output, viralScore };
-      })
-    );
+  private async runPlanExecution(plan: OrchestrationPlan, memoryContext: any, brandKit: BrandKit | null, request: NexusRequest) {
+    const outputs: AgentOutput[] = [];
+    const taskOutputs = new Map<string, AgentOutput>();
+    const blackboard = new AgentBlackboard(plan.id);
 
-    return scoredOutputs.sort((a, b) => 
-      (b.viralScore?.total || 0) - (a.viralScore?.total || 0)
-    );
-  }
+    for (const group of plan.parallelGroups) {
+      const groupTasks = plan.subtasks.filter(t => group.includes(t.id));
+      const results = await Promise.all(groupTasks.map(async (task) => {
+        const agent = await getAgentByRole(task.type as any) || new HybridAgent();
+        const surgicalBrand = this.getSurgicalBrandContext(agent.getRole(), brandKit);
+        
+        const context: AgentExecutionContext = {
+          userInput: request.userInput,
+          memoryContext,
+          platform: request.platform || 'twitter',
+          customInstructions: request.customInstructions,
+          provider: await this.state.providerRouter.selectProvider({ taskType: 'content' }),
+          blackboard,
+        };
 
-  /**
-   * Select the best output based on viral score and agent performance
-   */
-  private selectBestOutput(scoredOutputs: AgentOutput[]): AgentOutput {
-    if (scoredOutputs.length === 0) {
-      throw new Error('No outputs to select from');
+        const output = await this.executeAgent(agent, context);
+        taskOutputs.set(task.id, output);
+        outputs.push(output);
+        return output;
+      }));
     }
 
-    // Top score with agent performance weight
-    const weighted = scoredOutputs.map(output => {
-      const agent = this.state.activeAgents.get(output.agentId);
-      const agentBonus = agent ? agent.getPerformanceScore() * 0.1 : 0;
-      return {
-        output,
-        finalScore: (output.viralScore?.total || 0) + agentBonus,
-      };
-    });
-
-    weighted.sort((a, b) => b.finalScore - a.finalScore);
-    return weighted[0].output;
-  }
-
-  /**
-   * Update agent performance based on output scores
-   */
-  private async updateAgentPerformance(
-    allOutputs: AgentOutput[], 
-    selectedOutput: AgentOutput
-  ): Promise<void> {
-    for (const output of allOutputs) {
-      const agent = this.state.activeAgents.get(output.agentId);
-      if (!agent) continue;
-
-      const wasSelected = output.agentId === selectedOutput.agentId;
-      const score = output.viralScore?.total || 0;
-
-      await agent.recordPerformance({
-        score,
-        wasSelected,
-        timestamp: new Date().toISOString(),
-      });
-
-      // Trigger self-optimization if score is low
-      if (score < 60) {
-        await agent.selfOptimize();
-      }
-    }
-  }
-
-  /**
-   * Get system status
-   */
-  getStatus(): {
-    initialized: boolean;
-    agentCount: number;
-    totalRequests: number;
-    successRate: number;
-    lastError: string | null;
-  } {
     return {
-      initialized: this.state.initialized,
-      agentCount: this.state.activeAgents.size,
-      totalRequests: this.state.totalRequests,
-      successRate: this.state.totalRequests > 0 
-        ? (this.state.totalSuccesses / this.state.totalRequests) * 100 
-        : 100,
-      lastError: this.state.lastError,
+      combinedContent: selectBestOutput(outputs)?.content || '',
+      outputs,
     };
   }
 
-  /**
-   * Get all active agents
-   */
-  getAgents(): BaseAgent[] {
-    return Array.from(this.state.activeAgents.values());
+  private getSurgicalBrandContext(role: AgentRole, brandKit: BrandKit | null): string {
+    if (!brandKit) return '';
+    const parts: string[] = [];
+    switch (role) {
+      case 'planner':
+      case 'identity':
+        parts.push(`Brand: ${brandKit.brandName}\nNiche: ${brandKit.niche}\nUSP: ${brandKit.uniqueSellingPoint}`);
+        break;
+      case 'generator':
+      case 'writer':
+        parts.push(`Tone: ${brandKit.tone}\nUSP: ${brandKit.uniqueSellingPoint}`);
+        break;
+      default:
+        parts.push(`Brand: ${brandKit.brandName}\nTone: ${brandKit.tone}`);
+    }
+    return parts.join('\n');
   }
 
-  /**
-   * Add a custom agent
-   */
-  addAgent(agent: BaseAgent): void {
-    this.state.activeAgents.set(agent.getId(), agent);
+  private async executeAgent(agent: BaseAgent, context: AgentExecutionContext): Promise<AgentOutput> {
+    try {
+      return await agent.execute(context);
+    } catch (error) {
+      return { agentId: agent.getId(), agentRole: agent.getRole(), content: '', success: false, error: String(error), reasoning: 'Failed', metadata: {} };
+    }
   }
 
-  /**
-   * Remove an agent
-   */
-  removeAgent(agentId: string): boolean {
-    return this.state.activeAgents.delete(agentId);
+  private async scoreOutputs(outputs: AgentOutput[]): Promise<AgentOutput[]> {
+    const scored = await Promise.all(outputs.map(async o => ({ ...o, viralScore: await this.state.scoringEngine.score(o.content) })));
+    return scored.sort((a, b) => (b.viralScore?.total || 0) - (a.viralScore?.total || 0));
   }
 
-  /**
-   * Get learning insights
-   */
-  async getLearningInsights() {
-    return this.state.learningSystem.getInsights();
+  private selectBestOutput(scoredOutputs: AgentOutput[]): AgentOutput {
+    if (scoredOutputs.length === 0) throw new Error('No outputs');
+    return scoredOutputs[0];
   }
 
-  /**
-   * Get provider router for external access
-   */
-  getProviderRouter(): ProviderRouter {
-    return this.state.providerRouter;
+  private async updateAgentPerformance(all: AgentOutput[], best: AgentOutput) {
+    for (const o of all) {
+      const agent = this.state.activeAgents.get(o.agentId);
+      if (!agent) continue;
+      await agent.recordPerformance({ score: o.viralScore?.total || 0, wasSelected: o.agentId === best.agentId, timestamp: new Date().toISOString() });
+    }
   }
 
-  /**
-   * Get governor system for external access
-   */
-  getGovernor(): GovernorSystem {
-    return this.state.governor;
+  private createErrorResult(error: any): NexusResult {
+    return {
+      success: false,
+      output: '',
+      score: 0,
+      allOutputs: [],
+      selectedAgent: '',
+      provider: 'none',
+      governorValidation: { approved: false, score: 0, issues: [], feedback: String(error) },
+      memoryContext: {} as any,
+      metadata: { totalDuration: 0, agentsSpawned: 0, agentsSucceeded: 0, providersAttempted: [], regenerations: 0, learningUpdated: false },
+    };
   }
 
-  /**
-   * Get memory manager for external access
-   */
-  getMemoryManager(): MemoryManager {
-    return this.state.memoryManager;
+  // Singleton and State management
+  static getInstance(): NexusCore {
+    if (!NexusCore.instance) NexusCore.instance = new NexusCore();
+    return NexusCore.instance;
   }
 
-  /**
-   * Reset the system state (for testing)
-   */
-  reset(): void {
-    this.state.initialized = false;
-    this.state.activeAgents.clear();
-    this.state.totalRequests = 0;
-    this.state.totalSuccesses = 0;
-    this.state.lastError = null;
+  async initialize(): Promise<void> {
+    if (this.state.initialized) return;
+    await Promise.all([
+      this.state.providerRouter.initialize(),
+      this.state.governor.initialize(),
+      this.state.memoryManager.initialize(),
+      this.state.learningSystem.initialize(),
+      trendScoutService.initialize(),
+    ]);
+    this.spawnDefaultAgents();
+    this.state.initialized = true;
+  }
+
+  private spawnDefaultAgents(): void {
+    const agents = [new StrategistAgent(), new WriterAgent(), new HookAgent(), new CriticAgent(), new OptimizerAgent(), new HybridAgent(), new SynthesisAgent()];
+    agents.forEach(a => this.state.activeAgents.set(a.getId(), a));
   }
 }
 
-// Export singleton instance
 export const nexusCore = NexusCore.getInstance();

@@ -5,6 +5,7 @@ import './globals.css'
 import { Providers } from './providers'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 import { Toaster } from 'sonner'
+import GlobalErrorBoundary from '@/components/GlobalErrorBoundary'
 
 const runtimeBootstrap = `
 (() => {
@@ -92,9 +93,11 @@ export default function RootLayout({
             NexusAI requires JavaScript to run.
           </div>
         </noscript>
-        <Providers>
-          {children}
-        </Providers>
+        <GlobalErrorBoundary>
+          <Providers>
+            {children}
+          </Providers>
+        </GlobalErrorBoundary>
         <Toaster />
         <ServiceWorkerRegister />
         {process.env.NODE_ENV === 'production' && <Analytics />}

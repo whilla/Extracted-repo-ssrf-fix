@@ -13,6 +13,7 @@ import {
   setActiveChatModel,
   setPuterFallbackDisabled,
 } from './providerControl';
+import { providerRegistry } from './providerAdapters';
 
 // Available models - including custom provider options
 export const AVAILABLE_MODELS: AIModel[] = [

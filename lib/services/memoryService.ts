@@ -50,7 +50,9 @@ export async function loadBrandKit(): Promise<BrandKit | null> {
   if (kvBrand) {
     try {
       return typeof kvBrand === 'string' ? JSON.parse(kvBrand) : kvBrand as BrandKit;
-    } catch {}
+    } catch (parseError) {
+      console.warn('[loadBrandKit] Failed to parse KV brand kit:', parseError instanceof Error ? parseError.message : 'Unknown error');
+    }
   }
 
   // Fall back to file system
@@ -92,7 +94,17 @@ export async function deleteDraft(id: string): Promise<boolean> {
   return deleteFile(path);
 }
 
-export async function listDrafts(): Promise<ContentDraft[]> {
+export interface ListOptions {
+  limit?: number;
+  offset?: number;
+  sortBy?: 'updated' | 'created' | 'id';
+  sortOrder?: 'asc' | 'desc';
+}
+
+const DEFAULT_LIST_LIMIT = 50;
+
+export async function listDrafts(options: ListOptions = {}): Promise<ContentDraft[]> {
+  const { limit = DEFAULT_LIST_LIMIT, offset = 0, sortBy = 'updated', sortOrder = 'desc' } = options;
   const cloudDrafts = await listCloudDrafts().catch(() => []);
   const files = await listFiles(PATHS.drafts);
   const draftsById = new Map<string, ContentDraft>();
@@ -113,10 +125,16 @@ export async function listDrafts(): Promise<ContentDraft[]> {
     }
   }
   
-  // Sort by updated date descending
-  return Array.from(draftsById.values()).sort((a, b) => 
-    new Date(b.updated).getTime() - new Date(a.updated).getTime()
-  );
+  const allDrafts = Array.from(draftsById.values());
+  const sorted = allDrafts.sort((a, b) => {
+    const aVal = sortBy === 'updated' ? new Date(a.updated).getTime() : 
+             sortBy === 'created' ? new Date(a.created).getTime() : a.id.localeCompare(b.id);
+    const bVal = sortBy === 'updated' ? new Date(b.updated).getTime() : 
+             sortBy === 'created' ? new Date(b.created).getTime() : b.id.localeCompare(a.id);
+    return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+  });
+  
+  return sorted.slice(offset, offset + limit);
 }
 
 // Published Content
