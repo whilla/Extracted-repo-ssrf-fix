@@ -1,0 +1,91 @@
+export const dynamic = "force-dynamic";
+import { NextResponse, type NextRequest } from 'next/server';
+import { intelligentChat, analyzeScheduling } from '@/lib/services/intelligentChatService';
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { message, history, platform, taskType, customContext } = body;
+
+    if (!message || typeof message !== 'string') {
+      return jsonError('Message is required.', 400);
+    }
+
+    // Check if this is a scheduling request
+    const isSchedulingRequest = 
+      message.toLowerCase().includes('schedule') ||
+      message.toLowerCase().includes('post at') ||
+      message.toLowerCase().includes('when should') ||
+      message.toLowerCase().includes('best time');
+
+    if (isSchedulingRequest && platform) {
+      // Extract content to schedule from message
+      const content = message
+        .replace(/schedule/i, '')
+        .replace(/when should i post/i, '')
+        .replace(/best time to post/i, '')
+        .replace(/post at/i, '')
+        .trim();
+
+      if (content) {
+        const scheduleAnalysis = await analyzeScheduling(content, [platform]);
+        
+        return NextResponse.json({
+          response: `Based on your content and ${platform}'s best practices:\n\n${scheduleAnalysis.reasoning}\n\n**Recommended**: Post on ${platform} at ${scheduleAnalysis.suggestedTimes[platform] || 'your audience peak times'}`,
+          reasoning: scheduleAnalysis.reasoning,
+          suggestions: [
+            `Confirm this schedule?`,
+            `Adjust the time?`,
+            `Schedule for multiple platforms?`,
+          ],
+          scheduling: scheduleAnalysis,
+          brandUsed: true,
+        });
+      }
+    }
+
+    // Normal intelligent chat
+    const chatHistory = Array.isArray(history) 
+      ? history.map((h: any) => ({
+          role: h.role || 'user',
+          content: h.content || h.message || '',
+        }))
+      : [];
+
+    const result = await intelligentChat(message, chatHistory, {
+      platform,
+      taskType,
+      customContext,
+    });
+
+    return NextResponse.json({
+      response: result.response,
+      reasoning: result.reasoning,
+      suggestions: result.suggestions,
+      brandUsed: result.brandUsed,
+      context: result.context,
+    });
+
+  } catch (error) {
+    console.error('[AgentChat] Error:', error);
+    return jsonError(error instanceof Error ? error.message : 'Chat failed.', 500);
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    status: 'ready',
+    capabilities: [
+      'Brand-aware responses',
+      'Step-by-step reasoning',
+      'Proactive suggestions',
+      'Smart scheduling analysis',
+      'Content optimization',
+    ],
+    brandContext: 'automatically loaded from brand_kit',
+  });
+}
