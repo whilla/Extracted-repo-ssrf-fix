@@ -179,132 +179,35 @@ export class MultiModalPerceptionService {
   }
 
   private async analyzeDocument(data: any): Promise<AssetObservation> {
+    // Use Vision AI directly for all documents - more reliable for all PDF types
     return await this.callWithRetry(async () => {
-      let extractedText = '';
-      let pageCount = 0;
-      let hasImages = false;
-      let metadata: any = null;
-      let textExtractionFailed = false;
-
-      try {
-        const pdfjsLib = await import('pdfjs-dist');
-        
-        // Use CDN worker for better compatibility
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-
-        const pdfData = typeof data === 'string' ? Buffer.from(data, 'base64') : Buffer.from(data);
-        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
-        pageCount = pdf.numPages;
-        pageCount = pdf.numPages;
-
-        if (pdf.numPages > 0) {
-          try {
-            const pdfMeta = await pdf.getMetadata();
-            metadata = pdfMeta.info;
-          } catch {}
-        }
-
-        const maxPages = Math.min(pageCount, 20);
-        const textParts: string[] = [];
-
-        for (let i = 1; i <= maxPages; i++) {
-          const page = await pdf.getPage(i);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str)
-            .join(' ')
-            .trim();
-          
-          if (pageText) {
-            textParts.push(`[Page ${i}/${pageCount}]\n${pageText}`);
-          }
-
-          try {
-            const ops = await page.getOperatorList();
-            if (ops.fnArray && ops.fnArray.some((fn: any) => fn === pdfjsLib.OPS.paintImageXObject || fn === pdfjsLib.OPS.paintJpegXObject)) {
-              hasImages = true;
-            }
-          } catch {}
-        }
-
-        extractedText = textParts.join('\n\n');
-
-        if (pageCount > maxPages) {
-          extractedText += `\n\n[Note: Document has ${pageCount - maxPages} more pages that were not processed. Showing first ${maxPages} pages.]`;
-        }
-      } catch (pdfError) {
-        console.warn('[MultiModalPerception] PDF parsing failed, trying as text file:', pdfError);
-        extractedText = typeof data === 'string' ? data : Buffer.from(data).toString('utf-8');
-      }
-
-      if (!extractedText || extractedText.length < 50) {
-        // PDF is likely scanned/image-based - use vision AI to analyze it
-        console.warn('[MultiModalPerception] No text extracted, using vision AI to analyze PDF as image');
-        
-        const imagePayload = typeof data === 'string' ? data : Buffer.from(data).toString('base64');
-        
-        const analysis = await universalChat(
-          `You are analyzing a PDF document that appears to be scanned or image-based (no selectable text).
-
-Analyze this document page by page and provide:
-1. What you see on each page - text, diagrams, images, layout
-2. Main topics and themes
-3. Key information, data, or insights
-4. Document structure (chapters, sections, bullets, etc.)
-5. Any visual elements like charts, graphs, or images
-6. Overall purpose and message of the document
-
-Be thorough and extract as much detail as possible from the visual content.`,
-          { 
-            model: 'gpt-4o',
-            attachments: [{ type: 'image', data: imagePayload }]
-          }
-        );
-
-        return {
-          assetType: 'document',
-          description: analysis,
-          detectedElements: ['Scanned PDF', 'Image-based', 'Visual analysis'],
-          sentiment: this.extractSentiment(analysis),
-          technicalNotes: `Analyzed ${pageCount > 0 ? pageCount : 1} page(s) via Vision LLM (no text layer)`,
-        };
-      }
-
-      const truncatedText = extractedText.length > 15000 
-        ? extractedText.substring(0, 15000) + '\n\n[Document truncated - showing first 15000 characters]'
-        : extractedText;
-
+      const imagePayload = typeof data === 'string' ? data : Buffer.from(data).toString('base64');
+      
       const analysis = await universalChat(
-        `Analyze this document thoroughly. 
+        `You are analyzing a PDF/document. 
 
-DOCUMENT CONTENT:
-${truncatedText}
+Analyze this document thoroughly and provide:
+1. Full content summary - what the document says
+2. Main topics and themes
+3. Document structure (chapters, sections, headings, bullets)
+4. Key information, data, insights, or rules presented
+5. Any visual elements like charts, graphs, images, tables
+6. Overall purpose and message
+7. Target audience if identifiable
 
-${metadata ? `METADATA: ${JSON.stringify(metadata)}` : ''}
-
-Provide:
-1. Main topics and themes
-2. Document structure (chapters, sections, key headings)
-3. Key information or data presented
-4. Any tables, charts, or visual elements
-5. Overall purpose and message
-6. Tone and style`,
-        { model: 'gpt-4o' }
+Extract as much detail as possible.`,
+        { 
+          model: 'gpt-4o',
+          attachments: [{ type: 'image', data: imagePayload }]
+        }
       );
-
-      const detectedElements: string[] = [];
-      if (hasImages) detectedElements.push('Images/Graphics');
-      if (pageCount > 1) detectedElements.push(`${pageCount} Pages`);
-      if (metadata?.Title) detectedElements.push('Has Title');
-      if (extractedText.includes('\t') || extractedText.includes('|')) detectedElements.push('Tables');
-      detectedElements.push('Text Content');
 
       return {
         assetType: 'document',
         description: analysis,
-        detectedElements: detectedElements.length > 0 ? detectedElements : ['Document'],
+        detectedElements: this.extractElements(analysis),
         sentiment: this.extractSentiment(analysis),
-        technicalNotes: `Parsed ${pageCount > 0 ? pageCount : 1} page(s) via PDF.js text extraction${hasImages ? ', contains images' : ''}`,
+        technicalNotes: 'Analyzed via Vision LLM (GPT-4o)',
       };
     }, 'document');
   }
