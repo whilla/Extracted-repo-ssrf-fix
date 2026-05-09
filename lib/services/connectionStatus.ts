@@ -24,26 +24,22 @@ export function useConnectionStatus(): UseConnectionStatusReturn {
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   const checkConnection = useCallback(async () => {
-    consecutiveFailures++;
-    
-    if (consecutiveFailures > OFFLINE_THRESHOLD) {
-      if (lastStatus !== 'offline') {
-        lastStatus = 'offline';
-        setStatus('offline');
-        console.warn('[ConnectionStatus] Puter appears offline after', consecutiveFailures, 'consecutive failures');
-      }
-      return;
-    }
-
     const puterReady = isPuterAvailable();
     
     if (puterReady) {
       consecutiveFailures = 0;
       lastStatus = 'online';
       setStatus('online');
-    } else if (consecutiveFailures >= OFFLINE_THRESHOLD) {
-      lastStatus = 'offline';
-      setStatus('offline');
+    } else {
+      consecutiveFailures++;
+      
+      if (consecutiveFailures > OFFLINE_THRESHOLD) {
+        if (lastStatus !== 'offline') {
+          lastStatus = 'offline';
+          setStatus('offline');
+          console.warn('[ConnectionStatus] Puter appears offline after', consecutiveFailures, 'consecutive failures');
+        }
+      }
     }
     
     lastCheckedTime = new Date();

@@ -92,36 +92,42 @@ export function useAgentMonitor(options: UseAgentMonitorOptions = {}) {
   const fetchMetrics = useCallback(async () => {
     try {
       const res = await fetch('/api/monitor?type=metrics');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.data) {
         setMetrics(Array.isArray(json.data) ? json.data : []);
       }
     } catch (e) {
       console.error('[useAgentMonitor] Fetch metrics error:', e);
+      throw e;
     }
   }, []);
 
   const fetchHealth = useCallback(async () => {
     try {
       const res = await fetch('/api/monitor?type=health');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.data) {
         setHealth(Array.isArray(json.data) ? json.data : []);
       }
     } catch (e) {
       console.error('[useAgentMonitor] Fetch health error:', e);
+      throw e;
     }
   }, []);
 
   const fetchTimeline = useCallback(async (limit = 50) => {
     try {
       const res = await fetch(`/api/monitor?type=timeline&limit=${limit}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.data) {
         setTimeline(json.data);
       }
     } catch (e) {
       console.error('[useAgentMonitor] Fetch timeline error:', e);
+      throw e;
     }
   }, []);
 

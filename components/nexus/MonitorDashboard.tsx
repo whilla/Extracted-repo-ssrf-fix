@@ -48,9 +48,11 @@ export function MonitorDashboard() {
   const [serviceSummary, setServiceSummary] = useState<ServiceSummary | null>(null);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const [systemRes, alertsRes, servicesRes, metricsRes] = await Promise.all([
         fetch('/api/monitor/system'),
@@ -58,6 +60,10 @@ export function MonitorDashboard() {
         fetch('/api/monitor/system?type=services'),
         fetch('/api/monitor/system?type=history'),
       ]);
+
+      if (!systemRes.ok || !alertsRes.ok || !servicesRes.ok || !metricsRes.ok) {
+        throw new Error('Failed to fetch monitoring data');
+      }
 
       const systemData = await systemRes.json();
       const alertsData = await alertsRes.json();
@@ -68,8 +74,10 @@ export function MonitorDashboard() {
       setServiceSummary(servicesData.summary);
       setMetrics(metricsData.history);
       setLastUpdate(new Date().toISOString());
-    } catch (error) {
-      console.error('[MonitorDashboard] Fetch error:', error);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      console.error('[MonitorDashboard] Fetch error:', errorMsg);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }

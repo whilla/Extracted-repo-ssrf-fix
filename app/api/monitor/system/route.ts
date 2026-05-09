@@ -10,7 +10,32 @@ import { getMetricsSummary, captureSnapshot, getTimeSeriesData, exportMetricsHis
 
 export const dynamic = 'force-dynamic';
 
+async function authenticateRequest(request: Request): Promise<boolean> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return false;
+  }
+  
+  try {
+    const { createServerClient } = await import('@supabase/ssr');
+    const { cookies } = await import('next/headers');
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, { cookies });
+    const { data: { user } } = await supabase.auth.getUser();
+    return !!user;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: Request) {
+  const isAuthenticated = await authenticateRequest(request);
+  
+  if (!isAuthenticated) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type');
