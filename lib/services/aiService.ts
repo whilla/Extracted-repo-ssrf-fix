@@ -16,16 +16,28 @@ import {
 
 // Available models - including custom provider options
 export const AVAILABLE_MODELS: AIModel[] = [
-  // Puter native models (free)
-  { provider: 'puter', model: 'gpt-5.5', name: 'GPT-5.5', contextWindow: 256000, supportsVision: true },
-  { provider: 'puter', model: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, supportsVision: true },
-  { provider: 'puter', model: 'gpt-4o-mini', name: 'GPT-4o Mini', contextWindow: 128000, supportsVision: true },
-  { provider: 'puter', model: 'claude-sonnet-4-5', name: 'Claude Sonnet', contextWindow: 200000, supportsVision: true },
-  { provider: 'puter', model: 'claude-opus-4', name: 'Claude Opus', contextWindow: 200000, supportsVision: true },
+  // Puter native models (free) - GPT-5.5 and Claude
+  { provider: 'puter', model: 'gpt-5.5', name: 'GPT-5.5 Pro (Puter)', contextWindow: 256000, supportsVision: true },
+  { provider: 'puter', model: 'gpt-4o', name: 'GPT-4o (Puter)', contextWindow: 128000, supportsVision: true },
+  { provider: 'puter', model: 'gpt-4o-mini', name: 'GPT-4o Mini (Puter)', contextWindow: 128000, supportsVision: true },
+  { provider: 'puter', model: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', contextWindow: 200000, supportsVision: true },
+  { provider: 'puter', model: 'claude-opus-4', name: 'Claude Opus 4', contextWindow: 200000, supportsVision: true },
+  // GitHub Models - Full list from models.github.ai
+  { provider: 'githubmodels', model: 'openai/gpt-5', name: 'GPT-5 (GitHub)', contextWindow: 256000, supportsVision: true },
+  { provider: 'githubmodels', model: 'openai/gpt-4.5', name: 'GPT-4.5 (GitHub)', contextWindow: 256000, supportsVision: true },
+  { provider: 'githubmodels', model: 'openai/gpt-4o', name: 'GPT-4o (GitHub)', contextWindow: 128000, supportsVision: true },
+  { provider: 'githubmodels', model: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (GitHub)', contextWindow: 128000, supportsVision: true },
+  { provider: 'githubmodels', model: 'anthropic/claude-3.5-sonnet', name: 'Claude Sonnet (GitHub)', contextWindow: 200000, supportsVision: true },
+  { provider: 'githubmodels', model: 'meta-llama/Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B (GitHub)', contextWindow: 128000, supportsVision: false },
+  { provider: 'githubmodels', model: 'meta-llama/Llama-3.1-405B-Instruct', name: 'Llama 3.1 405B (GitHub)', contextWindow: 128000, supportsVision: false },
+  { provider: 'githubmodels', model: 'microsoft/Phi-4-mini', name: 'Phi-4 Mini (GitHub)', contextWindow: 128000, supportsVision: false },
+  { provider: 'githubmodels', model: 'deepseek/DeepSeek-V3', name: 'DeepSeek V3 (GitHub)', contextWindow: 64000, supportsVision: false },
+  { provider: 'githubmodels', model: 'mistralai/Mixtral-8x7B-Instruct-v0.1', name: 'Mixtral 8x7B (GitHub)', contextWindow: 32000, supportsVision: false },
+  { provider: 'githubmodels', model: 'google/gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash (GitHub)', contextWindow: 1000000, supportsVision: true },
   // Custom key providers
-  { provider: 'gemini', model: 'gemini-1.5-pro', name: 'Gemini Pro', contextWindow: 1000000, supportsVision: true },
+  { provider: 'gemini', model: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash', contextWindow: 1000000, supportsVision: true },
+  { provider: 'gemini', model: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', contextWindow: 1000000, supportsVision: true },
   { provider: 'openrouter', model: 'openrouter/auto', name: 'OpenRouter Auto', contextWindow: 128000, supportsVision: true },
-  { provider: 'githubmodels', model: 'openai/gpt-4o', name: 'GitHub Models GPT-4o', contextWindow: 128000, supportsVision: false },
   { provider: 'bytez', model: 'Qwen/Qwen3-4B', name: 'Bytez Qwen 3 4B', contextWindow: 128000, supportsVision: false },
   { provider: 'poe', model: 'Claude-Sonnet-4.6', name: 'Poe Claude Sonnet 4.6', contextWindow: 200000, supportsVision: true },
   { provider: 'groq', model: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Groq)', contextWindow: 128000, supportsVision: false },
@@ -43,7 +55,7 @@ const MODEL_PRIORITY = ['gpt-5.5', 'gpt-4o', 'claude-sonnet-4-5'];
 const PROVIDER_DEFAULT_MODELS = {
   puter: ['gpt-5.5', 'gpt-4o', 'claude-sonnet-4-5', 'gpt-4o-mini'],
   openrouter: ['openrouter/auto'],
-  githubmodels: ['openai/gpt-4o'],
+  githubmodels: ['openai/gpt-4.5', 'openai/gpt-4o', 'openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'meta-llama/Llama-3.3-70B-Instruct', 'meta-llama/Llama-3.1-405B-Instruct', 'microsoft/Phi-4-mini', 'deepseek/DeepSeek-V3', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
   poe: ['Claude-Sonnet-4.6'],
   bytez: ['Qwen/Qwen3-4B'],
   groq: ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
@@ -323,6 +335,9 @@ async function callOpenAICompatibleChat(
     return await callServerChatProxy(provider, messages, model);
   } catch (error) {
     serverProxyError = error;
+    if (isAbortError(error)) {
+      throw new Error(`${provider} request timed out (30s). Try a different provider or check your connection.`);
+    }
     if (!canFallbackToBrowserProvider(error) || !apiKey) {
       throw error;
     }
@@ -347,11 +362,20 @@ async function callOpenAICompatibleChat(
       model,
       messages: normalizeChatMessages(messages),
     }),
+    signal: AbortSignal.timeout(30000), // 30 second timeout
   });
 
   if (!response.ok) {
     throw new Error(await response.text());
   }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || data.output?.[0]?.content?.[0]?.text || '';
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && (error.name === 'AbortException' || error.name === 'TimeoutError');
+}
 
   const data = await response.json();
   return data.choices?.[0]?.message?.content || data.output?.[0]?.content?.[0]?.text || '';
