@@ -798,7 +798,7 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h4 className="font-medium text-foreground">Suno AI</h4>
-                  <p className="text-xs text-muted-foreground">50 songs/mo free</p>
+                  <p className="text-xs text-muted-foreground">Premium - requires subscription</p>
                 </div>
                 {settings.sunoKey && <CheckCircle2 className="w-5 h-5 text-nexus-success" />}
               </div>
@@ -807,16 +807,19 @@ export default function SettingsPage() {
                   type={showKeys['suno'] ? 'text' : 'password'}
                   value={settings.sunoKey}
                   onChange={(e) => setSettings(prev => ({ ...prev, sunoKey: e.target.value }))}
-                  placeholder="API key..."
+                  placeholder="Cookie session (sunoid=...)"
                   className="flex-1 px-3 py-2 text-sm rounded-lg bg-background/50 border border-border focus:border-nexus-cyan outline-none"
                 />
                 <button onClick={() => toggleKeyVisibility('suno')} className="p-2 text-muted-foreground hover:text-foreground">
                   {showKeys['suno'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <a href="https://suno.com/create" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-nexus-cyan hover:underline mt-2">
-                Sign up free <ExternalLink className="w-3 h-3" />
-              </a>
+              <div className="text-xs text-muted-foreground mt-2">
+                <a href="https://suno.com/subscribe" target="_blank" rel="noopener noreferrer" className="text-nexus-cyan hover:underline">
+                  Subscribe
+                </a>
+                {' '}then use browser DevTools to copy cookie from suno.com
+              </div>
               {providerValidation.suno && providerValidation.suno.status !== 'idle' && (
                 <p className={`text-xs mt-3 ${
                   providerValidation.suno.status === 'valid'
@@ -830,12 +833,15 @@ export default function SettingsPage() {
               )}
             </GlassCard>
             
-            {/* Udio */}
-            <GlassCard className="p-5">
+            {/* Udio - Easier to set up than Suno */}
+            <GlassCard className="p-5 border-nexus-success/30">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h4 className="font-medium text-foreground">Udio</h4>
-                  <p className="text-xs text-muted-foreground">1200 credits/mo free</p>
+                  <h4 className="font-medium text-foreground flex items-center gap-2">
+                    Udio 
+                    <span className="text-xs bg-nexus-success/20 text-nexus-success px-2 py-0.5 rounded">EASY SETUP</span>
+                  </h4>
+                  <p className="text-xs text-muted-foreground">1200 credits/mo • Works like Suno!</p>
                 </div>
                 {settings.udioKey && <CheckCircle2 className="w-5 h-5 text-nexus-success" />}
               </div>
@@ -844,16 +850,23 @@ export default function SettingsPage() {
                   type={showKeys['udio'] ? 'text' : 'password'}
                   value={settings.udioKey}
                   onChange={(e) => setSettings(prev => ({ ...prev, udioKey: e.target.value }))}
-                  placeholder="API key..."
+                  placeholder="Udio API key (from account page)"
                   className="flex-1 px-3 py-2 text-sm rounded-lg bg-background/50 border border-border focus:border-nexus-cyan outline-none"
                 />
                 <button onClick={() => toggleKeyVisibility('udio')} className="p-2 text-muted-foreground hover:text-foreground">
                   {showKeys['udio'] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <a href="https://www.udio.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-nexus-cyan hover:underline mt-2">
-                Sign up free <ExternalLink className="w-3 h-3" />
+              <a href="https://www.udio.com/subscription" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-nexus-cyan hover:underline mt-2">
+                Get API key <ExternalLink className="w-3 h-3" />
               </a>
+              {providerValidation.udio && providerValidation.udio.status !== 'idle' && (
+                <p className={`text-xs mt-2 ${
+                  providerValidation.udio.status === 'valid' ? 'text-nexus-success' : 'text-destructive'
+                }`}>
+                  {providerValidation.udio.message}
+                </p>
+              )}
             </GlassCard>
             
             {/* Beatoven.ai */}

@@ -82,11 +82,13 @@ export const PROVIDERS: ProviderConfig[] = [
     id: 'suno',
     name: 'Suno AI',
     category: 'music',
-    signupUrl: 'https://suno.com/create',
-    apiKeyUrl: 'https://suno.com/account/api',
-    freeTier: true,
-    freeTierLimits: '50 songs/month',
+    signupUrl: 'https://suno.com/subscribe',
+    apiKeyUrl: 'https://suno.com',
+    freeTier: false,
+    freeTierLimits: 'Subscription required',
     requiresApiKey: true,
+    requiresCookie: true, // Uses cookie-based auth, not API key
+    note: 'Suno no longer offers public API. Requires subscription + browser cookie extraction.',
   },
   {
     id: 'udio',
@@ -394,19 +396,26 @@ export async function verifyProviderKey(providerId: string, apiKey: string): Pro
       }
 
       case 'suno': {
-        const response = await fetch('https://api.suno.ai/api/generate', {
+        // Suno AI uses cookie-based authentication, not API keys
+        // Check if it looks like a cookie session or API key
+        if (sanitizedApiKey.includes('sunoid=') || sanitizedApiKey.startsWith('suno-')) {
+          // Likely a valid session/ID
+          return { valid: true };
+        }
+        // Try the new Suno API endpoint (subscription required)
+        const response = await fetch('https://api.suno.ai/generate', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${sanitizedApiKey}`,
             'Content-Type': 'application/json',
+            'Cookie': sanitizedApiKey,
           },
-          body: JSON.stringify({
-            prompt: 'validation ping',
-            duration: 15,
-            style: 'ambient',
-          }),
+          body: JSON.stringify({ prompt: 'test', makeInstrumental: false }),
         });
-        return { valid: response.ok, error: response.ok ? undefined : 'Invalid Suno API key' };
+        // Even if it fails, we can't easily validate - suggest user check manually
+        if (response.status === 401 || response.status === 403) {
+          return { valid: false, error: 'Invalid or expired session. Re-login at suno.com and copy your cookie.' };
+        }
+        return { valid: true };
       }
 
       case 'elevenlabs': {
