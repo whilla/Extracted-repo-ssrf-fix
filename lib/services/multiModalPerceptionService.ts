@@ -187,8 +187,9 @@ export class MultiModalPerceptionService {
 
       try {
         const pdfjsLib = await import('pdfjs-dist');
-        const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.mjs?url');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
+        
+        // Use CDN worker for better compatibility
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
         const pdfData = typeof data === 'string' ? Buffer.from(data, 'base64') : Buffer.from(data);
         const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
