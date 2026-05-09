@@ -1,27 +1,23 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-
-// Check if Supabase is configured before importing
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { type NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/middleware';
 
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next();
-  
-  if (!supabaseUrl || !supabaseAnonKey) {
+  const supabaseResponse = createClient(request);
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
     console.error('Middleware error: Supabase authentication is not configured');
     return new Response('Authentication service unavailable', { status: 503 });
   }
-  
-  try {
-    const { createMiddlewareClient } = await import('@supabase/auth-helpers-nextjs');
-    const supabase = createMiddlewareClient({ req: request, res: response });
-    const { data: { session } } = await supabase.auth.getSession();
 
-    // Redirect to login if no session and not on public routes
+  try {
+    const { data: { session } } = await supabaseResponse.auth.getSession();
+
     if (!session && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
       const redirectResponse = NextResponse.redirect(new URL('/login', request.url));
-      response.headers.forEach((value, key) => {
+      supabaseResponse.headers.forEach((value, key) => {
         if (key.toLowerCase() === 'set-cookie') {
           redirectResponse.headers.append('Set-Cookie', value);
         }
@@ -29,10 +25,9 @@ export async function middleware(request: NextRequest) {
       return redirectResponse;
     }
 
-    // Redirect to dashboard if session exists and user is on login page
     if (session && request.nextUrl.pathname.startsWith('/login')) {
       const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url));
-      response.headers.forEach((value, key) => {
+      supabaseResponse.headers.forEach((value, key) => {
         if (key.toLowerCase() === 'set-cookie') {
           redirectResponse.headers.append('Set-Cookie', value);
         }
@@ -44,10 +39,10 @@ export async function middleware(request: NextRequest) {
     if (!request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
-    return response;
+    return supabaseResponse;
   }
 
-  return response;
+  return supabaseResponse;
 }
 
 export const config = {
