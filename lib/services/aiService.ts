@@ -378,10 +378,6 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && (error.name === 'AbortException' || error.name === 'TimeoutError');
 }
 
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || data.output?.[0]?.content?.[0]?.text || '';
-}
-
 async function getConfiguredProviders(): Promise<RoutedProvider[]> {
   const keyChecks = await Promise.all([
     getProviderApiKey('openrouter'),

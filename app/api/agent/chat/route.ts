@@ -72,18 +72,18 @@ export async function POST(request: NextRequest) {
         }))
       : [];
 
-    const result = await intelligentChat(message, chatHistory, {
+    const chatResult = await intelligentChat(message, chatHistory, {
       platform,
       taskType,
       customContext,
     });
 
     return NextResponse.json({
-      response: result.response,
-      reasoning: result.reasoning,
-      suggestions: result.suggestions,
-      brandUsed: result.brandUsed,
-      context: result.context,
+      response: chatResult.response,
+      reasoning: chatResult.reasoning,
+      suggestions: chatResult.suggestions,
+      brandUsed: chatResult.brandUsed,
+      context: chatResult.context,
     });
 
   } catch (error) {
