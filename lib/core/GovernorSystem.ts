@@ -184,6 +184,13 @@ export class GovernorSystem {
     // SEMANTIC VALIDATION: use LLM to analyze quality and robotic patterns
     let semanticResult: { approved: boolean; score: number; feedback: string; issues: GovernorIssue[] } | null = null;
     try {
+      const escapedContent = content
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t');
+      
       const semanticPrompt = `You are the Quality Governor for a high-end content platform.
 Analyze the following content for:
 1. Robotic/AI language (e.g. "In conclusion", "Additionally", corporate jargon)
@@ -192,7 +199,7 @@ Analyze the following content for:
 
 Content:
 """
-${content}
+${escapedContent}
 """
 
 Return only a JSON object with:
@@ -208,7 +215,19 @@ Return NO other text.`;
       
       const response = await universalChat(semanticPrompt, { model: 'gpt-4o-mini' });
       const parsed = JSON.parse(response.replace(/```json|```/g, ''));
-      semanticResult = { approved: parsed.approved, score: parsed.score, feedback: parsed.feedback, issues: parsed.issues };
+      
+      if (typeof parsed.approved !== 'boolean' || typeof parsed.score !== 'number' || typeof parsed.feedback !== 'string') {
+        throw new Error('Invalid semantic result shape');
+      }
+      
+      const safeScore = Math.max(0, Math.min(100, parsed.score));
+      const safeIssues = Array.isArray(parsed.issues) ? parsed.issues.map((i: any) => ({
+        type: i.type || 'quality',
+        severity: i.severity || 'warning',
+        message: i.message || 'Unknown issue'
+      })) : [];
+      
+      semanticResult = { approved: parsed.approved, score: safeScore, feedback: parsed.feedback, issues: safeIssues };
     } catch (e) {
       console.warn('[GovernorSystem] Semantic validation failed, falling back to heuristics:', e);
     }

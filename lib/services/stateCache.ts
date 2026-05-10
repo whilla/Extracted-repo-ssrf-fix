@@ -4,7 +4,7 @@
  * Implements a write-back cache strategy for performance
  */
 
-import { kvGet, kvSet } from './puterService';
+import { kvGet, kvSet, kvDelete } from './puterService';
 
 export class NexusStateCache {
   private cache = new Map<string, any>();
@@ -51,15 +51,25 @@ export class NexusStateCache {
     if (this.dirtyKeys.size === 0) return;
 
     const keysToFlush = Array.from(this.dirtyKeys);
-    this.dirtyKeys.clear();
-
-    await Promise.all(
+    const results = await Promise.allSettled(
       keysToFlush.map(async (key) => {
         const value = this.cache.get(key);
         await kvSet(key, value);
+        return key;
       })
     );
-    console.log(`[StateCache] Flushed ${keysToFlush.length} keys to Puter.js`);
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        this.dirtyKeys.delete(result.value);
+      }
+    }
+
+    const failedCount = results.filter(r => r.status === 'rejected').length;
+    if (failedCount > 0) {
+      console.error(`[StateCache] Failed to flush ${failedCount} keys`);
+    }
+    console.log(`[StateCache] Flushed ${keysToFlush.length - failedCount} keys to Puter.js`);
   }
 
   /**
@@ -68,8 +78,7 @@ export class NexusStateCache {
   async delete(key: string): Promise<void> {
     this.cache.delete(key);
     this.dirtyKeys.delete(key);
-    // We use puterService.kvDelete here via a small utility or import
-    // For now, since we are in the same lib, we can call it if it is exported.
+    await kvDelete(key);
   }
 
   clear(): void {

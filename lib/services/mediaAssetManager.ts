@@ -33,9 +33,23 @@ export class MediaAssetManager {
    * Standardizes any incoming media URL into a formal MediaAsset
    */
   async wrapAsset(url: string, type: MediaAssetType, provider: string, metadata: Record<string, any> = {}): Promise<MediaAsset> {
+    if (!url || typeof url !== 'string') {
+      throw new Error('Invalid URL: must be a non-empty string');
+    }
+    
+    try {
+      new URL(url);
+    } catch {
+      throw new Error(`Invalid URL format: ${url}`);
+    }
+    
+    const validTypes: MediaAssetType[] = ['video', 'audio', 'image'];
+    if (!validTypes.includes(type)) {
+      throw new Error(`Invalid MediaAssetType: ${type}`);
+    }
+    
     const id = `asset_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     
-    // Detect mime type from URL or assume defaults
     let mimeType = 'application/octet-stream';
     if (url.endsWith('.mp3') || url.includes('audio')) mimeType = 'audio/mpeg';
     if (url.endsWith('.mp4') || url.includes('video')) mimeType = 'video/mp4';
@@ -51,7 +65,6 @@ export class MediaAssetManager {
       metadata,
     };
 
-    // Persist the metadata record for future assembly
     await kvSet(`asset_meta_${id}`, JSON.stringify(asset));
     
     return asset;
@@ -62,17 +75,35 @@ export class MediaAssetManager {
    */
   async resolveAsset(assetId: string): Promise<MediaAsset | null> {
     const data = await kvGet(`asset_meta_${assetId}`);
-    return data ? JSON.parse(data) : null;
+    if (!data) return null;
+    
+    try {
+      return JSON.parse(data);
+    } catch (err) {
+      console.error(`[MediaAssetManager] Failed to parse asset ${assetId}:`, err);
+      return null;
+    }
   }
 
   /**
    * Validates if a media asset is actually playable/reachable
    */
-  async validateAsset(asset: MediaAsset): Promise<boolean> {
+  async validateAsset(asset: MediaAsset, options?: { method?: 'HEAD' | 'GET', logger?: any }): Promise<boolean> {
+    const method = options?.method || 'HEAD';
+    const logger = options?.logger;
+    
     try {
-      const response = await fetch(asset.url, { method: 'HEAD' });
-      return response.ok;
-    } catch {
+      const response = await fetch(asset.url, { method });
+      if (response.ok) return true;
+      
+      if (method === 'HEAD' && !response.ok) {
+        const getResponse = await fetch(asset.url, { method: 'GET', headers: { 'Range': 'bytes=0-0' } });
+        return getResponse.ok || getResponse.status === 206;
+      }
+      
+      return false;
+    } catch (err) {
+      logger?.error?.(`[MediaAssetManager] Validation failed for ${asset.url}:`, err);
       return false;
     }
   }

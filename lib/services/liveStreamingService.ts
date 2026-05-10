@@ -262,7 +262,8 @@ export async function startStream(
   await saveSessions(sessions);
 
   // Start real stream monitoring instead of simulation
-  monitorStreamHealth(session.id, config.rtmpUrl || '', config.streamKey || '');
+  monitorStreamHealth(session.id, config.rtmpUrl || '', config.streamKey || '')
+    .catch(err => console.error(`[LiveStream] Monitoring failed for session ${session.id}:`, err));
 
   return session;
 }
@@ -297,11 +298,17 @@ async function monitorStreamHealth(sessionId: string, rtmpUrl: string, streamKey
 
     const session = sessions[index];
 
-    // Check if stream has been active
+    // Check if stream has been active - transition to 'live'
     if (session.status === 'connecting') {
       // In production, would check RTMP server for active stream
-      // For now, we'll transition to 'live' after a brief period if configured
       console.log(`[LiveStream] Stream ${sessionId} is configured to broadcast to ${rtmpUrl}`);
+      // Transition to live after first check
+      await updateStreamStatus(sessionId, 'live');
+    }
+
+    // Clear interval for terminal states
+    if (session.status === 'ended' || session.status === 'paused' || session.status === 'failed') {
+      clearInterval(checkInterval);
     }
   }, 30000);
 
@@ -309,7 +316,7 @@ async function monitorStreamHealth(sessionId: string, rtmpUrl: string, streamKey
   const sessions = await loadSessions();
   const idx = sessions.findIndex(s => s.id === sessionId);
   if (idx !== -1) {
-    sessions[idx].metadata = { ...sessions[idx].metadata, monitorInterval: true };
+    sessions[idx].metadata = { ...sessions[idx].metadata, monitorInterval: checkInterval };
     await saveSessions(sessions);
   }
 }

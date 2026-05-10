@@ -367,7 +367,7 @@ async function generateVideoRunway(description: string): Promise<GenerationResul
         return {
           success: true,
           provider: 'runway',
-          url: statusData.result?.video?.url || '',
+          dataUrl: statusData.result?.video?.url || '',
         };
       } else if (statusData.status === 'FAILED') {
         return {
@@ -416,7 +416,7 @@ async function generateVideoReplicate(description: string): Promise<GenerationRe
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        version: 'de57d061b822e8f8f混乱9e0c7e7a7e7e7e7e7e7e7e',
+        version: 'c77e60ed5ehaac43ba1c65e7e7a65e7e7e7e7e7e',
         input: {
           prompt: description,
           num_frames: 24,
@@ -448,9 +448,20 @@ async function generateVideoReplicate(description: string): Promise<GenerationRe
     // Poll for completion
     let completed = false;
     let resultUrl = '';
+    const maxAttempts = 120;
+    let attempts = 0;
 
     while (!completed) {
+      if (attempts >= maxAttempts) {
+        return {
+          success: false,
+          provider: 'replicate',
+          error: 'Replicate generation timed out after 120 attempts',
+        };
+      }
+      
       await new Promise(resolve => setTimeout(resolve, 3000));
+      attempts++;
 
       const statusResponse = await fetch(predictionUrl, {
         headers: {
@@ -497,7 +508,7 @@ async function generateVideoReplicate(description: string): Promise<GenerationRe
     return {
       success: true,
       provider: 'replicate',
-      url: resultUrl,
+      dataUrl: resultUrl,
     };
   } catch (error) {
     return {

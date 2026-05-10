@@ -34,9 +34,15 @@ export class AgentBlackboard {
       timestamp: new Date().toISOString(),
     });
     
-    // Enhanced Tracing: Log the flow of information
-    const trace = `[BLACKBOARD-TRACE][${this.requestId}] ${observation.agentRole} -> ${observation.type.toUpperCase()}: "${observation.content.slice(0, 100)}${observation.content.length > 100 ? '...' : ''}" (Conf: ${observation.confidence})`;
-    console.log(trace);
+    if (process.env.BLACKBOARD_TRACE === 'true') {
+      const contentStr = typeof observation.content === 'string' ? observation.content : String(observation.content ?? '');
+      const sanitizedContent = contentStr
+        .replace(/([A-Za-z0-9_-]{20})[A-Za-z0-9_-]{4,}/g, '$1****')
+        .replace(/(api[_-]?key|secret|password|token)=["']?[^"'\s]+["']?/gi, '$1=****');
+      const preview = sanitizedContent.slice(0, 100) + (sanitizedContent.length > 100 ? '...' : '');
+      const trace = `[BLACKBOARD-TRACE][${this.requestId}] ${observation.agentRole} -> ${observation.type.toUpperCase()}: "${preview}" (Conf: ${observation.confidence})`;
+      console.log(trace);
+    }
   }
 
   /**

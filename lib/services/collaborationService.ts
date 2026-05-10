@@ -12,16 +12,21 @@ export type UserRole = 'ceo' | 'admin' | 'editor' | 'strategist' | 'viewer';
  * Integrates team roles with real-time CRDT synchronization.
  */
 export async function initCollaborationSession(docId: string, user: { name: string, color: string, role: UserRole }) {
-  // 1. Set up the CRDT document connection
-  const ydoc = await collaborationManager.connectToDocument(docId);
-  
-  // 2. Set user presence (awareness)
-  collaborationManager.setAwareness(docId, { ...user, role: user.role });
-  
-  return {
-    ydoc,
-    manager: collaborationManager
-  };
+  try {
+    // 1. Set up the CRDT document connection
+    const ydoc = await collaborationManager.connectToDocument(docId);
+    
+    // 2. Set user presence (awareness)
+    collaborationManager.setAwareness(docId, { ...user });
+    
+    return {
+      ydoc,
+      manager: collaborationManager
+    };
+  } catch (error) {
+    console.error(`Failed to initialize collaboration session for docId ${docId}:`, error);
+    throw new Error(`Collaboration session initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 export async function createInvite(email: string, role: UserRole) {

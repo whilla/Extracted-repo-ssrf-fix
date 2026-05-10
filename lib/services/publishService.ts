@@ -192,20 +192,29 @@ export async function publishPost(params: {
     const postIds: Record<string, string> = {};
     const errors: Record<string, string> = {};
     let totalSuccess = false;
+    let completeSuccess = true;
 
     for (const platform of platforms) {
-      const result = await DirectPublishService.publish(platform, text, media || []);
+      try {
+        const result = await DirectPublishService.publish(platform, text, media || []);
 
-      if (result.success && result.postId) {
-        postIds[platform] = result.postId;
-        totalSuccess = true;
-      } else {
-        errors[platform] = result.error || 'Unknown error';
+        if (result.success && result.postId) {
+          postIds[platform] = result.postId;
+          totalSuccess = true;
+        } else {
+          errors[platform] = result.error || 'Unknown error';
+          completeSuccess = false;
+        }
+      } catch (err) {
+        errors[platform] = err instanceof Error ? err.message : 'Unknown error';
+        completeSuccess = false;
       }
     }
 
     const publishResult = {
       success: totalSuccess,
+      partialSuccess: totalSuccess && !completeSuccess,
+      completeSuccess,
       postIds,
       errors,
     };

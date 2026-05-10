@@ -224,8 +224,13 @@ export class NexusCore {
             blackboard: new AgentBlackboard(plan.id),
           };
           const vOutput = await this.executeAgent(visualCritic, vContext);
-          if (!vOutput.success || vOutput.content.includes('FAIL')) {
-            visualValidation = { approved: false, feedback: vOutput.content };
+          const content = vOutput.content || '';
+          const isFailure = !vOutput.success || 
+            content.toUpperCase().includes('FAIL') || 
+            content.toUpperCase().includes('REJECT') ||
+            content.toUpperCase().includes('NEEDS REGENERATION');
+          if (isFailure) {
+            visualValidation = { approved: false, feedback: content };
           }
         }
 

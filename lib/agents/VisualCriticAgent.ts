@@ -53,13 +53,12 @@ export class VisualCriticAgent extends BaseAgent {
     
     // The brief is usually in the blackboard or the userInput
     const brief = context.blackboard?.getByType('observation')
-      .find(obs => obs.agentRole === 'visual')?.content || context.userInput;
+      .find(obs => obs.agentRole === 'visual')?.content || context.userInput || '';
       
-    // The assetAnalysis would come from a vision-capable provider
     const assetAnalysis = context.customInstructions || 'Analyze the attached image/video.';
 
-    prompt = prompt.replace('{{brief}}', brief);
-    prompt = prompt.replace('{{assetAnalysis}}', assetAnalysis);
+    prompt = prompt.replaceAll('{{brief}}', brief);
+    prompt = prompt.replaceAll('{{assetAnalysis}}', assetAnalysis);
 
     return prompt;
   }

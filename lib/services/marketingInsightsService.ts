@@ -4,6 +4,14 @@ import { analyticsIngestionService } from './analyticsIngestionService';
 import { BrandKit } from '@/lib/types';
 import { logger } from '@/lib/utils/logger';
 
+export interface AnalyticsData {
+  topContent: any[];
+  pillarPerformance: Record<string, number>;
+  engagementRates: Record<string, number>;
+  retentionRates?: Record<string, number>;
+  audienceDemographics?: Record<string, any>;
+}
+
 /**
  * MarketingInsightsService
  * Transforms raw analytics and engagement data into a high-level marketing strategy.
@@ -54,7 +62,7 @@ export class MarketingInsightsService {
     Content: ${JSON.stringify(topContent)}`;
     
     const response = await aiService.chat(prompt, 'claude-sonnet-4-5');
-    return response.split('\\n').filter(line => line.trim().startsWith('•') || line.trim().startsWith('-'));
+    return response.split(/\r?\n/).filter(line => line.trim().startsWith('•') || line.trim().startsWith('-'));
   }
 
   private async identifyContentGaps(brandKit: BrandKit, pillarPerformance: Record<string, number>): Promise<string[]> {
@@ -91,7 +99,7 @@ export class MarketingInsightsService {
     `;
     
     const response = await aiService.chat(prompt, 'claude-sonnet-4-5');
-    return response.split('\\n').filter(line => line.trim().length > 0);
+    return response.split(/\r?\n/).filter(line => line.trim().length > 0);
   }
 
   private calculateTrend(rates: Record<string, number>): string {

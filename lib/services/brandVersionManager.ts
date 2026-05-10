@@ -38,10 +38,10 @@ export class BrandVersionManager {
     await writeFile(`${this.VERSIONS_PATH}/${versionId}.json`, JSON.stringify(version, null, 2));
     
     // Update the current pointer to the latest version
-    await writeFile(`${PATHS.brandKit}/current_version.json`, { 
+    await writeFile(`${PATHS.brandKit}/current_version.json`, JSON.stringify({ 
       currentVersionId: versionId, 
       updatedAt: version.timestamp 
-    });
+    }, null, 2));
 
     return versionId;
   }
@@ -83,13 +83,13 @@ export class BrandVersionManager {
     if (!version) return false;
 
     // 1. Restore the main brandkit.json
-    await writeFile(PATHS.brandKit, JSON.stringify(version.kit, null, 2));
+    await writeFile(`${PATHS.brandKit}/brandkit.json`, JSON.stringify(version.kit, null, 2));
     
     // 2. Update the current version pointer
-    await writeFile(`${PATHS.brandKit}/current_version.json`, { 
+    await writeFile(`${PATHS.brandKit}/current_version.json`, JSON.stringify({ 
       currentVersionId: versionId, 
       updatedAt: new Date().toISOString() 
-    });
+    }, null, 2));
 
     return true;
   }

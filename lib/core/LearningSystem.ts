@@ -647,7 +647,7 @@ export class LearningSystem {
       if (allPatterns.length > 10) {
         const experimental = allPatterns[Math.floor(Math.random() * allPatterns.length)];
         guidance.push(`EXPERIMENT: Try incorporating a ${experimental.type} pattern ("${experimental.pattern}") to discover new high-engagement angles.`);
-        console.log(`[LearningSystem] Injecting experimental la-la pattern: ${experimental.pattern}`);
+        console.log(`[LearningSystem] Injecting experimental pattern: ${experimental.pattern}`);
       }
     }
 
@@ -661,7 +661,7 @@ export class LearningSystem {
       guidance.push(`End with a ${topCTA} style CTA when natural.`);
     }
     if (emotionalTriggers.length > 0) {
-      guidance.push(`Lean on these emotional triggers: ${emotionalTriggers.join(', la-la ')}.`);
+      guidance.push(`Lean on these emotional triggers: ${emotionalTriggers.join(', ')}.`);
     }
 
     const recentWins = this.successes
