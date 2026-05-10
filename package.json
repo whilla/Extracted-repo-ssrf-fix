@@ -7,8 +7,8 @@
     "node": "20.x"
   },
   "scripts": {
-    "dev": "next dev", 
-    "build": "next build --webpack", 
+    "dev": "next dev",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint app components hooks lib types *.mjs",
     "lint:fix": "eslint app components hooks lib types *.mjs --fix",
@@ -36,8 +36,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
-    "yjs": "^13.6.10",
-    "y-websocket": "^1.5.0",
     "@next/swc-wasm-nodejs": "16.2.0",
     "@next/swc-wasm-web": "16.2.0",
     "@radix-ui/react-accordion": "1.2.12",
@@ -67,10 +65,11 @@
     "@radix-ui/react-toggle": "1.1.10",
     "@radix-ui/react-toggle-group": "1.1.11",
     "@radix-ui/react-tooltip": "1.2.8",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.4",
-    "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@vercel/analytics": "1.6.1",
+    "@vercel/speed-insights": "^2.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.1.1",
@@ -93,6 +92,8 @@
     "swr": "^2.4.1",
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
+    "y-websocket": "^1.5.0",
+    "yjs": "^13.6.10",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -111,7 +112,10 @@
     "typescript": "5.7.3"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx}": ["eslint --fix", "prettier --write"],
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
     "*.{json,md,yml,yaml}": "prettier --write"
   }
 }
