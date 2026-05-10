@@ -1,5 +1,3 @@
-'use client';
-
 import { aiService } from './aiService';
 import { multiAgentService } from './multiAgentService';
 import { browserTools } from './browserToolsWrapper'; // We'll create this wrapper next
