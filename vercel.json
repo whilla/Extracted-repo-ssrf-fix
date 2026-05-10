@@ -1,4 +1,3 @@
 {
-  "buildCommand": "npm run build",
-  "ignoreBuildErrors": true
+  "buildCommand": "npm run build"
 }
