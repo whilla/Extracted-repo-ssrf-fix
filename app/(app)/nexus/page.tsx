@@ -97,7 +97,7 @@ export default function NexusAIDashboard() {
 
   // Handle generation
   const handleQuickDiscovery = async (type: 'trends' | 'location') => {
-    setIsGenerating(true);
+    if (isGenerating) return;
     try {
       if (type === 'trends') {
         const res = await fetch(`/api/discovery/trends?query=${encodeURIComponent(userInput || 'AI Trends')}`);
@@ -121,8 +121,6 @@ export default function NexusAIDashboard() {
       }
     } catch (error) {
       toast.error('Discovery failed');
-    } finally {
-      setIsGenerating(false);
     }
   };
 
@@ -138,7 +136,7 @@ export default function NexusAIDashboard() {
     // Add to history
     setGenerationHistory(prev => [{
       id: Date.now().toString(),
-      content: result.output,
+      content: result.output || '',
       score: result.score,
       platform: selectedPlatform,
       timestamp: new Date().toISOString(),
@@ -419,7 +417,7 @@ export default function NexusAIDashboard() {
                         <NeonButton
                           variant="ghost"
                           size="sm"
-                          onClick={() => copyToClipboard(lastResult.output)}
+                          onClick={() => copyToClipboard(lastResult.output || '')}
                           icon={<Copy className="h-4 w-4" />}
                         >
                           Copy
