@@ -135,10 +135,36 @@ export async function evaluateMoodApproval(mood: string, content: string): Promi
   return content.toLowerCase().includes(mood.toLowerCase());
 }
 
-export async function getGovernorDashboard() {
+export async function getGovernorDashboard(): Promise<{
+  config: GovernorConfig;
+  state: GovernorState;
+  systemHealth: string;
+}> {
   const status = governorSystem.getStatus();
   const history = governorSystem.getValidationHistory();
-  return { status, history };
+  const config = await loadGovernorConfig();
+  
+  const consecutiveRejections = status.consecutiveRejections || 0;
+  const approvalRate = status.totalValidations > 0 
+    ? (status.totalValidations - consecutiveRejections) / status.totalValidations * 100 
+    : 100;
+  
+  let systemHealth: string = 'healthy';
+  if (consecutiveRejections > 5 || approvalRate < 50) {
+    systemHealth = 'critical';
+  } else if (consecutiveRejections > 2 || approvalRate < 70) {
+    systemHealth = 'warning';
+  }
+  
+  const state: GovernorState = {
+    mode: status.mode,
+    consecutiveRejections,
+    failsafeTriggered: consecutiveRejections >= config.failsafeThreshold,
+    totalValidations: status.totalValidations,
+    approvalRate,
+  };
+  
+  return { config, state, systemHealth };
 }
 
 export async function validateEvolutionProposal(proposal: any): Promise<{
