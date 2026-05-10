@@ -1,5 +1,6 @@
 import { kvGet } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { nativeProviders } from './nativeProviders';
 
 export interface DirectPublishResult {
   success: boolean;
@@ -8,7 +9,7 @@ export interface DirectPublishResult {
   platformUrl?: string;
 }
 
-export type SocialPlatform = 'twitter' | 'linkedin' | 'instagram' | 'facebook' | 'youtube' | 'tiktok' | 'threads' | 'pinterest' | 'twitch';
+export type SocialPlatform = 'twitter' | 'linkedin' | 'instagram' | 'facebook' | 'youtube' | 'tiktok' | 'threads' | 'pinterest' | 'twitch' | 'discord' | 'reddit' | 'whatsapp';
 
 /**
  * DirectPublishService provides first-party API integrations for social platforms
@@ -38,6 +39,13 @@ export class DirectPublishService {
         return this.publishToPinterest(text, mediaUrls);
       case 'twitch':
         return this.publishToTwitch(text, mediaUrls);
+      case 'discord':
+        return nativeProviders.publishDiscord(text, mediaUrls[0]);
+      case 'reddit':
+        return nativeProviders.publishReddit(text, text.split('\n')[0].slice(0, 100));
+      case 'whatsapp':
+        const recipient = await kvGet('whatsapp_broadcast_list');
+        return nativeProviders.publishWhatsApp(text, recipient || '');
       default:
         return { success: false, error: `Platform ${platform} not supported` };
     }

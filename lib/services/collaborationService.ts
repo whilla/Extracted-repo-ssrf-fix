@@ -1,45 +1,141 @@
-// Collaboration Service
-// Manages RBAC, invites, and team synchronization.
+'use client';
 
-import { kvGet, kvSet } from './puterService';
-import { generateId } from './memoryService';
-import { collaborationManager } from './collaborationManager';
+import { createClient } from '@supabase/supabase-js';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
-export type UserRole = 'ceo' | 'admin' | 'editor' | 'strategist' | 'viewer';
+// Initialize Supabase client (assuming env vars are available)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+export interface CollaborationUser {
+  id: string;
+  name: string;
+  color: string;
+  cursorPosition: { line: number; ch: number };
+}
+
+export interface CollaborationEvent {
+  type: 'CONTENT_UPDATE' | 'CURSOR_MOVE' | 'USER_JOINED' | 'USER_LEFT';
+  payload: any;
+  userId: string;
+}
 
 /**
- * Initialize collaboration session for a specific content draft.
- * Integrates team roles with real-time CRDT synchronization.
+ * CollaborationService manages real-time synchronization and presence
+ * for content drafts using Supabase Realtime.
  */
-export async function initCollaborationSession(docId: string, user: { name: string, color: string, role: UserRole }) {
-  try {
-    // 1. Set up the CRDT document connection
-    const ydoc = await collaborationManager.connectToDocument(docId);
-    
-    // 2. Set user presence (awareness)
-    collaborationManager.setAwareness(docId, { ...user });
-    
-    return {
-      ydoc,
-      manager: collaborationManager
-    };
-  } catch (error) {
-    console.error(`Failed to initialize collaboration session for docId ${docId}:`, error);
-    throw new Error(`Collaboration session initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-}
+export const collaborationService = {
+  channels: new Map<string, RealtimeChannel>(),
 
-export async function createInvite(email: string, role: UserRole) {
-  const inviteId = generateId();
-  const invites = await kvGet('nexus_invites') || '[]';
-  const list = JSON.parse(invites);
-  list.push({ inviteId, email, role, createdAt: new Date().toISOString() });
-  await kvSet('nexus_invites', JSON.stringify(list));
-  return `https://nexusai.app/join?id=${inviteId}`;
-}
+  /**
+   * Joins a collaborative session for a specific draft.
+   */
+  async joinDraftSession(draftId: string, user: CollaborationUser, onUpdate: (event: CollaborationEvent) => void) {
+    const channelName = `draft:${draftId}`;
+    
+    if (this.channels.has(channelName)) {
+      return this.channels.get(channelName);
+    }
 
-export async function validateInvite(id: string) {
-  const invites = await kvGet('nexus_invites') || '[]';
-  const list = JSON.parse(invites);
-  return list.find((i: any) => i.inviteId === id);
-}
+    const channel = supabase.channel(channelName, {
+      config: {
+        presence: {
+          key: user.id,
+        },
+      },
+    });
+
+    channel
+      .on('broadcast', { event: 'update' }, ({ payload }) => {
+        onUpdate({
+          type: payload.type,
+          payload: payload.data,
+          userId: payload.userId,
+        });
+      })
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        onUpdate({
+          type: 'USER_JOINED',
+          payload: state,
+          userId: 'system',
+        });
+      })
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        onUpdate({
+          type: 'USER_JOINED',
+          payload: newPresences,
+          userId: 'system',
+        });
+      })
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        onUpdate({
+          type: 'USER_LEFT',
+          payload: leftPresences,
+          userId: 'system',
+        });
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          // Sync current user presence
+          await channel.track({
+            name: user.name,
+            color: user.color,
+            cursorPosition: user.cursorPosition,
+          });
+        }
+      });
+
+    this.channels.set(channelName, channel);
+    return channel;
+  },
+
+  /**
+   * Broadcasts a content change to all collaborators.
+   */
+  async broadcastUpdate(draftId: string, userId: string, newContent: string) {
+    const channel = this.channels.get(`draft:${draftId}`);
+    if (!channel) throw new Error('Not joined to draft session');
+
+    await channel.send({
+      type: 'broadcast',
+      event: 'update',
+      payload: {
+        type: 'CONTENT_UPDATE',
+        userId,
+        data: newContent,
+      },
+    });
+  },
+
+  /**
+   * Broadcasts a cursor movement update.
+   */
+  async broadcastCursorMove(draftId: string, userId: string, position: { line: number; ch: number }) {
+    const channel = this.channels.get(`draft:${draftId}`);
+    if (!channel) throw new Error('Not joined to draft session');
+
+    await channel.send({
+      type: 'broadcast',
+      event: 'update',
+      payload: {
+        type: 'CURSOR_MOVE',
+        userId,
+        data: position,
+      },
+    });
+  },
+
+  /**
+   * Leaves the collaborative session.
+   */
+  async leaveDraftSession(draftId: string) {
+    const channel = this.channels.get(`draft:${draftId}`);
+    if (channel) {
+      await channel.unsubscribe();
+      this.channels.delete(`draft:${draftId}`);
+    }
+  },
+};

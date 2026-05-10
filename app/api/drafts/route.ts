@@ -1,102 +1,65 @@
-export const dynamic = "force-dynamic";
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
 
-async function getAuthenticatedUser() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return null;
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const draftId = searchParams.get('id');
+
+  if (!draftId) {
+    return NextResponse.json({ error: 'Draft ID is required' }, { status: 400 });
   }
-  
-  try {
-    const { createServerClient } = await import('@supabase/ssr');
-    const { cookies } = await import('next/headers');
-    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, { cookies });
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
-  } catch {
-    return null;
+
+  const { data, error } = await supabase
+    .from('drafts')
+    .select('*')
+    .eq('id', draftId)
+    .single();
+
+  if (error || !data) {
+    return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
   }
+
+  return NextResponse.json({ success: true, data });
 }
 
-function getSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    return null;
-  }
-  
-  return createClient(supabaseUrl, supabaseKey);
-}
-
-export async function GET() {
+export async function POST(req: NextRequest) {
   try {
-    const user = await getAuthenticatedUser();
-    
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const body = await req.json();
+    const { title, content, owner_id, id } = body;
+
+    if (!title || !content) {
+      return NextResponse.json({ error: 'Title and content are required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseClient();
-    
-    if (!supabase) {
-      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+    let result;
+    if (id) {
+      // Update existing draft
+      const { data, error } = await supabase
+        .from('drafts')
+        .update({ content, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select();
+      
+      if (error) throw error;
+      result = data;
+    } else {
+      // Create new draft
+      const { data, error } = await supabase
+        .from('drafts')
+        .insert({ title, content, owner_id })
+        .select();
+      
+      if (error) throw error;
+      result = data;
     }
 
-    const { data, error } = await supabase
-      .from('drafts')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false });
-
-    if (error) throw error;
-
-    return NextResponse.json(data);
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to fetch drafts' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const user = await getAuthenticatedUser();
-
-    if (!user) {
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
-      }
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const supabase = getSupabaseClient();
-    
-    if (!supabase) {
-      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
-    }
-
-    const body = await request.json();
-    
-    // Ensure the draft is associated with the authenticated user
-    const payload = { ...body, user_id: user.id };
-
-    const { data, error } = await supabase
-      .from('drafts')
-      .insert([payload])
-      .select();
-
-    if (error) throw error;
-
-    return NextResponse.json(data[0], { status: 201 });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to create draft' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: true, data: result[0] });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

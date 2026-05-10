@@ -47,7 +47,10 @@ export type Platform =
   | 'facebook' 
   | 'threads' 
   | 'youtube' 
-  | 'pinterest';
+  | 'pinterest'
+  | 'discord'
+  | 'reddit'
+  | 'whatsapp';
 
 export interface PlatformConfig {
   id: Platform;
