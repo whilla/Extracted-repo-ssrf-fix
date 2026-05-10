@@ -441,6 +441,8 @@ export async function processPayment(
       if (confirmData.status === 'succeeded') {
         await updateOrderStatus(orderId, 'paid', transactionId);
         
+        const products = await loadProducts();
+        
         // Create subscriptions for recurring products
         if (order.items.some(item => {
           const product = products.find(p => p.id === item.productId);

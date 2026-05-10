@@ -297,7 +297,7 @@ async function startRealTraining(jobId: string, modelId: string) {
   
   try {
     // Update job status to training
-    await updateJobStatus(jobId, 'training');
+    await updateJobStatus(jobId, 'training', 0);
 
     // Call the appropriate fine-tuning API
     const result = await callFineTuningAPI(provider, model, dataset);

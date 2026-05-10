@@ -828,12 +828,13 @@ export async function generateVideo(options: VideoGenerationOptions): Promise<Me
 
   let lastError: Error | null = null;
 
+  const totalProviders = attempts.length;
+
   for (let i = 0; i < attempts.length; i++) {
     const provider = attempts[i];
     try {
       let videoResult: GeneratedVideo;
       const isFallback = i > 0;
-      const totalProviders = attempts.length;
       
       // Report progress at start of each provider attempt
       options.onProgress?.(isFallback ? `Fallback: Trying ${provider}...` : `Generating video with ${provider}...`, Math.round((i / totalProviders) * 90) + 5);

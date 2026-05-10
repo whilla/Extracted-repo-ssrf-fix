@@ -1,5 +1,3 @@
-'use client';
-
 import { kvGet } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
 

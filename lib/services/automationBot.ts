@@ -1,5 +1,6 @@
 import { marketingInsightsService } from './marketingInsightsService';
 import { loadBrandKit } from './memoryService';
+import { kvGet } from './puterService';
 import { logger } from '@/lib/utils/logger';
 
 /**
@@ -10,6 +11,7 @@ import { logger } from '@/lib/utils/logger';
 export class AutomationBot {
   private static instance: AutomationBot;
   private isRunning = false;
+  private _intervalId: NodeJS.Timeout | null = null;
 
   private constructor() {}
 
@@ -29,9 +31,21 @@ export class AutomationBot {
     
     // In a real environment, this would be a CRON job (e.g., via n8n or a GitHub Action)
     // Here we implement a long-running interval for demonstration.
-    setInterval(() => this.runWeeklyStrategyLoop(), 604800000); // Every 7 days
+    this._intervalId = setInterval(() => this.runWeeklyStrategyLoop(), 604800000); // Every 7 days
     
     console.log('[AutomationBot] Background strategic loops activated.');
+  }
+
+  /**
+   * Stop the background automation loop.
+   */
+  stop(): void {
+    if (this._intervalId) {
+      clearInterval(this._intervalId);
+      this._intervalId = null;
+    }
+    this.isRunning = false;
+    console.log('[AutomationBot] Background loops stopped.');
   }
 
   /**

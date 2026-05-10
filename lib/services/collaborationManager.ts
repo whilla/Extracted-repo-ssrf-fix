@@ -134,6 +134,10 @@ export class CollaborationManager {
       }
       this.providers.delete(docId);
     }
+    const doc = this.docs.get(docId);
+    if (doc) {
+      doc.destroy();
+    }
     this.docs.delete(docId);
   }
 
