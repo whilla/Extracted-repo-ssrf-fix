@@ -41,6 +41,7 @@ export interface GovernorConfig {
   roboticPatternPenalty: number;
   repetitionPenalty: number;
   enforcedStructure: boolean;
+  costLimitDaily?: number;
 }
 
 export interface GovernorState {
@@ -51,6 +52,10 @@ export interface GovernorState {
   totalRejections: number;
   lastValidation: string | null;
   failsafeReason: string | null;
+  currentMode?: string;
+  rejectedToday?: number;
+  approvedToday?: number;
+  dailyCost?: number;
 }
 
 export interface ValidationContext {

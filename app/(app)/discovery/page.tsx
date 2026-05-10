@@ -14,6 +14,7 @@ interface TrendItem {
   url: string;
   source: string;
   category: string;
+  country?: string;
 }
 
 interface SearchResult {

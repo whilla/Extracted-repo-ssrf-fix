@@ -101,6 +101,7 @@ export interface NexusResult {
   governorValidation: GovernorValidation;
   memoryContext: MemoryContext;
   metadata: NexusMetadata;
+  output?: string;
 }
 
 export interface NexusMetadata {

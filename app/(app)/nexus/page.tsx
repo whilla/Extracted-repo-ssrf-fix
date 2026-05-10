@@ -35,7 +35,8 @@ import {
   Sparkles,
   Upload,
   File,
-  X
+  X,
+  MapPin
 } from 'lucide-react';
 import { fileProcessor, type ProcessedFile } from '@/lib/services/fileProcessor';
 import type { NexusResult } from '@/lib/core';
@@ -70,6 +71,7 @@ export default function NexusAIDashboard() {
   });
   const [uploadedFiles, setUploadedFiles] = useState<ProcessedFile[]>([]);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [providerHealth, setProviderHealth] = useState<ProviderCapability[]>([]);
 
   const refreshProviderHealth = useCallback(async () => {
