@@ -7,6 +7,27 @@ import { universalChat } from './aiService';
 import type { BrandKit, Platform } from '@/lib/types';
 import { loadBrandKit, generateId } from './memoryService';
 
+function sanitizePromptInput(input: string): string {
+  if (!input) return '';
+  return input
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, ' ')
+    .replace(/\r/g, ' ')
+    .replace(/\t/g, ' ')
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .slice(0, 5000);
+}
+
+function sanitizeJsonString(input: string): string {
+  return input
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .slice(0, 10000);
+}
+
 const EMOJI_MAP: Record<string, string[]> = {
   announcement: ['🚀', '📣', '✨', '🎉'],
   celebration: ['🎊', '🥳', '🎉', '🙌'],
@@ -102,8 +123,8 @@ export async function generatePostDescription(
   const prompt = `Generate a SHORT, engaging description (1-2 sentences max, under 100 chars) for this ${platform} post that highlights its value. 
   Use conversational, catchy tone. ${emoji.length > 0 ? `Include these emojis naturally: ${emoji.join(' ')}` : 'Add relevant emojis if appropriate.'}
   
-  Post content: "${content.slice(0, 200)}..."
-  Brand niche: ${brand?.niche || 'general'}
+  Post content: "${sanitizeJsonString(content.slice(0, 200))}"
+  Brand niche: ${sanitizePromptInput(brand?.niche || 'general')}
   
   Return just the description text, nothing else.`;
 
@@ -246,7 +267,7 @@ export async function generatePostVariations(
   
   const prompt = `Generate ${count} different variations of this ${platform} post.
   
-Original: "${originalPost}"
+Original: "${sanitizeJsonString(originalPost)}"
 
 Requirements:
 1. Each variation should have a different hook/angle
@@ -281,27 +302,21 @@ export async function chatWithAgent(
   const brand = context?.brandKit || await loadBrandKit();
   const messages = context?.recentMessages || [];
   
-  const systemPrompt = context?.purpose === 'content_creation'
-    ? `You are a creative social media expert assistant. Help the user create engaging posts, suggest content ideas, and refine their messaging. Use emojis naturally in your responses when they add value. Be concise but helpful.`
-    : `You are a helpful AI assistant. Answer questions, help with tasks, and provide insights. Use emojis naturally when appropriate. Be conversational and friendly.`;
+  const systemContent = context?.purpose === 'content_creation'
+    ? 'You are a creative social media expert assistant. Help the user create engaging posts, suggest content ideas, and refine their messaging. Use emojis naturally in your responses when they add value. Be concise but helpful.'
+    : 'You are a helpful AI assistant. Answer questions, help with tasks, and provide insights. Use emojis naturally when appropriate. Be conversational and friendly.';
 
-  const prompt = `${systemPrompt}
-
-${messages.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')}
-
-User: ${message}
-
-${messages.length > 0 ? 'Remember to maintain conversation context.' : ''}
-
-Respond in JSON format:
-{
-  "message": "your response",
-  "type": "text|code|list|warning",
-  "suggestions": ["optional follow-up suggestions"]
-}`;
+  const chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: systemContent },
+    ...messages.slice(-10).map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: sanitizePromptInput(m.content),
+    })),
+    { role: 'user', content: sanitizePromptInput(message) },
+  ];
 
   try {
-    const response = await universalChat(prompt, { model: 'gpt-4o', brandKit: brand });
+    const response = await universalChat(chatMessages, { model: 'gpt-4o', brandKit: brand });
     
     let parsed: { message?: string; type?: string; suggestions?: string[] };
     

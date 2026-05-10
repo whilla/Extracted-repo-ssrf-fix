@@ -30,7 +30,7 @@ export interface ServiceCallContext {
 }
 
 const METRICS_KEY = 'service_metrics';
-const ACTIVE_CALLS_KEY = 'service_active_calls';
+const LATENCY_SAMPLES_KEY = 'service_latency_samples';
 const MAX_LATENCY_SAMPLES = 100;
 
 const activeCalls = new Map<string, ServiceCallContext>();
@@ -50,13 +50,49 @@ const serviceNames = [
 
 export type ServiceName = typeof serviceNames[number];
 
+function generateCallId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `call_${crypto.randomUUID()}`;
+  }
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 15);
+  return `call_${timestamp}_${randomPart}`;
+}
+
 async function loadMetrics(): Promise<Record<string, ServiceMetrics>> {
   const data = await kvGet(METRICS_KEY);
-  return data ? JSON.parse(data) : {};
+  if (!data) return {};
+  try {
+    return JSON.parse(data);
+  } catch {
+    console.error('[serviceMonitor] Failed to parse metrics');
+    return {};
+  }
 }
 
 async function saveMetrics(metrics: Record<string, ServiceMetrics>): Promise<void> {
   await kvSet(METRICS_KEY, JSON.stringify(metrics));
+}
+
+async function loadLatencySamples(): Promise<Record<string, number[]>> {
+  const data = await kvGet(LATENCY_SAMPLES_KEY);
+  if (!data) return {};
+  try {
+    return JSON.parse(data);
+  } catch {
+    console.error('[serviceMonitor] Failed to parse latency samples');
+    return {};
+  }
+}
+
+async function saveLatencySamples(samples: Record<string, number[]>): Promise<void> {
+  await kvSet(LATENCY_SAMPLES_KEY, JSON.stringify(samples));
+}
+
+function computePercentile(sorted: number[], percentile: number): number {
+  if (sorted.length === 0) return 0;
+  const index = Math.ceil(sorted.length * percentile) - 1;
+  return sorted[Math.max(0, index)] || 0;
 }
 
 export function startServiceCall(
@@ -64,7 +100,7 @@ export function startServiceCall(
   operation: string,
   metadata?: Record<string, unknown>
 ): string {
-  const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const callId = generateCallId();
   
   activeCalls.set(callId, {
     serviceName,
@@ -81,7 +117,10 @@ export async function endServiceCall(
   result: { success: boolean; error?: string; metadata?: Record<string, unknown> }
 ): Promise<void> {
   const context = activeCalls.get(callId);
-  if (!context) return;
+  if (!context) {
+    console.warn(`[serviceMonitor] endServiceCall: callId ${callId} not found in activeCalls`);
+    return;
+  }
 
   const duration = Date.now() - context.startTime;
   activeCalls.delete(callId);
@@ -110,32 +149,39 @@ export async function endServiceCall(
 
   if (result.success) {
     m.callsSuccess++;
-    m.status = m.callsFailed > 0 ? 'degraded' : 'operational';
   } else {
     m.callsFailed++;
     m.lastError = result.error;
-    m.errorRate = (m.callsFailed / m.callsTotal) * 100;
-    m.status = m.errorRate > 20 ? 'down' : 'degraded';
   }
 
-  const samples = latencySamples.get(serviceName) || [];
-  samples.push(duration);
-  if (samples.length > MAX_LATENCY_SAMPLES) {
-    samples.shift();
+  m.errorRate = m.callsTotal > 0 ? (m.callsFailed / m.callsTotal) * 100 : 0;
+
+  if (m.errorRate > 20) {
+    m.status = 'down';
+  } else if (m.errorRate > 5) {
+    m.status = 'degraded';
+  } else {
+    m.status = 'operational';
   }
+
+  const samples = [...(latencySamples.get(serviceName) || []), duration].slice(-MAX_LATENCY_SAMPLES);
   latencySamples.set(serviceName, samples);
+
+  const persistedSamples = await loadLatencySamples();
+  persistedSamples[serviceName] = samples;
+  await saveLatencySamples(persistedSamples);
 
   if (samples.length > 0) {
     const sorted = [...samples].sort((a, b) => a - b);
     m.averageLatency = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
-    m.p95Latency = sorted[Math.floor(sorted.length * 0.95)] || 0;
-    m.p99Latency = sorted[Math.floor(sorted.length * 0.99)] || 0;
+    m.p95Latency = computePercentile(sorted, 0.95);
+    m.p99Latency = computePercentile(sorted, 0.99);
   }
 
   await saveMetrics(metrics);
 
   await logAuditEvent({
-    eventType: result.success ? 'provider_switched' : 'agent_error',
+    eventType: result.success ? 'service_call_success' : 'service_call_failure',
     actor: 'system',
     action: `${serviceName}.${context.operation}`,
     resource: 'service',
@@ -160,12 +206,12 @@ export function wrapServiceCall<T>(
   const callId = startServiceCall(serviceName, operation, metadata);
   
   return fn()
-    .then(result => {
-      endServiceCall(callId, { success: true, metadata: { resultType: typeof result } });
+    .then(async (result) => {
+      await endServiceCall(callId, { success: true, metadata: { resultType: typeof result } });
       return result;
     })
-    .catch(error => {
-      endServiceCall(callId, {
+    .catch(async (error) => {
+      await endServiceCall(callId, {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -232,8 +278,10 @@ export async function getServiceHealthSummary(): Promise<{
 }
 
 export async function resetServiceMetrics(): Promise<void> {
+  activeCalls.clear();
   latencySamples.clear();
   await saveMetrics({});
+  await saveLatencySamples({});
 }
 
 export function instrumentService<P extends unknown[], R>(

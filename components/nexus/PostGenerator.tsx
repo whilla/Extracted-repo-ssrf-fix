@@ -266,7 +266,12 @@ export function PostGenerator({ defaultPlatform = 'twitter', onPostSelect }: Pos
             <input
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleChat()}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  await handleChat();
+                }
+              }}
               placeholder="Ask about content ideas..."
               className="flex-1 p-3 border rounded-lg"
             />

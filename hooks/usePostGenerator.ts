@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 export interface PostContent {
   id: string;
@@ -30,6 +30,11 @@ export function usePostGenerator(options: UsePostGeneratorOptions = {}) {
   const [currentPost, setCurrentPost] = useState<PostContent | null>(null);
   const [variations, setVariations] = useState<string[]>([]);
   const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const chatHistoryRef = useRef(chatHistory);
+
+  useEffect(() => {
+    chatHistoryRef.current = chatHistory;
+  }, [chatHistory]);
 
   const generatePost = useCallback(async (params: {
     idea: string;
@@ -119,7 +124,7 @@ export function usePostGenerator(options: UsePostGeneratorOptions = {}) {
         body: JSON.stringify({
           action: 'chat',
           message,
-          recentMessages: chatHistory.slice(-10),
+          recentMessages: chatHistoryRef.current.slice(-10),
           purpose,
         }),
       });
@@ -146,10 +151,11 @@ export function usePostGenerator(options: UsePostGeneratorOptions = {}) {
     } finally {
       setLoading(false);
     }
-  }, [chatHistory]);
+  }, []);
 
   const clearChat = useCallback(() => {
     setChatHistory([]);
+    chatHistoryRef.current = [];
   }, []);
 
   const clearPost = useCallback(() => {

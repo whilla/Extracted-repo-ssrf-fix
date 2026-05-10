@@ -14,20 +14,20 @@ export function OfflineBanner({
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    const checkStatus = () => {
-      const online = isPuterAvailable();
+    const checkStatus = async () => {
+      const online = await isPuterAvailable();
       setIsOffline(!online);
     };
 
     checkStatus();
     
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => checkStatus();
+    const handleOffline = () => checkStatus();
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     
-    const interval = setInterval(checkStatus, 5000);
+    const interval = setInterval(() => checkStatus(), 5000);
 
     return () => {
       window.removeEventListener('online', handleOnline);

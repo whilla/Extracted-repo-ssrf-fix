@@ -24,6 +24,31 @@ export {
   sanitizeChatMessagesForStorage,
 } from './chatStorageSanitizer.mjs';
 
+function isValidBrandKit(obj: unknown): obj is BrandKit {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const kit = obj as Record<string, unknown>;
+  return (
+    typeof kit.id === 'string' &&
+    typeof kit.name === 'string' &&
+    typeof kit.niche === 'string'
+  );
+}
+
+function safeParseBrandKit(input: string | unknown): BrandKit | null {
+  if (typeof input === 'object' && input !== null) {
+    if (isValidBrandKit(input)) return input as BrandKit;
+  }
+  if (typeof input === 'string') {
+    try {
+      const parsed = JSON.parse(input);
+      if (isValidBrandKit(parsed)) return parsed;
+    } catch {
+      console.warn('[memoryService] Failed to parse brand kit JSON');
+    }
+  }
+  return null;
+}
+
 // Initialize memory system
 export async function initMemory(): Promise<void> {
   await initFileSystem();
@@ -45,21 +70,13 @@ export async function saveBrandKit(brandKit: BrandKit): Promise<boolean> {
 }
 
 export async function loadBrandKit(): Promise<BrandKit | null> {
-  // Check KV store first (newer API saves here)
   const kvBrand = await kvGet('brand_kit');
-  if (kvBrand) {
-    try {
-      return typeof kvBrand === 'string' ? JSON.parse(kvBrand) : kvBrand as BrandKit;
-    } catch (parseError) {
-      console.warn('[loadBrandKit] Failed to parse KV brand kit:', parseError instanceof Error ? parseError.message : 'Unknown error');
-    }
-  }
+  const parsed = safeParseBrandKit(kvBrand);
+  if (parsed) return parsed;
 
-  // Fall back to file system
   const local = await readFile<BrandKit>(PATHS.brandKit, true);
   if (local) return local;
 
-  // Then cloud
   const cloud = await loadCloudBrandKit().catch(() => null);
   if (cloud) {
     await writeFile(PATHS.brandKit, cloud);
@@ -127,11 +144,21 @@ export async function listDrafts(options: ListOptions = {}): Promise<ContentDraf
   
   const allDrafts = Array.from(draftsById.values());
   const sorted = allDrafts.sort((a, b) => {
-    const aVal = sortBy === 'updated' ? new Date(a.updated).getTime() : 
-             sortBy === 'created' ? new Date(a.created).getTime() : a.id.localeCompare(b.id);
-    const bVal = sortBy === 'updated' ? new Date(b.updated).getTime() : 
-             sortBy === 'created' ? new Date(b.created).getTime() : b.id.localeCompare(a.id);
-    return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+    let comparison: number;
+    
+    if (sortBy === 'updated') {
+      const aTime = new Date(a.updated).getTime() || 0;
+      const bTime = new Date(b.updated).getTime() || 0;
+      comparison = aTime - bTime;
+    } else if (sortBy === 'created') {
+      const aTime = new Date(a.created).getTime() || 0;
+      const bTime = new Date(b.created).getTime() || 0;
+      comparison = aTime - bTime;
+    } else {
+      comparison = (a.id || '').toString().localeCompare((b.id || '').toString());
+    }
+    
+    return sortOrder === 'asc' ? comparison : -comparison;
   });
   
   return sorted.slice(offset, offset + limit);

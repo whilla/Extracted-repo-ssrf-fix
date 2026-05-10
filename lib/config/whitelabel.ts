@@ -77,8 +77,64 @@ export interface TenantSettings {
 const WHITE_LABEL_KEY = 'white_label_config';
 const TENANTS_KEY = 'tenants';
 
+const PLAN_LIMITS: Record<Tenant['plan'], WhiteLabelLimits> = {
+  free: { maxPostsPerDay: 10, maxScheduledPosts: 50, maxTeamMembers: 2, maxStorage: 100000000, maxApiCalls: 1000, maxAgents: 5 },
+  starter: { maxPostsPerDay: 50, maxScheduledPosts: 200, maxTeamMembers: 5, maxStorage: 500000000, maxApiCalls: 10000, maxAgents: 10 },
+  pro: { maxPostsPerDay: 200, maxScheduledPosts: 1000, maxTeamMembers: 20, maxStorage: 2000000000, maxApiCalls: 50000, maxAgents: 50 },
+  enterprise: { maxPostsPerDay: 999999, maxScheduledPosts: 999999, maxTeamMembers: 999, maxStorage: 999999999999, maxApiCalls: 999999999, maxAgents: 999 },
+};
+
 function generateId(): string {
-  return `wl_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `wl_${crypto.randomUUID()}`;
+  }
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 15);
+  return `wl_${timestamp}_${randomPart}`;
+}
+
+function safeJsonParse<T>(jsonString: string | null, fallback: T): T {
+  if (!jsonString) return fallback;
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (error) {
+    console.error('[whitelabel] JSON parse error:', error);
+    return fallback;
+  }
+}
+
+function escapeHtml(unsafe: string): string {
+  return String(unsafe)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function sanitizeColor(color: string): string {
+  if (/^#[0-9A-Fa-f]{3,6}$/.test(color)) return color;
+  if (/^rgb\(\d+\s*,\s*\d+\s*,\s*\d+\)$/.test(color)) return color;
+  if (/^rgba\(\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[\d.]+\)$/.test(color)) return color;
+  return '#6366f1';
+}
+
+function sanitizeFontFamily(fontFamily: string): string {
+  if (!fontFamily || /[;{}]/.test(fontFamily)) return 'system-ui, -apple-system, sans-serif';
+  return fontFamily.split(',')[0].trim().replace(/["']/g, '') || 'system-ui, -apple-system, sans-serif';
+}
+
+function sanitizeCssProperty(value: string): string {
+  return value.replace(/[;<>{}]/g, '');
+}
+
+function isValidUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
 }
 
 export const defaultWhiteLabelConfig: WhiteLabelConfig = {
@@ -98,26 +154,14 @@ export const defaultWhiteLabelConfig: WhiteLabelConfig = {
     customPlugins: false,
     whiteLabelDomain: false,
   },
-  limits: {
-    maxPostsPerDay: 50,
-    maxScheduledPosts: 500,
-    maxTeamMembers: 10,
-    maxStorage: 1000000000,
-    maxApiCalls: 10000,
-    maxAgents: 20,
-  },
+  limits: PLAN_LIMITS.free,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
 
-export async function getWhiteLabelConfig(tenantId?: string): Promise<WhiteLabelConfig> {
+export async function getWhiteLabelConfig(): Promise<WhiteLabelConfig> {
   const customConfig = await kvGet(WHITE_LABEL_KEY);
-  
-  if (customConfig) {
-    return JSON.parse(customConfig);
-  }
-
-  return defaultWhiteLabelConfig;
+  return safeJsonParse(customConfig, defaultWhiteLabelConfig);
 }
 
 export async function updateWhiteLabelConfig(
@@ -141,78 +185,140 @@ export async function resetWhiteLabelConfig(): Promise<WhiteLabelConfig> {
   return defaultWhiteLabelConfig;
 }
 
+const tenantLocks = new Map<string, Promise<void>>();
+
+async function withTenantLock<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+  let lock = tenantLocks.get(tenantId);
+  const releaseLock = () => tenantLocks.delete(tenantId);
+  
+  if (lock) {
+    await lock;
+  }
+  
+  lock = fn().then(fn => {
+    releaseLock();
+    return fn;
+  }).catch(err => {
+    releaseLock();
+    throw err;
+  }) as Promise<void>;
+  
+  tenantLocks.set(tenantId, lock);
+  return lock as unknown as Promise<T>;
+}
+
 export async function createTenant(
   slug: string,
   name: string,
   plan: Tenant['plan'] = 'free'
 ): Promise<Tenant> {
-  const tenantsData = await kvGet(TENANTS_KEY);
-  const tenants: Tenant[] = tenantsData ? JSON.parse(tenantsData) : [];
-
-  if (tenants.some(t => t.slug === slug)) {
-    throw new Error('Tenant slug already exists');
+  const normalizedSlug = slug.toLowerCase().trim();
+  
+  if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
+    throw new Error('Invalid slug format: only lowercase letters, numbers, and hyphens allowed');
   }
 
-  const limits: Record<Tenant['plan'], WhiteLabelLimits> = {
-    free: { maxPostsPerDay: 10, maxScheduledPosts: 50, maxTeamMembers: 2, maxStorage: 100000000, maxApiCalls: 1000, maxAgents: 5 },
-    starter: { maxPostsPerDay: 50, maxScheduledPosts: 200, maxTeamMembers: 5, maxStorage: 500000000, maxApiCalls: 10000, maxAgents: 10 },
-    pro: { maxPostsPerDay: 200, maxScheduledPosts: 1000, maxTeamMembers: 20, maxStorage: 2000000000, maxApiCalls: 50000, maxAgents: 50 },
-    enterprise: { maxPostsPerDay: 999999, maxScheduledPosts: 999999, maxTeamMembers: 999, maxStorage: 999999999999, maxApiCalls: 999999999, maxAgents: 999 },
-  };
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const existingTenants = await listTenants();
+    
+    if (existingTenants.some(t => t.slug === normalizedSlug)) {
+      throw new Error('Tenant slug already exists');
+    }
 
-  const tenant: Tenant = {
-    id: generateId(),
-    slug,
-    name,
-    whiteLabelId: 'default',
-    plan,
-    status: 'trial',
-    settings: {
-      allowedFeatures: [],
-      rateLimit: limits[plan].maxApiCalls,
-      maxStorage: limits[plan].maxStorage,
-    },
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-  };
+    const tenant: Tenant = {
+      id: generateId(),
+      slug: normalizedSlug,
+      name: escapeHtml(name),
+      whiteLabelId: 'default',
+      plan,
+      status: 'trial',
+      settings: {
+        allowedFeatures: [],
+        rateLimit: PLAN_LIMITS[plan].maxApiCalls,
+        maxStorage: PLAN_LIMITS[plan].maxStorage,
+        ssoEnabled: false,
+      },
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    };
 
-  tenants.push(tenant);
-  await kvSet(TENANTS_KEY, JSON.stringify(tenants));
+    const tenantsAfter = [...existingTenants, tenant];
+    await kvSet(TENANTS_KEY, JSON.stringify(tenantsAfter));
 
-  return tenant;
+    const verified = await listTenants();
+    if (verified.some(t => t.id === tenant.id)) {
+      return tenant;
+    }
+  }
+
+  throw new Error('Failed to create tenant after multiple attempts');
 }
 
 export async function getTenant(tenantId: string): Promise<Tenant | null> {
-  const tenantsData = await kvGet(TENANTS_KEY);
-  const tenants: Tenant[] = tenantsData ? JSON.parse(tenantsData) : [];
+  const tenants = await listTenants();
   return tenants.find(t => t.id === tenantId) || null;
 }
 
 export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
-  const tenantsData = await kvGet(TENANTS_KEY);
-  const tenants: Tenant[] = tenantsData ? JSON.parse(tenantsData) : [];
-  return tenants.find(t => t.slug === slug) || null;
+  const tenants = await listTenants();
+  return tenants.find(t => t.slug === slug.toLowerCase()) || null;
 }
+
+const MUTABLE_SETTINGS = ['allowedFeatures', 'rateLimit', 'maxStorage', 'customDomain', 'ssoEnabled', 'ssoProvider'] as const;
 
 export async function updateTenant(
   tenantId: string,
   updates: Partial<Tenant>
 ): Promise<boolean> {
-  const tenantsData = await kvGet(TENANTS_KEY);
-  const tenants: Tenant[] = tenantsData ? JSON.parse(tenantsData) : [];
-  const index = tenants.findIndex(t => t.id === tenantId);
+  return withTenantLock(tenantId, async () => {
+    const tenantsData = await kvGet(TENANTS_KEY);
+    const tenants: Tenant[] = safeJsonParse(tenantsData, []);
+    const index = tenants.findIndex(t => t.id === tenantId);
 
-  if (index === -1) return false;
+    if (index === -1) return false;
 
-  tenants[index] = { ...tenants[index], ...updates };
-  await kvSet(TENANTS_KEY, JSON.stringify(tenants));
+    const existing = tenants[index];
+    const sanitizedUpdates: Partial<Tenant> = {
+      id: existing.id,
+      slug: existing.slug,
+      whiteLabelId: existing.whiteLabelId,
+      createdAt: existing.createdAt,
+    };
 
-  return true;
+    if (updates.status) {
+      sanitizedUpdates.status = updates.status;
+    }
+    if (updates.plan) {
+      sanitizedUpdates.plan = updates.plan;
+    }
+    if (updates.name) {
+      sanitizedUpdates.name = escapeHtml(updates.name);
+    }
+    if (updates.expiresAt) {
+      sanitizedUpdates.expiresAt = updates.expiresAt;
+    }
+
+    if (updates.settings) {
+      const sanitizedSettings: TenantSettings = { ...existing.settings };
+      for (const key of MUTABLE_SETTINGS) {
+        if (key in updates.settings) {
+          (sanitizedSettings as Record<string, unknown>)[key] = (updates.settings as Record<string, unknown>)[key];
+        }
+      }
+      sanitizedUpdates.settings = sanitizedSettings;
+    }
+
+    tenants[index] = { ...existing, ...sanitizedUpdates };
+    await kvSet(TENANTS_KEY, JSON.stringify(tenants));
+
+    return true;
+  });
 }
 
 export async function listTenants(): Promise<Tenant[]> {
   const tenantsData = await kvGet(TENANTS_KEY);
-  return tenantsData ? JSON.parse(tenantsData) : [];
+  return safeJsonParse(tenantsData, []);
 }
 
 export async function suspendTenant(tenantId: string): Promise<boolean> {
@@ -226,12 +332,12 @@ export async function activateTenant(tenantId: string): Promise<boolean> {
 export function generateWhiteLabelCss(config: WhiteLabelConfig): string {
   return `
 :root {
-  --primary: ${config.primaryColor};
-  --secondary: ${config.secondaryColor};
-  --accent: ${config.accentColor};
-  --background: ${config.backgroundColor};
-  --text: ${config.textColor};
-  --font-family: ${config.fontFamily || 'system-ui, -apple-system, sans-serif'};
+  --primary: ${sanitizeColor(config.primaryColor)};
+  --secondary: ${sanitizeColor(config.secondaryColor)};
+  --accent: ${sanitizeColor(config.accentColor)};
+  --background: ${sanitizeColor(config.backgroundColor)};
+  --text: ${sanitizeColor(config.textColor)};
+  --font-family: ${sanitizeFontFamily(config.fontFamily || '')};
 }
 
 body {
@@ -248,54 +354,60 @@ body {
 .bg-secondary { background-color: var(--secondary); }
 .bg-accent { background-color: var(--accent); }
 
-${config.customCss || ''}
+${config.customCss ? sanitizeCssProperty(config.customCss) : ''}
   `.trim();
 }
 
 export function generateWhiteLabelMeta(config: WhiteLabelConfig): string {
+  const primaryColor = escapeHtml(sanitizeColor(config.primaryColor));
+  const name = escapeHtml(config.name);
+  const favicon = config.favicon && isValidUrl(config.favicon) ? escapeHtml(config.favicon) : '/favicon.ico';
+  const logo = config.logo && isValidUrl(config.logo) ? escapeHtml(config.logo) : '/icon.png';
+
   return `
-<meta name="theme-color" content="${config.primaryColor}">
-<meta name="apple-mobile-web-app-title" content="${config.name}">
+<meta name="theme-color" content="${primaryColor}">
+<meta name="apple-mobile-web-app-title" content="${name}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="icon" type="image/x-icon" href="${config.favicon || '/favicon.ico'}">
-<link rel="apple-touch-icon" href="${config.logo || '/icon.png'}">
+<link rel="icon" type="image/x-icon" href="${favicon}">
+<link rel="apple-touch-icon" href="${logo}">
   `.trim();
 }
 
 export async function checkDomainAvailability(domain: string): Promise<{ available: boolean; suggestion?: string }> {
+  const normalizedDomain = domain.toLowerCase();
   const tenants = await listTenants();
   
-  if (tenants.some(t => t.slug === domain.toLowerCase())) {
-    return { available: false, suggestion: `${domain}-app` };
+  const isSlugTaken = tenants.some(t => t.slug === normalizedDomain);
+  const isCustomDomainTaken = tenants.some(t => t.settings.customDomain?.toLowerCase() === normalizedDomain);
+  
+  if (isSlugTaken || isCustomDomainTaken) {
+    return { available: false, suggestion: `${normalizedDomain}-app` };
   }
 
   return { available: true };
 }
 
-export async function verifyCustomDomain(
+export async function setCustomDomain(
   tenantId: string,
   domain: string
-): Promise<{ verified: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string }> {
   const tenant = await getTenant(tenantId);
   if (!tenant) {
-    return { verified: false, error: 'Tenant not found' };
+    return { success: false, error: 'Tenant not found' };
+  }
+
+  if (!isValidUrl(`https://${domain}`)) {
+    return { success: false, error: 'Invalid domain format' };
   }
 
   await updateTenant(tenantId, {
     settings: { ...tenant.settings, customDomain: domain },
   });
 
-  return { verified: true };
+  return { success: true };
 }
 
 export function getTenantLimits(tenant: Tenant): WhiteLabelLimits {
-  const limits: Record<Tenant['plan'], WhiteLabelLimits> = {
-    free: { maxPostsPerDay: 10, maxScheduledPosts: 50, maxTeamMembers: 2, maxStorage: 100000000, maxApiCalls: 1000, maxAgents: 5 },
-    starter: { maxPostsPerDay: 50, maxScheduledPosts: 200, maxTeamMembers: 5, maxStorage: 500000000, maxApiCalls: 10000, maxAgents: 10 },
-    pro: { maxPostsPerDay: 200, maxScheduledPosts: 1000, maxTeamMembers: 20, maxStorage: 2000000000, maxApiCalls: 50000, maxAgents: 50 },
-    enterprise: { maxPostsPerDay: 999999, maxScheduledPosts: 999999, maxTeamMembers: 999, maxStorage: 999999999999, maxApiCalls: 999999999, maxAgents: 999 },
-  };
-
-  return limits[tenant.plan];
+  return PLAN_LIMITS[tenant.plan];
 }

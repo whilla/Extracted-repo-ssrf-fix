@@ -53,10 +53,16 @@ export class AnalyticsIngestionService {
           const metrics = await this.fetchPlatformMetrics(post.platform, post.id);
           
           if (metrics) {
+            const contentText = content.text || content.caption;
+            if (!contentText) {
+              console.warn(`[AnalyticsIngestion] Missing content text for ${file.name}`);
+              continue;
+            }
+            
             await learningSystem.recordEngagementFeedback({
               postId: post.id,
               platform: post.platform,
-              content: content.text || content.caption,
+              content: contentText,
               impressions: metrics.impressions,
               engagements: metrics.engagements,
               likes: metrics.likes,
@@ -129,8 +135,42 @@ export class AnalyticsIngestionService {
 
   private extractIdFromUrl(url: string, platform: string): string | null {
     try {
-      const parts = url.split('/');
-      return parts[parts.length - 1] || null;
+      let cleanUrl = url.split('?')[0].replace(/\/$/, '');
+      const parsed = new URL(cleanUrl);
+      
+      switch (platform) {
+        case 'youtube': {
+          const pathname = parsed.pathname;
+          if (parsed.hostname === 'youtu.be') {
+            return pathname.slice(1) || null;
+          }
+          const videoMatch = pathname.match(/\/video\/([a-zA-Z0-9_-]+)/);
+          if (videoMatch) return videoMatch[1];
+          const watchMatch = pathname.match(/\/watch\?v=([a-zA-Z0-9_-]+)/);
+          if (watchMatch) return watchMatch[1];
+          return null;
+        }
+        case 'tiktok': {
+          const videoMatch = parsed.pathname.match(/\/video\/(\d+)/);
+          return videoMatch ? videoMatch[1] : null;
+        }
+        case 'instagram': {
+          const pathParts = parsed.pathname.split('/').filter(Boolean);
+          if (pathParts.length >= 2 && (pathParts[0] === 'p' || pathParts[0] === 'reel')) {
+            return pathParts[1] || null;
+          }
+          return pathParts[pathParts.length - 1] || null;
+        }
+        case 'x':
+        case 'twitter': {
+          const statusMatch = parsed.pathname.match(/\/status\/(\d+)/);
+          return statusMatch ? statusMatch[1] : null;
+        }
+        default: {
+          const parts = cleanUrl.split('/').filter(Boolean);
+          return parts[parts.length - 1] || null;
+        }
+      }
     } catch {
       return null;
     }

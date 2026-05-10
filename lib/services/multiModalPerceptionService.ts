@@ -26,7 +26,6 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024;
 export class MultiModalPerceptionService {
   private initialized = false;
   private initializingPromise: Promise<void> | null = null;
-  private locks: Map<string, Promise<void>> = new Map();
 
   async initialize(): Promise<void> {
     if (this.initializingPromise) {
@@ -44,8 +43,21 @@ export class MultiModalPerceptionService {
   }
 
   private validatePath(path: string): void {
-    const normalizedPath = path.replace(/\\/g, '/');
-    const isAllowed = ALLOWED_DIRECTORIES.some(dir => normalizedPath.startsWith(dir));
+    let normalizedPath: string;
+    try {
+      const url = new URL(path, 'file:///tmp');
+      normalizedPath = url.pathname.replace(/\\/g, '/');
+    } catch {
+      normalizedPath = path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/\.+/g, '');
+    }
+    
+    normalizedPath = normalizedPath.replace(/\/+/g, '/').replace(/\/\.+\//g, '/');
+    
+    const isAllowed = ALLOWED_DIRECTORIES.some(dir => {
+      const normalizedDir = dir.replace(/\\/g, '/');
+      return normalizedPath.startsWith(normalizedDir);
+    });
+    
     if (!isAllowed) {
       throw new Error(`Path ${path} is not in allowed directories`);
     }

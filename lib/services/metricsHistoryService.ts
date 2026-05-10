@@ -165,19 +165,26 @@ export async function getMetricsSummary(period: 'hour' | 'day' | 'week' | 'month
   const taskCompletionRate = taskTotal > 0 ? Math.round((taskCompleted / taskTotal) * 100) : 100;
   const avgServiceUptime = snapshots.length > 0 ? Math.round(serviceUptime / snapshots.length) : 100;
 
-  const firstQuarter = snapshots.slice(0, Math.floor(snapshots.length / 4));
-  const lastQuarter = snapshots.slice(-Math.floor(snapshots.length / 4));
+  const MIN_QUARTER_SIZE = 4;
+  let tasksTrend: 'increasing' | 'decreasing' | 'stable' = 'stable';
+  let latencyTrend: 'improving' | 'degrading' | 'stable' = 'stable';
+  let errorsTrend: 'improving' | 'degrading' | 'stable' = 'stable';
 
-  const firstTasks = firstQuarter.reduce((sum, s) => sum + s.agents.totalTasksCompleted, 0);
-  const lastTasks = lastQuarter.reduce((sum, s) => sum + s.agents.totalTasksCompleted, 0);
-  const firstLatency = firstQuarter.reduce((sum, s) => sum + s.services.averageLatency, 0) / Math.max(firstQuarter.length, 1);
-  const lastLatency = lastQuarter.reduce((sum, s) => sum + s.services.averageLatency, 0) / Math.max(lastQuarter.length, 1);
-  const firstErrors = firstQuarter.reduce((sum, s) => sum + s.services.errorRate, 0) / Math.max(firstQuarter.length, 1);
-  const lastErrors = lastQuarter.reduce((sum, s) => sum + s.services.errorRate, 0) / Math.max(lastQuarter.length, 1);
+  if (snapshots.length >= MIN_QUARTER_SIZE) {
+    const firstQuarter = snapshots.slice(0, Math.floor(snapshots.length / 4));
+    const lastQuarter = snapshots.slice(-Math.floor(snapshots.length / 4));
 
-  const tasksTrend = lastTasks > firstTasks * 1.1 ? 'increasing' : lastTasks < firstTasks * 0.9 ? 'decreasing' : 'stable';
-  const latencyTrend = lastLatency < firstLatency * 0.9 ? 'improving' : lastLatency > firstLatency * 1.1 ? 'degrading' : 'stable';
-  const errorsTrend = lastErrors < firstErrors * 0.9 ? 'improving' : lastErrors > firstErrors * 1.1 ? 'degrading' : 'stable';
+    const firstTasks = firstQuarter.reduce((sum, s) => sum + s.agents.totalTasksCompleted, 0);
+    const lastTasks = lastQuarter.reduce((sum, s) => sum + s.agents.totalTasksCompleted, 0);
+    const firstLatency = firstQuarter.reduce((sum, s) => sum + s.services.averageLatency, 0) / Math.max(firstQuarter.length, 1);
+    const lastLatency = lastQuarter.reduce((sum, s) => sum + s.services.averageLatency, 0) / Math.max(lastQuarter.length, 1);
+    const firstErrors = firstQuarter.reduce((sum, s) => sum + s.services.errorRate, 0) / Math.max(firstQuarter.length, 1);
+    const lastErrors = lastQuarter.reduce((sum, s) => sum + s.services.errorRate, 0) / Math.max(lastQuarter.length, 1);
+
+    tasksTrend = lastTasks > firstTasks * 1.1 ? 'increasing' : lastTasks < firstTasks * 0.9 ? 'decreasing' : 'stable';
+    latencyTrend = lastLatency < firstLatency * 0.9 ? 'improving' : lastLatency > firstLatency * 1.1 ? 'degrading' : 'stable';
+    errorsTrend = lastErrors < firstErrors * 0.9 ? 'improving' : lastErrors > firstErrors * 1.1 ? 'degrading' : 'stable';
+  }
 
   return {
     period,

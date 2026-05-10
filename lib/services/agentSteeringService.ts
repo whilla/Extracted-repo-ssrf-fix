@@ -99,10 +99,17 @@ export class AgentSteeringService {
   }
 
   private async handleHardConstraint(feedback: string): Promise<{ success: boolean; effect: string }> {
-    // Inject directly into the Governor system's blacklist
     const currentRules = await governor.getRules();
+    
+    let ruleId: string;
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      ruleId = `human_${crypto.randomUUID()}`;
+    } else {
+      ruleId = `human_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    }
+    
     currentRules.push({
-      id: `human_${Date.now()}`,
+      id: ruleId,
       type: 'hard_constraint',
       pattern: feedback,
       action: 'block',

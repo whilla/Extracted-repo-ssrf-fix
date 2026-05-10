@@ -214,6 +214,11 @@ export async function createPaymentIntent(
       }),
     });
     
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Stripe error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
+    
     const data = await response.json();
     
     return {
@@ -287,9 +292,17 @@ export async function createPrice(
     
     const response = await fetch('https://api.stripe.com/v1/prices', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${stripeKey}` },
+      headers: {
+        'Authorization': `Bearer ${stripeKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
       body: params,
     });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Stripe error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
     
     const data = await response.json();
     
@@ -339,6 +352,11 @@ export async function createSubscription(
       }),
     });
     
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Stripe error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
+    
     const data = await response.json();
     
     return {
@@ -354,17 +372,25 @@ export async function createSubscription(
   }
 
   const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const now = new Date();
+  const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   
-  return {
+  const subscription: Subscription = {
     id: subscriptionId,
     customerId,
     priceId,
     status: 'active',
-    currentPeriodStart: new Date().toISOString(),
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    currentPeriodStart: now.toISOString(),
+    currentPeriodEnd: periodEnd.toISOString(),
     cancelAtPeriodEnd: false,
     metadata: metadata || {},
   };
+  
+  const data = await loadPaymentsData();
+  data.subscriptions[subscriptionId] = subscription;
+  await savePaymentsData(data);
+  
+  return subscription;
 }
 
 export async function getSubscription(subscriptionId: string): Promise<Subscription | null> {
@@ -398,17 +424,23 @@ export async function cancelSubscription(subscriptionId: string, immediate: bool
   const stripeKey = getStripeSecretKey();
   
   if (stripeKey && subscriptionId.startsWith('sub_')) {
-    const endpoint = immediate
-      ? `https://api.stripe.com/v1/subscriptions/${subscriptionId}`
-      : `https://api.stripe.com/v1/subscriptions/${subscriptionId}`;
+    const endpoint = `https://api.stripe.com/v1/subscriptions/${subscriptionId}`;
     
     const response = await fetch(endpoint, {
       method: immediate ? 'DELETE' : 'POST',
-      headers: { 'Authorization': `Bearer ${stripeKey}` },
+      headers: {
+        'Authorization': `Bearer ${stripeKey}`,
+        ...(!immediate ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+      },
       body: immediate ? undefined : new URLSearchParams({ cancel_at_period_end: 'true' }),
     });
     
-    return response.ok;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Stripe error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
+    
+    return true;
   }
 
   return true;
@@ -439,6 +471,11 @@ export async function createCheckoutSession(
         'cancel_url': cancelUrl,
       }),
     });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Stripe error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
     
     const data = await response.json();
     
@@ -517,16 +554,55 @@ export async function addPaymentMethod(
 
   const pmId = `pm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   
-  return {
+  const paymentMethod: PaymentMethod = {
     id: pmId,
     customerId,
     type: 'card',
-    card: { brand: 'visa', last4: '4242', expMonth: 12, expYear: 2025 },
+    card: { brand: 'visa', last4: '4242', expMonth: 12, expYear: new Date().getFullYear() + 3 },
     isDefault: true,
   };
+
+  const data = await loadPaymentsData();
+  if (!data.paymentMethods[customerId]) {
+    data.paymentMethods[customerId] = [];
+  }
+  data.paymentMethods[customerId].push(paymentMethod);
+  await savePaymentsData(data);
+  
+  return paymentMethod;
 }
 
 export async function listPaymentMethods(customerId: string): Promise<PaymentMethod[]> {
+  const stripeKey = getStripeSecretKey();
+  const customer = await getCustomer(customerId);
+  
+  if (stripeKey && customer?.stripeCustomerId) {
+    try {
+      const response = await fetch(
+        `https://api.stripe.com/v1/payment_methods?customer=${customer.stripeCustomerId}&type=card`,
+        { headers: { 'Authorization': `Bearer ${stripeKey}` } }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        return (data.data || []).map((pm: any) => ({
+          id: pm.id,
+          customerId,
+          type: pm.type || 'card',
+          card: pm.card ? {
+            brand: pm.card.brand,
+            last4: pm.card.last4,
+            expMonth: pm.card.exp_month,
+            expYear: pm.card.exp_year,
+          } : undefined,
+          isDefault: false,
+        }));
+      }
+    } catch (error) {
+      console.warn('[PaymentService] Stripe listPaymentMethods failed:', error);
+    }
+  }
+  
   const data = await loadPaymentsData();
   return data.paymentMethods[customerId] || [];
 }
