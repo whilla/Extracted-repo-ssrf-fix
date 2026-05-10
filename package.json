@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev", 
-    "build": "next build --webpack --no-typescript", 
+    "build": "next build --webpack", 
     "start": "next start",
     "lint": "eslint app components hooks lib types *.mjs",
     "lint:fix": "eslint app components hooks lib types *.mjs --fix",

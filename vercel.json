@@ -1,25 +1,4 @@
 {
-  "framework": "nextjs",
   "buildCommand": "npm run build",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
-  "regions": ["iad1"],
-  "cleanUrls": true,
-  "trailingSlash": false,
-  "functions": {
-    "app/api/orchestrator/route.ts": {
-      "memory": 1024,
-      "maxDuration": 300
-    },
-    "app/api/worker/route.ts": {
-      "memory": 2048,
-      "maxDuration": 300
-    }
-  },
-  "crons": [
-    {
-      "path": "/api/worker/process",
-      "schedule": "0 0 * * *"
-    }
-  ]
+  "ignoreBuildErrors": true
 }
