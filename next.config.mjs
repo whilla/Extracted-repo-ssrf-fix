@@ -12,6 +12,7 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  swcMinify: false,
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.vercel.app' },
