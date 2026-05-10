@@ -7,8 +7,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const nextConfig = {
   output: 'standalone',
   typescript: {
-    // Vercel handles TypeScript errors during build
-    ignoreBuildErrors: true,
   },
   images: {
     remotePatterns: [

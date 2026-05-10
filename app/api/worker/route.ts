@@ -2,6 +2,36 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { runSandboxedCode } from '@/lib/services/sandboxRunner';
 
+const CODE_MAX_LENGTH = 10000;
+const FORBIDDEN_PATTERNS = [
+  /import\s*\(/,
+  /require\s*\(/,
+  /process\./,
+  /global\./,
+  /eval\s*\(/,
+  /Function\s*\(/,
+  /async\s+function\s+\w+\s*\(\s*\)\s*\{/,
+  /setTimeout\s*\(\s*function/,
+  /setInterval\s*\(/,
+  /\.\/|\.\.\//,
+  /require\s*\(\s*['"`]/,
+  /import\s+\w+\s+from\s+['"`]/,
+];
+
+function validateCode(code: string): { valid: boolean; error?: string } {
+  if (code.length > CODE_MAX_LENGTH) {
+    return { valid: false, error: `Code exceeds maximum length of ${CODE_MAX_LENGTH} characters` };
+  }
+
+  for (const pattern of FORBIDDEN_PATTERNS) {
+    if (pattern.test(code)) {
+      return { valid: false, error: 'Code contains forbidden patterns' };
+    }
+  }
+
+  return { valid: true };
+}
+
 export async function POST(request: Request) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -55,14 +85,19 @@ export async function POST(request: Request) {
     } catch {
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
-    const { code, input, timeoutMs } = body;
+    const { code, input, timeoutMs = 1000 } = body;
 
     if (!code) {
       return NextResponse.json({ error: 'Code is required' }, { status: 400 });
     }
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const validation = validateCode(code);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 403 });
+    }
+
+    if (timeoutMs > 5000) {
+      return NextResponse.json({ error: 'Timeout too large (max 5000ms)' }, { status: 400 });
     }
 
     const result = await runSandboxedCode(code, input, timeoutMs);

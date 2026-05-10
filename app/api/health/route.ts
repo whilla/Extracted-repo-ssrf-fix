@@ -63,7 +63,7 @@ export async function GET() {
     };
   } catch {
     checks.puter = {
-      status: warn => 'warn',
+      status: 'warn',
       message: 'Puter not available or timeout',
     };
     if (overallStatus === 'healthy') overallStatus = 'degraded';

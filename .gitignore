@@ -6,12 +6,13 @@ __v0_jsx-dev-runtime.ts
 # Common ignores
 node_modules
 .next/
-.env
-.env.*
-!.env.example
 package.json.backup
 tsconfig.tsbuildinfo
 .DS_Store
 .worktrees/
 .vercel
+
+# Environment files
 .env
+.env.*
+!.env.example

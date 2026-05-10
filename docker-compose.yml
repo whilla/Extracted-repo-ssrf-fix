@@ -7,24 +7,33 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    # Note: Create .env file from .env.example before running
     env_file:
-      - .env
-    restart: always
+      - .env.example
+    restart: unless-stopped
     depends_on:
-      n8n:
-        condition: service_started
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 30s
     environment:
       - NODE_ENV=production
     networks:
       - nexus-network
     volumes:
       - nexus-data:/app/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   n8n:
     image: n8nio/n8n:latest
@@ -39,7 +48,7 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-change-me-in-production}
     volumes:
       - n8n_data:/home/node/.n8n
-    restart: always
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
       interval: 30s
@@ -47,22 +56,32 @@ services:
       retries: 3
     networks:
       - nexus-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   redis:
     image: redis:7-alpine
-    restart: always
+    restart: unless-stopped
     command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD}"
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-require", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
     networks:
       - nexus-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
 
 volumes:
   n8n_data:

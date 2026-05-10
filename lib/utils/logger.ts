@@ -1,6 +1,6 @@
 /**
- * Structured Logger Utility
- * Provides consistent logging across the application
+ * Structured Logging Utility
+ * Provides consistent, categorized logging across the application
  */
 
 export enum LogLevel {
@@ -8,230 +8,270 @@ export enum LogLevel {
   INFO = 1,
   WARN = 2,
   ERROR = 3,
+  FATAL = 4,
 }
 
-interface LogEntry {
-  level: LogLevel;
+export interface LogContext {
+  [key: string]: unknown;
+}
+
+export interface LogEntry {
   timestamp: string;
+  level: string;
+  category: string;
   message: string;
-  data?: unknown;
-  error?: {
-    name: string;
-    message: string;
-    stack?: string;
-  };
+  context?: LogContext;
+  requestId?: string;
+  userId?: string;
+  duration?: number;
 }
 
-const SENSITIVE_KEY_PATTERN = /(token|secret|password|authorization|cookie|session|credential|api[-_]?key)/i;
-const MAX_SANITIZE_DEPTH = 3;
-const MAX_ARRAY_LENGTH = 20;
-
-function sanitizeValue(value: unknown, depth = 0): unknown {
-  if (value == null || typeof value === 'number' || typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'string') {
-    return value.length > 500 ? `${value.slice(0, 500)}…` : value;
-  }
-
-  if (value instanceof Error) {
-    return sanitizeError(value);
-  }
-
-  if (depth >= MAX_SANITIZE_DEPTH) {
-    return '[Truncated]';
-  }
-
-  if (Array.isArray(value)) {
-    const items = value.slice(0, MAX_ARRAY_LENGTH).map(item => sanitizeValue(item, depth + 1));
-    if (value.length > MAX_ARRAY_LENGTH) {
-      items.push(`[+${value.length - MAX_ARRAY_LENGTH} more items]`);
-    }
-    return items;
-  }
-
-  if (typeof value === 'object') {
-    const sanitized: Record<string, unknown> = {};
-    for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
-      sanitized[key] = SENSITIVE_KEY_PATTERN.test(key)
-        ? '[REDACTED]'
-        : sanitizeValue(nestedValue, depth + 1);
-    }
-    return sanitized;
-  }
-
-  return String(value);
-}
-
-function sanitizeError(error: Error) {
-  return {
-    name: error.name,
-    message: error.message,
-    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
-  };
-}
+const LOG_LEVELS: Record<string, LogLevel> = {
+  debug: LogLevel.DEBUG,
+  info: LogLevel.INFO,
+  warn: LogLevel.WARN,
+  error: LogLevel.ERROR,
+  fatal: LogLevel.FATAL,
+};
 
 class Logger {
   private minLevel: LogLevel;
-  private isDevelopment: boolean;
-  private logHistory: LogEntry[] = [];
-  private maxHistorySize = 1000;
+  private isProduction: boolean;
+  private buffer: LogEntry[] = [];
+  private flushInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(minLevel: LogLevel = LogLevel.DEBUG) {
-    this.minLevel = minLevel;
-    this.isDevelopment = process.env.NODE_ENV === 'development';
+  constructor() {
+    this.minLevel = this.getLogLevel();
+    this.isProduction = process.env.NODE_ENV === 'production';
   }
 
-  private format(level: LogLevel, message: string): string {
-    const levelName = LogLevel[level];
-    const timestamp = new Date().toISOString();
-    return `[${timestamp}] [${levelName}] ${message}`;
+  private getLogLevel(): LogLevel {
+    const envLevel = process.env.LOG_LEVEL?.toLowerCase();
+    return envLevel ? LOG_LEVELS[envLevel] ?? LogLevel.INFO : LogLevel.INFO;
   }
 
-  private log(level: LogLevel, message: string, data?: unknown, error?: Error): void {
-    if (level < this.minLevel) return;
-
-    const formatted = this.format(level, message);
-    const sanitizedData = data === undefined ? undefined : sanitizeValue(data);
-    const sanitizedError = error ? sanitizeError(error) : undefined;
-    const entry: LogEntry = {
-      level,
+  private formatLog(level: LogLevel, category: string, message: string, context?: LogContext): LogEntry {
+    return {
       timestamp: new Date().toISOString(),
+      level: LogLevel[level],
+      category,
       message,
-      data: sanitizedData,
-      error: sanitizedError,
+      context,
     };
+  }
 
-    // Add to history
-    this.logHistory.push(entry);
-    if (this.logHistory.length > this.maxHistorySize) {
-      this.logHistory.shift();
+  private shouldLog(level: LogLevel): boolean {
+    return level >= this.minLevel;
+  }
+
+  private output(entry: LogEntry): void {
+    const { timestamp, level, category, message, context, duration, requestId, userId } = entry;
+
+    const prefix = requestId ? `[${requestId}] ` : '';
+    const userSuffix = userId ? ` [user:${userId}]` : '';
+    const durationSuffix = duration !== undefined ? ` [${duration}ms]` : '';
+
+    const logMessage = `${timestamp} ${level} [${category}]${prefix}${message}${userSuffix}${durationSuffix}`;
+
+    if (level === LogLevel.ERROR || level === LogLevel.FATAL) {
+      console.error(logMessage, context || '');
+    } else if (level === LogLevel.WARN) {
+      console.warn(logMessage, context || '');
+    } else {
+      console.log(logMessage, context || '');
     }
 
-    // Console output
-    const args = sanitizedData || sanitizedError
-      ? [formatted, { data: sanitizedData, error: sanitizedError }]
-      : [formatted];
-
-    switch (level) {
-      case LogLevel.DEBUG:
-        if (this.isDevelopment) console.debug(...args);
-        break;
-      case LogLevel.INFO:
-        console.info(...args);
-        break;
-      case LogLevel.WARN:
-        console.warn(...args);
-        break;
-      case LogLevel.ERROR:
-        console.error(...args);
-        break;
-    }
-
-    // Send to error tracking in production
-    if (level === LogLevel.ERROR && typeof window !== 'undefined') {
-      const sentry = (window as unknown as Record<string, unknown>).Sentry;
-      if (sentry && typeof sentry === 'object' && 'captureMessage' in sentry && typeof sentry.captureMessage === 'function') {
-        const captureMessage = sentry.captureMessage as (msg: string, opts: Record<string, unknown>) => void;
-        captureMessage(message, {
-          level: 'error',
-          extra: {
-            hasData: sanitizedData !== undefined,
-            data: sanitizedData,
-            error: sanitizedError,
-          },
-        });
-      }
+    if (this.isProduction) {
+      this.buffer.push(entry);
     }
   }
 
-  debug(message: string, data?: unknown): void {
-    this.log(LogLevel.DEBUG, message, data);
+  private flush(): void {
+    if (this.buffer.length === 0) return;
+
+    const logs = [...this.buffer];
+    this.buffer = [];
+
+    console.log(JSON.stringify({ type: 'log_batch', logs }));
   }
 
-  info(message: string, data?: unknown): void {
-    this.log(LogLevel.INFO, message, data);
+  debug(category: string, message: string, context?: LogContext): void {
+    if (!this.shouldLog(LogLevel.DEBUG)) return;
+    const entry = this.formatLog(LogLevel.DEBUG, category, message, context);
+    this.output(entry);
   }
 
-  warn(message: string, data?: unknown): void {
-    this.log(LogLevel.WARN, message, data);
+  info(category: string, message: string, context?: LogContext): void {
+    if (!this.shouldLog(LogLevel.INFO)) return;
+    const entry = this.formatLog(LogLevel.INFO, category, message, context);
+    this.output(entry);
   }
 
-  error(message: string, error?: Error | unknown, data?: unknown): void {
-    const err =
-      error instanceof Error
-        ? error
-        : error === undefined
-          ? new Error(message)
-          : new Error(String(error));
-    this.log(LogLevel.ERROR, message, data, err);
+  warn(category: string, message: string, context?: LogContext): void {
+    if (!this.shouldLog(LogLevel.WARN)) return;
+    const entry = this.formatLog(LogLevel.WARN, category, message, context);
+    this.output(entry);
   }
 
-  /**
-   * Get recent log entries
-   */
-  getHistory(count: number = 50): LogEntry[] {
-    return this.logHistory.slice(-count);
+  error(category: string, message: string, context?: LogContext): void {
+    if (!this.shouldLog(LogLevel.ERROR)) return;
+    const entry = this.formatLog(LogLevel.ERROR, category, message, context);
+    this.output(entry);
   }
 
-  /**
-   * Clear log history
-   */
-  clearHistory(): void {
-    this.logHistory = [];
+  fatal(category: string, message: string, context?: LogContext): void {
+    if (!this.shouldLog(LogLevel.FATAL)) return;
+    const entry = this.formatLog(LogLevel.FATAL, category, message, context);
+    this.output(entry);
   }
 
-  /**
-   * Export logs for debugging
-   */
-  exportLogs(): string {
-    return this.logHistory
-      .map(entry => {
-        let line = `${entry.timestamp} [${LogLevel[entry.level]}] ${entry.message}`;
-        if (entry.data) line += ` | ${JSON.stringify(entry.data)}`;
-        if (entry.error) line += ` | Error: ${entry.error.message}`;
-        return line;
-      })
-      .join('\n');
+  child(context: LogContext): ChildLogger {
+    return new ChildLogger(this, context);
+  }
+
+  withRequest(requestId: string): RequestLogger {
+    return new RequestLogger(this, requestId);
+  }
+
+  withUser(userId: string): UserLogger {
+    return new UserLogger(this, userId);
+  }
+
+  startFlushInterval(intervalMs: number = 60000): void {
+    if (this.flushInterval) return;
+    this.flushInterval = setInterval(() => this.flush(), intervalMs);
+  }
+
+  stopFlushInterval(): void {
+    if (this.flushInterval) {
+      clearInterval(this.flushInterval);
+      this.flushInterval = null;
+    }
+    this.flush();
   }
 }
 
-// Create singleton logger instance
-export const logger = new Logger(
-  process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG
-);
+class ChildLogger {
+  constructor(private parent: Logger, private context: LogContext) {}
 
-// Export for convenience
-export const log = {
-  debug: (msg: string, data?: unknown) => logger.debug(msg, data),
-  info: (msg: string, data?: unknown) => logger.info(msg, data),
-  warn: (msg: string, data?: unknown) => logger.warn(msg, data),
-  error: (msg: string, error?: Error | unknown, data?: unknown) => logger.error(msg, error, data),
-};
-
-/**
- * Timer utility for performance logging
- */
-export class Timer {
-  private start: number;
-  private name: string;
-
-  constructor(name: string) {
-    this.name = name;
-    this.start = performance.now();
+  debug(category: string, message: string, context?: LogContext): void {
+    this.parent.debug(category, message, { ...this.context, ...context });
   }
 
-  end(): void {
-    const duration = performance.now() - this.start;
-    logger.info(`[PERF] ${this.name} took ${duration.toFixed(2)}ms`);
+  info(category: string, message: string, context?: LogContext): void {
+    this.parent.info(category, message, { ...this.context, ...context });
   }
 
-  endError(error: Error): void {
-    const duration = performance.now() - this.start;
-    logger.error(
-      `[PERF] ${this.name} failed after ${duration.toFixed(2)}ms`,
-      error
-    );
+  warn(category: string, message: string, context?: LogContext): void {
+    this.parent.warn(category, message, { ...this.context, ...context });
+  }
+
+  error(category: string, message: string, context?: LogContext): void {
+    this.parent.error(category, message, { ...this.context, ...context });
+  }
+
+  child(additionalContext: LogContext): ChildLogger {
+    return this.parent.child({ ...this.context, ...additionalContext });
   }
 }
+
+class RequestLogger {
+  constructor(private parent: Logger, private requestId: string) {}
+
+  debug(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.DEBUG, category, message, context);
+    entry.requestId = this.requestId;
+    this.parent.output(entry);
+  }
+
+  info(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.INFO, category, message, context);
+    entry.requestId = this.requestId;
+    this.parent.output(entry);
+  }
+
+  warn(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.WARN, category, message, context);
+    entry.requestId = this.requestId;
+    this.parent.output(entry);
+  }
+
+  error(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.ERROR, category, message, context);
+    entry.requestId = this.requestId;
+    this.parent.output(entry);
+  }
+
+  withUser(userId: string): UserLogger {
+    return new UserLogger(this.parent, userId, this.requestId);
+  }
+
+  withDuration(duration: number): DurationLogger {
+    return new DurationLogger(this.parent, this.requestId, duration);
+  }
+}
+
+class UserLogger {
+  constructor(private parent: Logger, private userId: string, private requestId?: string) {}
+
+  debug(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.DEBUG, category, message, context);
+    entry.userId = this.userId;
+    entry.requestId = this.requestId;
+    this.parent.output(entry);
+  }
+
+  info(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.INFO, category, message, context);
+    entry.userId = this.userId;
+    entry.requestId = this.requestId;
+    this.parent.output(entry);
+  }
+
+  warn(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.WARN, category, message, context);
+    entry.userId = this.userId;
+    entry.requestId = this.requestId;
+    this.parent.output(entry);
+  }
+
+  error(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.ERROR, category, message, context);
+    entry.userId = this.userId;
+    entry.requestId = this.requestId;
+    this.parent.output(entry);
+  }
+}
+
+class DurationLogger {
+  constructor(private parent: Logger, private requestId: string, private duration: number) {}
+
+  info(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.INFO, category, message, context);
+    entry.requestId = this.requestId;
+    entry.duration = this.duration;
+    this.parent.output(entry);
+  }
+
+  warn(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.WARN, category, message, context);
+    entry.requestId = this.requestId;
+    entry.duration = this.duration;
+    this.parent.output(entry);
+  }
+
+  error(category: string, message: string, context?: LogContext): void {
+    const entry = this.parent.formatLog(LogLevel.ERROR, category, message, context);
+    entry.requestId = this.requestId;
+    entry.duration = this.duration;
+    this.parent.output(entry);
+  }
+}
+
+export const logger = new Logger();
+
+export function createLogger(category: string): Logger {
+  return logger;
+}
+
+export default logger;
