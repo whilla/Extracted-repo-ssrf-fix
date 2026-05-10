@@ -83,7 +83,7 @@ export default function AgentsPage() {
 
   const handleToggleGovernor = async () => {
     if (!governorData) return;
-    await saveGovernorConfig({ enabled: !governorData.config.enabled });
+    await saveGovernorConfig({ ...governorData.config, enabled: !governorData.config.enabled });
     await loadData();
   };
 
