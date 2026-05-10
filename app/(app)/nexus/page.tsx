@@ -36,7 +36,8 @@ import {
   Upload,
   File,
   X,
-  MapPin
+  MapPin,
+  ExternalLink
 } from 'lucide-react';
 import { fileProcessor, type ProcessedFile } from '@/lib/services/fileProcessor';
 import type { NexusResult } from '@/lib/core';
@@ -44,6 +45,7 @@ import type { GovernorValidation } from '@/lib/core/GovernorSystem';
 import { loadProviderCapabilities, type ProviderCapability } from '@/lib/services/providerCapabilityService';
 
 export default function NexusAIDashboard() {
+  const router = useRouter();
   const {
     isInitialized,
     isGenerating,
@@ -71,7 +73,6 @@ export default function NexusAIDashboard() {
   });
   const [uploadedFiles, setUploadedFiles] = useState<ProcessedFile[]>([]);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [providerHealth, setProviderHealth] = useState<ProviderCapability[]>([]);
 
   const refreshProviderHealth = useCallback(async () => {
