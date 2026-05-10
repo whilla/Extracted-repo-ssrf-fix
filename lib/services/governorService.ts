@@ -1,6 +1,8 @@
 import { governorSystem, type GovernorConfig, type GovernorState, type GovernorValidation } from '@/lib/core/GovernorSystem';
 import { createClient } from '@/lib/supabase/server';
 
+export { type GovernorConfig, type GovernorState, type GovernorValidation };
+
 // we wrap the core GovernorSystem class with service functions 
 // that use Supabase for persistence instead of Puter KV
 

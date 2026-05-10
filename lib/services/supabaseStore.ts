@@ -3,11 +3,11 @@
  * Migrates critical AI state from KV stores to structured Supabase tables.
  */
 
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { OrchestrationPlan, AgentConfig, EvolutionProposal, AgentVersion } from '@/lib/services/multiAgentService';
 
 export class SupabaseStateStore {
-  private client = getSupabaseClient();
+  private client = getSupabaseBrowserClient();
 
   // --- Orchestration Plans ---
   async savePlan(plan: OrchestrationPlan): Promise<void> {
