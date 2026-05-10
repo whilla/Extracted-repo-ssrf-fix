@@ -5,6 +5,7 @@ import { validateContent, makeGovernorDecision, evaluateMoodApproval } from './g
 import { logPostingEvent, type GenerationSource } from './generationTrackerService';
 import { sanitizeApiKey } from './providerCredentialUtils';
 import { DirectPublishService } from './directPublishService';
+import { publishOrchestrator } from './publishOrchestrator';
 
 const AYRSHARE_API_BASE = 'https://api.ayrshare.com/api';
 
@@ -187,104 +188,48 @@ export async function publishPost(params: {
   } = params;
 
   const media = mediaUrls || (mediaUrl ? [mediaUrl] : undefined);
+  const postIds: Record<string, string> = {};
+  const errors: Record<string, string> = {};
+  let totalSuccess = false;
+  let completeSuccess = true;
 
-  if (!(await isAyrshareConfigured())) {
-    const postIds: Record<string, string> = {};
-    const errors: Record<string, string> = {};
-    let totalSuccess = false;
-    let completeSuccess = true;
-
-    for (const platform of platforms) {
-      try {
-        const result = await DirectPublishService.publish(platform, text, media || []);
-
-        if (result.success && result.postId) {
-          postIds[platform] = result.postId;
-          totalSuccess = true;
-        } else {
-          errors[platform] = result.error || 'Unknown error';
-          completeSuccess = false;
-        }
-      } catch (err) {
-        errors[platform] = err instanceof Error ? err.message : 'Unknown error';
+  // Process each platform using the Strategic Orchestrator
+  await Promise.all(platforms.map(async (platform) => {
+    try {
+      const result = await publishOrchestrator.routePublish(platform, text, media || []);
+      
+      if (result.success && result.postId) {
+        postIds[platform] = result.postId;
+        totalSuccess = true;
+      } else {
+        errors[platform] = result.error || 'Publishing failed';
         completeSuccess = false;
       }
+    } catch (err) {
+      errors[platform] = err instanceof Error ? err.message : 'Unknown error';
+      completeSuccess = false;
     }
+  }));
 
-    const publishResult = {
-      success: totalSuccess,
-      partialSuccess: totalSuccess && !completeSuccess,
-      completeSuccess,
-      postIds,
-      errors,
-    };
+  const publishResult = {
+    success: totalSuccess,
+    partialSuccess: totalSuccess && !completeSuccess,
+    completeSuccess,
+    postIds,
+    errors,
+  };
 
-    await logPostingEvent({
-      source,
-      generationId,
-      automationOutputId,
-      platforms,
-      status: publishResult.success ? 'published' : 'failed',
-      textPreview: text,
-      postIds: publishResult.postIds,
-      error: Object.values(publishResult.errors)[0],
-    });
-    return publishResult;
-  }
-
-  const ayrshareplatforms = platforms.map(p => PLATFORM_MAP[p]);
-  try {
-    const result = await ayrshareRequest<{
-      id?: string;
-      postIds?: Record<string, string>;
-      errors?: Record<string, string>;
-    }>('/post', {
-      method: 'POST',
-      body: JSON.stringify({
-        post: text,
-        platforms: ayrshareplatforms,
-        mediaUrls: media,
-      }),
-    });
-
-    const publishResult = {
-      success: !result.errors || Object.keys(result.errors).length === 0,
-      postIds: result.postIds,
-      errors: result.errors,
-    };
-    await logPostingEvent({
-      source,
-      generationId,
-      automationOutputId,
-      platforms,
-      status: publishResult.success ? 'published' : 'failed',
-      textPreview: text,
-      postIds: publishResult.postIds,
-      error: publishResult.errors?.general,
-    });
-    return publishResult;
-  } catch (error) {
-    // SECURITY FIX: Safely extract error message without type assertion
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : typeof error === 'string'
-      ? error
-      : 'Unknown error occurred';
-
-    await logPostingEvent({
-      source,
-      generationId,
-      automationOutputId,
-      platforms,
-      status: 'failed',
-      textPreview: text,
-      error: errorMessage,
-    });
-    return {
-      success: false,
-      errors: { general: errorMessage },
-    };
-  }
+  await logPostingEvent({
+    source,
+    generationId,
+    automationOutputId,
+    platforms,
+    status: publishResult.success ? 'published' : 'failed',
+    textPreview: text,
+    postIds: publishResult.postIds,
+    error: Object.values(publishResult.errors)[0],
+  });
+  return publishResult;
 }
 
 // Schedule a post for later

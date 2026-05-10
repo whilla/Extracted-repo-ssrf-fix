@@ -595,7 +595,7 @@ export class MemoryManager {
     themes: string[];
   }): Promise<void> {
     const campaignData = await kvGet(`nexus_campaign_${campaignId}`);
-    let campaign: CampaignContext = campaignData 
+    const campaign: CampaignContext = campaignData 
       ? JSON.parse(campaignData) 
       : { campaignId, outputs: [], constraints: [], globalGoal: '' };
 

@@ -135,7 +135,7 @@ export class AnalyticsIngestionService {
 
   private extractIdFromUrl(url: string, platform: string): string | null {
     try {
-      let cleanUrl = url.split('?')[0].replace(/\/$/, '');
+      const cleanUrl = url.split('?')[0].replace(/\/$/, '');
       const parsed = new URL(cleanUrl);
       
       switch (platform) {

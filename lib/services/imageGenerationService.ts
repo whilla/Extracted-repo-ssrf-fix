@@ -2,6 +2,7 @@
 
 import { kvGet, waitForPuter } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { accessibilityService } from './accessibilityService';
 
 export type ImageProvider = 'puter' | 'stability' | 'leonardo' | 'ideogram';
 
@@ -23,6 +24,7 @@ export interface GeneratedImage {
   width: number;
   height: number;
   seed?: number;
+  altText?: string;
 }
 
 async function blobToDataUrl(blob: Blob): Promise<string> {
@@ -516,7 +518,15 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Ge
 
   for (const candidate of filteredProviders) {
     try {
-      return await providerMap[candidate]();
+      const image = await providerMap[candidate]();
+      
+      // Auto-generate accessibility ALT text
+      const accessibility = await accessibilityService.generateAltText(image.url, prompt);
+      
+      return {
+        ...image,
+        altText: accessibility.altText,
+      };
     } catch (error) {
       applyProviderCooldown(candidate, error);
       console.warn(`Image provider ${candidate} failed, trying next`, error);

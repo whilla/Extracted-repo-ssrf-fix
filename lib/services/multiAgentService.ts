@@ -5,6 +5,8 @@ import { kvGet, kvSet } from './puterService';
 import { generateId } from './memoryService';
 import { combineStructuredOutputs } from './orchestrationPrimitives';
 import { stateCache } from './stateCache';
+import { dynamicGenerationService } from './dynamicGenerationService';
+import { swarmTraceService } from './swarmTraceService';
 import { 
   StrategistAgent, 
   WriterAgent, 
@@ -1088,22 +1090,75 @@ export async function executeAgentTask(
   agent: AgentConfig,
   input: string,
   context: Record<string, string>,
-  aiProvider: (prompt: string) => Promise<string>
+  aiProvider: (prompt: string) => Promise<string>,
+  traceId?: string
 ): Promise<AgentOutput> {
   const startTime = Date.now();
 
-  // Build prompt from template
+  if (agent.role === 'generator' || agent.role === 'content-creator') {
+    try {
+      const generation = await dynamicGenerationService.generate({
+        topic: input,
+        audience: context.audience || 'General Audience',
+        goal: (context.goal as any) || 'inspire',
+        brandVoice: context.brandVoice,
+        constraints: context.constraints ? (context.constraints as string).split(',') : [],
+      });
+      
+      const duration = Date.now() - startTime;
+      const output = {
+        agentId: agent.id,
+        agentRole: agent.role,
+        content: generation.finalVersion,
+        score: 95,
+        reasoning: `Cognitive Chain: Deconstruction -> Draft -> Critique -> Refine. Core Truth: ${generation.deconstruction.coreTruth}`,
+        fullPrompt: `Cognitive Generation for ${input}`,
+        metadata: { duration, mode: 'cognitive-chain' },
+      };
+
+      if (traceId) {
+        await swarmTraceService.recordStep(traceId, {
+          stepId: generateId(),
+          agentId: agent.id,
+          agentRole: agent.role,
+          input,
+          output: output.content,
+          startTime: new Date(startTime).toISOString(),
+          endTime: new Date().toISOString(),
+          duration,
+          status: 'success',
+        });
+      }
+
+      return output;
+    } catch (error) {
+      if (traceId) {
+        await swarmTraceService.recordStep(traceId, {
+          stepId: generateId(),
+          agentId: agent.id,
+          agentRole: agent.role,
+          input,
+          output: '',
+          startTime: new Date(startTime).toISOString(),
+          endTime: new Date().toISOString(),
+          duration: Date.now() - startTime,
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+      console.error(`[executeAgentTask] Cognitive generation failed for ${agent.id}, falling back to template:`, error);
+    }
+  }
+
   const prompt = fillPromptTemplate(agent.promptTemplate, input, context);
   const reasoningPrompt = `${prompt}\n\n${DEEP_REASONING_DIRECTIVE}`;
-
+  
   try {
     const content = await aiProvider(reasoningPrompt);
     const duration = Date.now() - startTime;
-
-    // Calculate score based on output characteristics
+    
     const score = calculateOutputScore(content, agent.scoringWeights);
 
-    // Record the task
     await recordAgentTask(agent.id, {
       taskType: agent.role,
       input,
@@ -1112,7 +1167,7 @@ export async function executeAgentTask(
       duration,
     });
 
-    return {
+    const output = {
       agentId: agent.id,
       agentRole: agent.role,
       content,
@@ -1121,7 +1176,37 @@ export async function executeAgentTask(
       fullPrompt: reasoningPrompt,
       metadata: { duration, promptLength: reasoningPrompt.length, reasoningMode: 'deep' },
     };
+
+    if (traceId) {
+      await swarmTraceService.recordStep(traceId, {
+        stepId: generateId(),
+        agentId: agent.id,
+        agentRole: agent.role,
+        input,
+        output: content,
+        startTime: new Date(startTime).toISOString(),
+        endTime: new Date().toISOString(),
+        duration,
+        status: 'success',
+      });
+    }
+
+    return output;
   } catch (error) {
+    if (traceId) {
+      await swarmTraceService.recordStep(traceId, {
+        stepId: generateId(),
+        agentId: agent.id,
+        agentRole: agent.role,
+        input,
+        output: '',
+        startTime: new Date(startTime).toISOString(),
+        endTime: new Date().toISOString(),
+        duration: Date.now() - startTime,
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
     return {
       agentId: agent.id,
       agentRole: agent.role,

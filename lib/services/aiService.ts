@@ -902,6 +902,89 @@ export async function universalChat(
   } = {}
 ): Promise<string> {
   const { model = 'gpt-5.5', avoidPuter = false, onChunk } = options;
+  
+  // 1. Tool Loop Implementation
+  let currentMessages = typeof messages === 'string' ? messages : [...messages];
+  let iteration = 0;
+  const MAX_ITERATIONS = 5;
+
+  // Inject Tool Definitions into System Prompt if not present
+  const toolPrompt = `\n\nAVAILABLE TOOLS:\n${getToolDefinitionsPrompt()}\n\nIf you need real-time info, use: TOOL_CALL: { "tool": "tool_name", "params": { "key": "value" } }`;
+  
+  while (iteration < MAX_ITERATIONS) {
+    // Inject tool prompt for the first message if it's a string or system message
+    const messagesWithTools = typeof currentMessages === 'string' 
+      ? `${currentMessages}\n\n${toolPrompt}` 
+      : [...currentMessages];
+
+    if (Array.isArray(messagesWithTools) && messagesWithTools.length > 0 && messagesWithTools[0].role === 'system') {
+      messagesWithTools[0] = { ...messagesWithTools[0], content: messagesWithTools[0].content + toolPrompt };
+    }
+
+    const response = await _universalChatCore(messagesWithTools, options);
+    
+    // Check for TOOL_CALL pattern
+    const toolMatch = response.match(/TOOL_CALL:\s*({.*?})/s);
+    if (toolMatch) {
+      try {
+        const call = JSON.parse(toolMatch[1]);
+        const tool = ToolRegistry[call.tool];
+        if (!tool) throw new Error(`Unknown tool: ${call.tool}`);
+        
+        const result = await tool.execute(call.params);
+        const toolResponse = result.success 
+          ? `TOOL_RESULT: ${result.content}` 
+          : `TOOL_ERROR: ${result.error}`;
+        
+        // Append tool result to conversation and loop
+        if (typeof currentMessages === 'string') {
+          currentMessages = [
+            { role: 'user', content: currentMessages },
+            { role: 'assistant', content: response },
+            { role: 'system', content: toolResponse }
+          ];
+        } else {
+          currentMessages.push({ role: 'assistant', content: response });
+          currentMessages.push({ role: 'system', content: toolResponse });
+        }
+        
+        iteration++;
+        continue;
+      } catch (e) {
+        if (typeof currentMessages === 'string') {
+          currentMessages = [
+            { role: 'user', content: currentMessages },
+            { role: 'assistant', content: response },
+            { role: 'system', content: `Tool Error: ${e instanceof Error ? e.message : 'Invalid tool call'}` }
+          ];
+        } else {
+          currentMessages.push({ role: 'assistant', content: response });
+          currentMessages.push({ role: 'system', content: `Tool Error: ${e instanceof Error ? e.message : 'Invalid tool call'}` });
+        }
+        iteration++;
+      }
+    }
+    
+    return response;
+  }
+
+  return `Failed to resolve after ${MAX_ITERATIONS} iterations. Last response: ${currentMessages}`;
+}
+
+/**
+ * Core logic for universalChat, extracted to allow recursion.
+ */
+async function _universalChatCore(
+  messages: AIMessage[] | string,
+  options: {
+    model?: string;
+    brandKit?: BrandKit | null;
+    stream?: boolean;
+    avoidPuter?: boolean;
+    onChunk?: (text: string) => void;
+  } = {}
+): Promise<string> {
+  const { model = 'gpt-5.5', avoidPuter = false, onChunk } = options;
   const configuredProviders = await getConfiguredProviders();
   const allowedProviders = avoidPuter
     ? configuredProviders.filter((provider) => provider !== 'puter')

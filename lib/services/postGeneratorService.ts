@@ -349,7 +349,7 @@ export function formatPostWithEmojis(text: string, positions: number[]): string 
   const emojis = selectEmojisForContent(text);
   if (emojis.length === 0) return text;
   
-  let result = text;
+  const result = text;
   const words = result.split(' ');
   const emojiIndices = positions.filter(i => i < words.length);
   

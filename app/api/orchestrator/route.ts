@@ -9,6 +9,8 @@ import * as multiAgentService from '@/lib/services/multiAgentService';
 import { aiService } from '@/lib/services/aiService';
 import { buildMemoryContext } from '@/lib/services/agentMemoryService';
 import { kvGet } from '@/lib/services/puterService';
+import { swarmTraceService } from '@/lib/services/swarmTraceService';
+import { generateId } from '@/lib/services/memoryService';
 
 import type { User } from '@supabase/supabase-js';
 
@@ -63,21 +65,20 @@ export async function POST(request: Request) {
     }
     
     const { agent_id, goal, context, memory_id } = result.data;
+    const traceId = generateId();
+    await swarmTraceService.startTrace(traceId, goal);
 
-    // 1. Log the "Thinking" phase
     await logService.logEvent({
       agent_id,
       status: 'thinking',
       message: `Analyzing the goal: "${goal}". Deploying the Multi-Agent Swarm...`,
     });
 
-    // 2. Initialize Multi-Agent Context
     const agents = await multiAgentService.initializeAgents();
     const memoryContext = await buildMemoryContext(agent_id);
-    const brandKit = await kvGet('brand_kit'); // Simplified brand kit fetch
+    const brandKit = await kvGet('brand_kit'); 
     const brandContext = brandKit ? JSON.stringify(brandKit) : 'No specific brand kit defined.';
 
-    // 3. Create Orchestration Plan
     const plan = await multiAgentService.createOrchestrationPlan(goal, 'full');
     
     await logService.logEvent({
@@ -86,8 +87,7 @@ export async function POST(request: Request) {
       message: `Swarm Plan created: ${plan.subtasks.length} specialized tasks mapped. Starting execution...`,
     });
 
-    // 4. Execute Tasks (Respecting Dependencies)
-    const taskResults = new Map<string, AgentOutput>();
+    const taskResults = new Map<string, any>();
     const pendingTasks = [...plan.subtasks];
     
     while (pendingTasks.length > 0) {
@@ -96,15 +96,14 @@ export async function POST(request: Request) {
       );
 
       if (executableTasks.length === 0 && pendingTasks.length > 0) {
+        await swarmTraceService.endTrace(traceId, 'failed');
         throw new Error('Deadlock detected in orchestration plan dependencies.');
       }
 
-      // Execute available tasks in parallel (matching plan.parallelGroups if possible, here we just do all ready)
       await Promise.all(executableTasks.map(async (task) => {
         const agent = await multiAgentService.getAgentById(task.assignedAgent);
         if (!agent) throw new Error(`Agent ${task.assignedAgent} not found for task ${task.id}`);
 
-        // Resolve context from previous task results
         const contextObj: Record<string, string> = {
           brandContext,
           memoryContext,
@@ -113,7 +112,6 @@ export async function POST(request: Request) {
           task.dependencies.forEach(depId => {
             const res = taskResults.get(depId);
             if (res) {
-              // Map common roles to template keys (e.g., planner -> executionPlan)
               const role = res.agentRole;
               const key = role === 'planner' ? 'executionPlan' : 
                           role === 'identity' ? 'identity' : 
@@ -135,32 +133,30 @@ export async function POST(request: Request) {
           agent,
           task.input,
           contextObj,
-          (prompt) => aiService.chat(prompt)
+          (prompt) => aiService.chat(prompt),
+          traceId
         );
 
         taskResults.set(task.id, output);
       }));
 
-      // Remove executed tasks from pending
       executableTasks.forEach(t => {
         const idx = pendingTasks.indexOf(t);
         if (idx > -1) pendingTasks.splice(idx, 1);
       });
     }
 
-    // 5. Aggregate Final Output
-    const finalAgent = await multiAgentService.getAgentByRole('generator');
-    const generatorOutput = Array.from(taskResults.values()).find(o => o.agentRole === 'generator');
-    const distributionAgent = await multiAgentService.getAgentByRole('distribution');
-    const distributionOutput = Array.from(taskResults.values()).find(o => o.agentRole === 'distribution');
+    const generatorOutput = Array.from(taskResults.values()).find((o: any) => o.agentRole === 'generator');
+    const distributionOutput = Array.from(taskResults.values()).find((o: any) => o.agentRole === 'distribution');
     
     const finalContent = distributionOutput?.content || generatorOutput?.content || 'No content generated';
 
-    // 6. Final Humanization & Route to Approval
     const humanizedResponse = await personaService.humanize(
       `The agent swarm has completed the task. Final content: ${finalContent}`, 
       agent_id
     );
+
+    await swarmTraceService.endTrace(traceId, 'completed', finalContent);
 
     await logService.logEvent({
       agent_id,
@@ -168,7 +164,6 @@ export async function POST(request: Request) {
       message: 'Swarm execution complete. Quality validated and routed to dashboard.',
     });
 
-    // Trigger the posting workflow (n8n)
     await n8nBridgeService.triggerWorkflow('workflow-social-posting', {
       agent_id,
       caption: finalContent,
@@ -180,9 +175,10 @@ export async function POST(request: Request) {
       status: 'success', 
       response: humanizedResponse,
       finalContent, 
+      traceId,
       swarm_metrics: {
         tasks_completed: taskResults.size,
-        agents_involved: new Set(Array.from(taskResults.values()).map(o => o.agentId)).size
+        agents_involved: new Set(Array.from(taskResults.values()).map((o: any) => o.agentId)).size
       },
       nextStep: 'human_approval' 
     });
