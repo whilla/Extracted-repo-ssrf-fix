@@ -2,6 +2,7 @@
 
 import { kvGet, kvSet } from './puterService';
 import { hasConfiguredSecret, sanitizeApiKey, sanitizeStoredValueForKey } from './providerCredentialUtils';
+import { mediaAssetManager, type MediaAsset } from './mediaAssetManager';
 
 export type VoiceProvider = 'elevenlabs' | 'speechify' | 'playht' | 'resemble' | 'google' | 'azure' | 'web-speech' | 'piper' | 'coqui';
 
@@ -287,7 +288,7 @@ async function generateResembleAI(text: string, voiceUuid = 'd1d1d1d1-d1d1-d1d1-
 /**
  * Generate speech using ElevenLabs (requires API key)
  */
-async function generateElevenLabs(text: string, voiceId = '21m00Tcm4TlvDq8ikWAM'): Promise<string> {
+async function generateElevenLabs(text: string, voiceId = '21m00Tcm4TlvDq8ikWAM'): Promise<MediaAsset> {
   const apiKey = sanitizeApiKey(await kvGet('elevenlabs_key'));
   
   if (!apiKey || apiKey.length < 10) {
@@ -330,7 +331,12 @@ async function generateElevenLabs(text: string, voiceId = '21m00Tcm4TlvDq8ikWAM'
     if (audioBlob.size === 0) {
       throw new Error('ElevenLabs returned empty audio');
     }
-    return URL.createObjectURL(audioBlob);
+    const url = URL.createObjectURL(audioBlob);
+    
+    return mediaAssetManager.wrapAsset(url, 'audio', 'elevenlabs', {
+      blobSize: audioBlob.size,
+      textLength: text.length
+    });
   });
 }
 
@@ -339,8 +345,11 @@ async function generateElevenLabs(text: string, voiceId = '21m00Tcm4TlvDq8ikWAM'
  */
 async function generateAzureTTS(text: string, voiceId = 'en-US-AriaNeural'): Promise<string> {
   try {
-    const apiKey = sanitizeApiKey(await kvGet('azure_speech_key'));
-    const region = sanitizeStoredValueForKey('azure_speech_region', await kvGet('azure_speech_region')) || 'eastus';
+    let apiKey = sanitizeApiKey(await kvGet('azure_speech_key'));
+    if (!apiKey) {
+      apiKey = process.env.AZURE_SPEECH_KEY || '';
+    }
+    const region = (await kvGet('azure_speech_region')) || process.env.AZURE_SPEECH_REGION || 'eastus';
     
     if (!apiKey) {
       throw new Error('Azure Speech API key not configured');
@@ -405,11 +414,11 @@ export async function generateVoice(options: VoiceOptions): Promise<string> {
 
   // Auto-select best available provider (in order of quality)
   const providerAttempts: Array<{ check: () => Promise<boolean>; generate: () => Promise<string>; name: string }> = [
-    { name: 'ElevenLabs', check: async () => hasConfiguredSecret(await kvGet('elevenlabs_key')), generate: () => generateElevenLabs(text, voiceId) },
-    { name: 'Play.ht', check: async () => hasConfiguredSecret(await kvGet('playht_key')) && !!sanitizeStoredValueForKey('playht_user_id', await kvGet('playht_user_id')), generate: () => generatePlayHT(text, voiceId) },
-    { name: 'Speechify', check: async () => hasConfiguredSecret(await kvGet('speechify_key')), generate: () => generateSpeechify(text, voiceId) },
-    { name: 'Resemble', check: async () => hasConfiguredSecret(await kvGet('resemble_key')), generate: () => generateResembleAI(text, voiceId) },
-    { name: 'Azure', check: async () => hasConfiguredSecret(await kvGet('azure_speech_key')), generate: () => generateAzureTTS(text, voiceId) },
+    { name: 'ElevenLabs', check: async () => !!(await kvGet('elevenlabs_key')) || !!process.env.ELEVENLABS_API_KEY, generate: () => generateElevenLabs(text, voiceId) },
+    { name: 'Play.ht', check: async () => !!(await kvGet('playht_key')) && !!sanitizeStoredValueForKey('playht_user_id', await kvGet('playht_user_id')) || !!process.env.PLAYHT_API_KEY, generate: () => generatePlayHT(text, voiceId) },
+    { name: 'Speechify', check: async () => !!(await kvGet('speechify_key')) || !!process.env.SPEECHIFY_API_KEY, generate: () => generateSpeechify(text, voiceId) },
+    { name: 'Resemble', check: async () => !!(await kvGet('resemble_key')) || !!process.env.RESEMBLE_API_KEY, generate: () => generateResembleAI(text, voiceId) },
+    { name: 'Azure', check: async () => !!(await kvGet('azure_speech_key')) || !!process.env.AZURE_SPEECH_KEY, generate: () => generateAzureTTS(text, voiceId) },
     { name: 'Web Speech', check: async () => true, generate: () => generateWebSpeech(text, { speed, pitch }) },
   ];
 

@@ -33,7 +33,10 @@ export class AgentBlackboard {
       ...observation,
       timestamp: new Date().toISOString(),
     });
-    console.log(`[Blackboard] Agent ${observation.agentRole} posted ${observation.type}: ${observation.content.slice(0, 50)}...`);
+    
+    // Enhanced Tracing: Log the flow of information
+    const trace = `[BLACKBOARD-TRACE][${this.requestId}] ${observation.agentRole} -> ${observation.type.toUpperCase()}: "${observation.content.slice(0, 100)}${observation.content.length > 100 ? '...' : ''}" (Conf: ${observation.confidence})`;
+    console.log(trace);
   }
 
   /**

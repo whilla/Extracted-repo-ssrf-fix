@@ -5,14 +5,14 @@
  * This is the unified core engine replacing the fragmented la-la orchestration services.
  */
 
-import { ProviderRouter, type ProviderResponse } from './ProviderRouter';
-import { ViralScoringEngine, type ViralScore } from './ViralScoringEngine';
-import { LearningSystem } from './LearningSystem';
-import { MemoryManager, type MemoryContext } from './MemoryManager';
-import { AgentBlackboard } from './AgentBlackboard';
-import { tokenBudgetManager } from '../services/tokenBudgetManager';
-import { perceptionService } from '../services/multiModalPerceptionService';
-import { trendScoutService } from '../services/trendScoutService';
+import { ProviderRouter, type ProviderResponse } from './ProviderRouter.ts';
+import { ViralScoringEngine, type ViralScore } from './ViralScoringEngine.ts';
+import { LearningSystem } from './LearningSystem.ts';
+import { MemoryManager, type MemoryContext } from './MemoryManager.ts';
+import { AgentBlackboard } from './AgentBlackboard.ts';
+import { tokenBudgetManager } from '../services/tokenBudgetManager.ts';
+import { perceptionService } from '../services/multiModalPerceptionService.ts';
+import { trendScoutService } from '../services/trendScoutService.ts';
 import { 
   BaseAgent, 
   StrategistAgent, 
@@ -22,13 +22,14 @@ import {
   OptimizerAgent,
   HybridAgent,
   SynthesisAgent,
+  VisualCriticAgent,
   type AgentOutput,
   type AgentExecutionContext,
   type OrchestrationPlan,
   type SubTask,
   type AgentRole
-} from '../agents';
-import { GovernorSystem, type GovernorValidation } from './GovernorSystem';
+} from '../agents/index.ts';
+import { GovernorSystem, type GovernorValidation } from './GovernorSystem.ts';
 import { 
   initializeAgents, 
   loadAgents, 
@@ -38,10 +39,11 @@ import {
   selectBestOutput,
   combineOutputs,
   type AgentConfig 
-} from '../services/multiAgentService';
-import { savePlan, getPlan } from '../services/planStorageService';
-import { gatherNexusContext } from '../services/discoveryService';
-import { addToApprovalQueue } from '../services/approvalQueueService';
+} from '../services/multiAgentService.ts';
+import { stateCache } from '../services/stateCache.ts';
+import { savePlan, getPlan } from '../services/planStorageService.ts';
+import { gatherNexusContext } from '../services/discoveryService.ts';
+import { addToApprovalQueue } from '../services/approvalQueueService.ts';
 import {
   loadGovernorConfig,
   loadGovernorState,
@@ -51,13 +53,28 @@ import {
   activateFailsafeMode,
   type GovernorDecision,
   type ContentValidation,
-} from '../services/governorService';
-import { loadBrandKit } from '../services/memoryService';
-import { buildMemoryContext } from '../services/agentMemoryService';
-import { universalChat } from '../services/aiService';
+} from '../services/governorService.ts';
+import { loadBrandKit } from '../services/memoryService.ts';
+import { buildMemoryContext } from '../services/agentMemoryService.ts';
+import { universalChat } from '../services/aiService.ts';
 import { BrandKit } from '@/lib/validators';
 
 // Core Types
+export interface ProductionAsset {
+  type: 'image' | 'video' | 'audio' | 'music' | 'document';
+  url: string;
+  provider: string;
+  metadata: Record<string, any>;
+  status: 'pending' | 'completed' | 'failed';
+}
+
+export interface ProductionBundle {
+  text: string;
+  assets: ProductionAsset[];
+  primaryAsset?: ProductionAsset;
+  version: number;
+}
+
 export interface NexusRequest {
   userInput: string;
   taskType: 'content' | 'strategy' | 'hook' | 'critique' | 'full' | 'optimize';
@@ -66,11 +83,17 @@ export interface NexusRequest {
   maxAgents?: number;
   forceProvider?: string;
   fileContext?: string;
+  requireApproval?: boolean; // HITL flag
+}
+
+export interface ProductionSuite {
+  champion: ProductionBundle;
+  challengers: ProductionBundle[];
 }
 
 export interface NexusResult {
   success: boolean;
-  output: string;
+  suite: ProductionSuite;
   score: number;
   allOutputs: AgentOutput[];
   selectedAgent: string;
@@ -150,6 +173,7 @@ export class NexusCore {
       new OptimizerAgent(),
       new HybridAgent(),
       new SynthesisAgent(),
+      new VisualCriticAgent(),
     ];
     agents.forEach(agent => this.state.activeAgents.set(agent.getId(), agent));
   }
@@ -169,28 +193,50 @@ export class NexusCore {
       if (!budgetCheck.allowed) throw new Error(`Budget Blocked: ${budgetCheck.reason}`);
 
       const brandKit = await loadBrandKit();
-      const memoryContext = await buildMemoryContext();
+      // UPDATED: buildContext now takes a campaignId if available in request (metadata/context)
+      const memoryContext = await this.state.memoryManager.buildContext(request.userInput);
       const governorState = await loadGovernorState();
 
       if (governorState.currentMode === 'failsafe') {
         throw new Error('System is in failsafe mode');
       }
 
-      const plan = await createOrchestrationPlan(request.userInput, request.taskType as any);
+      // DYNAMIC ARCHITECT: Use the PlannerAgent to dynamically design the plan instead of templates
+      const plannerAgent = this.state.activeAgents.get('planner_planner') || new HybridAgent();
+      const plan = await createOrchestrationPlan(request.userInput, request.taskType as any, plannerAgent);
       let regenerations = 0;
       let finalResult = null;
 
       while (regenerations < 3) {
         const execution = await this.runPlanExecution(plan, memoryContext, brandKit, request);
         const validation = await this.state.governor.validate(execution.combinedContent, { platform: request.platform });
+        
+        // VISUAL VALIDATION: If assets were produced, run the Visual Critic
+        let visualValidation = { approved: true, feedback: '' };
+        if (execution.assets && execution.assets.length > 0) {
+          const visualCritic = this.state.activeAgents.get('critic_visual') || new VisualCriticAgent();
+          const vContext: AgentExecutionContext = {
+            userInput: request.userInput,
+            memoryContext,
+            platform: request.platform || 'twitter',
+            customInstructions: `Analyze these assets: ${execution.assets.map(a => a.url).join(', ')}`,
+            provider: await this.state.providerRouter.selectProvider({ taskType: 'content' }),
+            blackboard: new AgentBlackboard(plan.id),
+          };
+          const vOutput = await this.executeAgent(visualCritic, vContext);
+          if (!vOutput.success || vOutput.content.includes('FAIL')) {
+            visualValidation = { approved: false, feedback: vOutput.content };
+          }
+        }
+
         const decision = await makeGovernorDecision(validation, { regenerationCount: regenerations });
 
-        if (decision.approved) {
-          finalResult = { content: execution.combinedContent, outputs: execution.outputs, validation };
+        if (decision.approved && visualValidation.approved) {
+          finalResult = { content: execution.combinedContent, outputs: execution.outputs, validation, assets: execution.assets };
           break;
         }
 
-        if (decision.action === 'regenerate') {
+        if (decision.action === 'regenerate' || !visualValidation.approved) {
           regenerations++;
           // Trigger partial plan invalidation based on governor feedback
           plan.subtasks.forEach(t => { if(t.status === 'completed') t.status = 'pending'; });
@@ -198,12 +244,58 @@ export class NexusCore {
         }
         break;
       }
+//... (rest of the code)
 
       const resultContent = finalResult?.content || '';
       const resultOutputs = finalResult?.outputs || [];
+      const resultAssets = finalResult?.assets || [];
       const resultValidation = finalResult?.validation || { approved: false, feedback: 'Rejected' };
 
+      // HITL Integration: If approval is required, queue it and return a pending state
+      if (request.requireApproval && resultValidation.approved) {
+        await addToApprovalQueue({
+          content: resultContent,
+          platform: request.platform || 'general',
+          requestId: plan.id,
+          priority: 'high',
+          metadata: { score: 0 } // Will be updated after scoring
+        });
+      }
+
       const scoredOutputs = await this.scoreOutputs(resultOutputs);
+      
+      // EMPOWERED SYNTHESIS: Instead of just picking the best, 
+      // we use the SynthesisAgent to merge top candidates.
+      let finalChampionText = resultContent;
+      const synthesisAgent = this.state.activeAgents.get('optimizer_synthesis') || new SynthesisAgent();
+      
+      if (scoredOutputs.length > 1) {
+        // Post the top 3 candidates to the blackboard for the SynthesisAgent
+        const blackboard = new AgentBlackboard(plan.id);
+        scoredOutputs.slice(0, 3).forEach((out, i) => {
+          blackboard.post({
+            agentId: out.agentId,
+            agentRole: out.agentRole,
+            type: 'observation',
+            content: `Candidate #${i+1} (Score: ${out.viralScore?.total}): ${out.content}`,
+            confidence: 0.9,
+          });
+        });
+
+        const synthContext: AgentExecutionContext = {
+          userInput: request.userInput,
+          memoryContext,
+          platform: request.platform || 'twitter',
+          provider: await this.state.providerRouter.selectProvider({ taskType: 'content' }),
+          blackboard,
+        };
+
+        const synthOutput = await this.executeAgent(synthesisAgent, synthContext);
+        if (synthOutput.success) {
+          finalChampionText = synthOutput.content;
+        }
+      }
+
       const bestOutput = this.selectBestOutput(scoredOutputs);
 
       if (resultValidation.approved && bestOutput.viralScore && bestOutput.viralScore.total >= 70) {
@@ -211,10 +303,23 @@ export class NexusCore {
       }
 
       await this.updateAgentPerformance(scoredOutputs, bestOutput);
+      
+      await stateCache.flush();
 
       return {
         success: resultValidation.approved,
-        output: resultContent,
+        suite: {
+          champion: {
+            text: finalChampionText,
+            assets: [],
+            version: 1,
+          },
+          challengers: scoredOutputs.slice(1, 4).map(out => ({
+            text: out.content,
+            assets: [],
+            version: 1,
+          })),
+        },
         score: bestOutput.viralScore?.total || 0,
         allOutputs: scoredOutputs,
         selectedAgent: bestOutput.agentId,
@@ -243,29 +348,88 @@ export class NexusCore {
 
     for (const group of plan.parallelGroups) {
       const groupTasks = plan.subtasks.filter(t => group.includes(t.id));
-      const results = await Promise.all(groupTasks.map(async (task) => {
-        const agent = await getAgentByRole(task.type as any) || new HybridAgent();
-        const surgicalBrand = this.getSurgicalBrandContext(agent.getRole(), brandKit);
-        
-        const context: AgentExecutionContext = {
-          userInput: request.userInput,
-          memoryContext,
-          platform: request.platform || 'twitter',
-          customInstructions: request.customInstructions,
-          provider: await this.state.providerRouter.selectProvider({ taskType: 'content' }),
-          blackboard,
-        };
+      
+      // ADAPTIVE ROUTING: Check if previous groups failed or had low confidence
+      const previousFailures = plan.subtasks
+        .filter(t => !group.includes(t.id) && t.status === 'failed')
+        .map(t => t.id);
 
-        const output = await this.executeAgent(agent, context);
-        taskOutputs.set(task.id, output);
-        outputs.push(output);
-        return output;
+      const groupResults = await Promise.all(groupTasks.map(async (task) => {
+        let attempt = 0;
+        const maxSurgicalRetries = 2;
+
+        while (attempt <= maxSurgicalRetries) {
+          const agent = await getAgentByRole(task.type as any) || new HybridAgent();
+          const surgicalBrand = this.getSurgicalBrandContext(agent.getRole(), brandKit);
+          
+          const context: AgentExecutionContext = {
+            userInput: request.userInput,
+            memoryContext,
+            platform: request.platform || 'twitter',
+            customInstructions: request.customInstructions,
+            provider: await this.state.providerRouter.selectProvider({ taskType: 'content' }),
+            blackboard,
+          };
+
+          // Inject adaptive instructions if previous tasks failed
+          if (previousFailures.length > 0 && context.customInstructions) {
+            context.customInstructions += `\n\nNote: Some previous pipeline steps failed. Please be extra thorough in your execution of this task.`;
+          } else if (previousFailures.length > 0) {
+            context.customInstructions = `Note: Some previous pipeline steps failed. Please be extra thorough.`;
+          }
+
+          const output = await this.executeAgent(agent, context);
+          
+          if (output.success) {
+            // COLLABORATION STEP: Agent posts result to the blackboard
+            blackboard.post({
+              agentId: output.agentId,
+              agentRole: output.agentRole,
+              type: 'observation',
+              content: output.content,
+              confidence: 0.9,
+            });
+
+            taskOutputs.set(task.id, output);
+            outputs.push(output);
+            task.status = 'completed';
+            return output;
+          }
+
+          attempt++;
+          if (attempt <= maxSurgicalRetries) {
+            console.warn(`[SurgicalRetry] Task ${task.id} (${task.type}) failed. Attempt ${attempt}/${maxSurgicalRetries}...`);
+            
+            // ERROR-AWARE RETRY: Pass the failure reason into the next attempt's instructions
+            const failureReason = output.error || 'Unknown execution error';
+            if (context.customInstructions) {
+              context.customInstructions += `\n\nPREVIOUS ATTEMPT FAILED: ${failureReason}. Please analyze why this failed and correct it in this attempt.`;
+            } else {
+              context.customInstructions = `PREVIOUS ATTEMPT FAILED: ${failureReason}. Please analyze why this failed and correct it in this attempt.`;
+            }
+          } else {
+            task.status = 'failed';
+            taskOutputs.set(task.id, output);
+            outputs.push(output);
+            return output;
+          }
+        }
+        return null!; // Should not be reached
       }));
     }
 
     return {
       combinedContent: selectBestOutput(outputs)?.content || '',
       outputs,
+      assets: taskOutputs.values()
+        .filter(o => o.agentRole === 'visual' && o.success)
+        .map(o => ({
+          type: 'image' as const,
+          url: o.content, // Assuming content is the URL for visual agents
+          provider: o.metadata.provider as string || 'unknown',
+          metadata: o.metadata,
+          status: 'completed' as const,
+        })),
     };
   }
 
@@ -316,7 +480,10 @@ export class NexusCore {
   private createErrorResult(error: any): NexusResult {
     return {
       success: false,
-      output: '',
+      suite: {
+        champion: { text: '', assets: [], version: 0 },
+        challengers: [],
+      },
       score: 0,
       allOutputs: [],
       selectedAgent: '',
@@ -347,8 +514,17 @@ export class NexusCore {
   }
 
   private spawnDefaultAgents(): void {
-    const agents = [new StrategistAgent(), new WriterAgent(), new HookAgent(), new CriticAgent(), new OptimizerAgent(), new HybridAgent(), new SynthesisAgent()];
-    agents.forEach(a => this.state.activeAgents.set(a.getId(), a));
+    const agents: BaseAgent[] = [
+      new StrategistAgent(),
+      new WriterAgent(),
+      new HookAgent(),
+      new CriticAgent(),
+      new OptimizerAgent(),
+      new HybridAgent(),
+      new SynthesisAgent(),
+      new VisualCriticAgent(),
+    ];
+    agents.forEach(agent => this.state.activeAgents.set(agent.getId(), agent));
   }
 }
 

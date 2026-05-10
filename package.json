@@ -36,6 +36,8 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
+    "yjs": "^13.6.10",
+    "y-websocket": "^1.5.0",
     "@next/swc-wasm-nodejs": "16.2.0",
     "@next/swc-wasm-web": "16.2.0",
     "@radix-ui/react-accordion": "1.2.12",

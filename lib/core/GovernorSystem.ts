@@ -12,6 +12,7 @@
 
 import { kvGet, kvSet } from '../services/puterService';
 import { ViralScoringEngine } from './ViralScoringEngine';
+import { universalChat } from '../services/aiService';
 
 // Governor Types
 export interface GovernorValidation {
@@ -180,61 +181,93 @@ export class GovernorSystem {
       ]);
     }
 
+    // SEMANTIC VALIDATION: use LLM to analyze quality and robotic patterns
+    let semanticResult: { approved: boolean; score: number; feedback: string; issues: GovernorIssue[] } | null = null;
+    try {
+      const semanticPrompt = `You are the Quality Governor for a high-end content platform.
+Analyze the following content for:
+1. Robotic/AI language (e.g. "In conclusion", "Additionally", corporate jargon)
+2. Engagement quality (Does it stop the scroll? Is the hook strong?)
+3. Brand alignment and authenticity.
+
+Content:
+"""
+${content}
+"""
+
+Return only a JSON object with:
+{
+  "approved": boolean,
+  "score": 0-100,
+  "feedback": "concise summary of issues",
+  "issues": [
+    { "type": "robotic" | "engagement" | "quality", "severity": "warning" | "error", "message": "details" }
+  ]
+}
+Return NO other text.`;
+      
+      const response = await universalChat(semanticPrompt, { model: 'gpt-4o-mini' });
+      const parsed = JSON.parse(response.replace(/```json|```/g, ''));
+      semanticResult = { approved: parsed.approved, score: parsed.score, feedback: parsed.feedback, issues: parsed.issues };
+    } catch (e) {
+      console.warn('[GovernorSystem] Semantic validation failed, falling back to heuristics:', e);
+    }
+
     const issues: GovernorIssue[] = [];
     let score = 100;
 
-    // 1. Check for robotic patterns
-    const roboticResult = this.checkRoboticPatterns(content);
-    score -= roboticResult.penalty * this.config.roboticPatternPenalty;
-    issues.push(...roboticResult.issues);
+    if (semanticResult) {
+      score = semanticResult.score;
+      issues.push(...semanticResult.issues);
+      
+      if (!semanticResult.approved) {
+        const roboticResult = this.checkRoboticPatterns(content);
+        score -= roboticResult.penalty * 0.5; 
+        issues.push(...roboticResult.issues);
+      }
+    } else {
+      const roboticResult = this.checkRoboticPatterns(content);
+      score -= roboticResult.penalty * this.config.roboticPatternPenalty;
+      issues.push(...roboticResult.issues);
+    }
 
-    // 2. Check for generic/low engagement patterns
     const genericResult = this.checkGenericPatterns(content);
-    score -= genericResult.penalty;
+    score -= genericResult.penalty * 0.2; 
     issues.push(...genericResult.issues);
 
-    // 3. Check content structure
     if (this.config.enforcedStructure) {
       const structureResult = this.checkStructure(content);
       score -= structureResult.penalty;
       issues.push(...structureResult.issues);
     }
 
-    // 4. Check for repetition (if previous content provided)
     if (context.previousContent) {
       const repetitionResult = this.checkRepetition(content, context.previousContent);
       score -= repetitionResult.penalty * this.config.repetitionPenalty;
       issues.push(...repetitionResult.issues);
     }
 
-    // 5. Get viral score
     const viralScore = await this.scoringEngine.score(content);
-    
-    // Blend governor score with viral score
     score = (score * 0.6 + viralScore.total * 0.4);
 
-    // 6. Platform-specific checks
     if (context.platform) {
       const platformResult = this.checkPlatformRequirements(content, context.platform);
       score -= platformResult.penalty;
       issues.push(...platformResult.issues);
     }
 
-    // Apply strict mode
     if (this.config.strictMode) {
-      score *= 0.9; // 10% penalty in strict mode
+      score *= 0.9;
     }
 
-    // Apply failsafe mode
     if (this.state.mode === 'failsafe') {
       return this.createRejection('System in failsafe mode', score, issues, 'failsafe');
     }
 
-    // Record validation
     this.recordValidation(score, issues);
 
-    // Determine outcome
-    const approved = score >= this.config.qualityThreshold && 
+    const approved = (semanticResult ? semanticResult.approved : true) && 
+                     score >= this.config.qualityThreshold && 
                      issues.filter(i => i.severity === 'critical').length === 0;
 
     if (approved) {
@@ -245,12 +278,10 @@ export class GovernorSystem {
       this.state.consecutiveRejections++;
       this.state.totalRejections++;
 
-      // Check for failsafe trigger
       if (this.state.consecutiveRejections >= this.config.failsafeThreshold) {
         await this.activateFailsafe('Too many consecutive rejections');
       }
 
-      // Determine action
       const action: GovernorAction = context.isRegeneration ? 'switch_provider' : 'regenerate';
       
       return this.createRejection(

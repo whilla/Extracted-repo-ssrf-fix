@@ -4,6 +4,7 @@ import { kvGet } from './puterService';
 import { validateContent, makeGovernorDecision, evaluateMoodApproval } from './governorService';
 import { logPostingEvent, type GenerationSource } from './generationTrackerService';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { DirectPublishService } from './directPublishService';
 
 const AYRSHARE_API_BASE = 'https://api.ayrshare.com/api';
 
@@ -185,9 +186,44 @@ export async function publishPost(params: {
     automationOutputId,
   } = params;
 
-  const ayrshareplatforms = platforms.map(p => PLATFORM_MAP[p]);
   const media = mediaUrls || (mediaUrl ? [mediaUrl] : undefined);
 
+  if (!(await isAyrshareConfigured())) {
+    const postIds: Record<string, string> = {};
+    const errors: Record<string, string> = {};
+    let totalSuccess = false;
+
+    for (const platform of platforms) {
+      const result = await DirectPublishService.publish(platform, text, media || []);
+
+      if (result.success && result.postId) {
+        postIds[platform] = result.postId;
+        totalSuccess = true;
+      } else {
+        errors[platform] = result.error || 'Unknown error';
+      }
+    }
+
+    const publishResult = {
+      success: totalSuccess,
+      postIds,
+      errors,
+    };
+
+    await logPostingEvent({
+      source,
+      generationId,
+      automationOutputId,
+      platforms,
+      status: publishResult.success ? 'published' : 'failed',
+      textPreview: text,
+      postIds: publishResult.postIds,
+      error: Object.values(publishResult.errors)[0],
+    });
+    return publishResult;
+  }
+
+  const ayrshareplatforms = platforms.map(p => PLATFORM_MAP[p]);
   try {
     const result = await ayrshareRequest<{
       id?: string;

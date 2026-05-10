@@ -1,9 +1,10 @@
 'use client';
 
-import { kvGet } from './puterService.ts';
+import { kvGet, kvSet } from './puterService.ts';
 import { sanitizeApiKey } from './providerCredentialUtils.ts';
+import { mediaAssetManager, type MediaAsset } from './mediaAssetManager.ts';
 
-export type VideoProvider = 'ltx23' | 'ltx23-open';
+export type VideoProvider = 'ltx23' | 'ltx23-open' | 'runway' | 'pika' | 'stablevideo';
 
 export interface VideoGenerationOptions {
   prompt: string;
@@ -18,6 +19,7 @@ export interface VideoGenerationOptions {
   cameraMotion?: string;
   shotStyle?: string;
   qualityProfile?: 'social' | 'cinematic' | 'netflix';
+  onProgress?: (stage: string, progress: number) => void;
 }
 
 export interface GeneratedVideo {
@@ -109,11 +111,16 @@ export function buildVideoProviderAttemptOrder(
     return [preferredProvider];
   }
 
-  if (preferredProvider === 'ltx23-open') {
-    return openEndpointConfigured ? ['ltx23-open', 'ltx23'] : ['ltx23'];
+  const fallbackChain: VideoProvider[] = ['ltx23', 'runway', 'pika', 'stablevideo'];
+  if (openEndpointConfigured) {
+    fallbackChain.unshift('ltx23-open');
   }
 
-  return openEndpointConfigured ? ['ltx23', 'ltx23-open'] : ['ltx23'];
+  if (preferredProvider === 'ltx23-open' && openEndpointConfigured) {
+    return ['ltx23-open', ...fallbackChain.filter(p => p !== 'ltx23')];
+  }
+
+  return [preferredProvider, ...fallbackChain.filter(p => p !== preferredProvider)];
 }
 
 function scoreVideoError(error: Error): number {
@@ -429,8 +436,255 @@ async function pollFalJob(statusUrl: string, apiKey: string, responseUrl?: strin
   throw new Error(`LTX generation timed out after ${Math.round(LTX_PROVIDER_TIMEOUT_MS / 60_000)} minutes. Check the provider job/credits, then retry or switch video provider.`);
 }
 
+/**
+ * Generate video with Runway Gen-3 API
+ * API: https://docs.runwayml.com/
+ */
+async function generateWithRunway(options: VideoGenerationOptions): Promise<GeneratedVideo> {
+  const apiKey = sanitizeApiKey(await kvGet('runway_key'));
+  if (!apiKey) {
+    throw new Error('Runway API key not configured. Get a key at runwayml.com');
+  }
+
+  const { prompt, durationSeconds = 10, aspectRatio = '16:9', imageUrl } = options;
+
+  // Runway Gen-3 API uses a job-based workflow
+  // Step 1: Create a video generation task
+  const createResponse = await safeFetch('https://api.runwayml.com/v1/video generations', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'X-Runway-Version': '2024-11-06',
+    },
+    body: JSON.stringify({
+      model: 'gen-3',
+      prompt: buildEnhancedVideoPrompt(options),
+      duration: Math.min(Math.max(durationSeconds, 4), 30),
+      ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '1:1' ? '1:1' : '16:9',
+      ...(imageUrl ? { image_url: imageUrl } : {}),
+    }),
+  }, 60000);
+
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text().catch(() => createResponse.statusText);
+    throw new Error(`Runway API error (${createResponse.status}): ${errorText}`);
+  }
+
+  const createData = await createResponse.json();
+  const taskId = createData.id;
+
+  if (!taskId) {
+    throw new Error('Runway did not return a task ID');
+  }
+
+  // Step 2: Poll for completion (max 2 minutes)
+  const startTime = Date.now();
+  while (Date.now() - startTime < LTX_PROVIDER_TIMEOUT_MS) {
+    await sleep(LTX_POLL_INTERVAL_MS);
+
+    const statusResponse = await safeFetch(`https://api.runwayml.com/v1/video_generations/${taskId}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'X-Runway-Version': '2024-11-06',
+      },
+    }, 30000);
+
+    if (!statusResponse.ok) {
+      const errorText = await statusResponse.text().catch(() => statusResponse.statusText);
+      throw new Error(`Runway status check failed (${statusResponse.status}): ${errorText}`);
+    }
+
+    const statusData = await statusResponse.json();
+    const status = String(statusData.status || '').toLowerCase();
+
+    if (status === 'completed' || status === 'succeeded') {
+      const videoUrl = statusData.videoUrl || statusData.outputUrl || statusData.url;
+      if (!videoUrl) {
+        throw new Error('Runway completed but did not return a video URL');
+      }
+      return {
+        url: videoUrl,
+        provider: 'runway',
+        durationSeconds: statusData.duration || durationSeconds,
+        aspectRatio: statusData.ratio || aspectRatio,
+        thumbnailUrl: statusData.thumbnailUrl,
+      };
+    }
+
+    if (status === 'failed' || status === 'error') {
+      throw new Error(statusData.error || statusData.message || 'Runway generation failed');
+    }
+  }
+
+  throw new Error(`Runway generation timed out after ${Math.round(LTX_PROVIDER_TIMEOUT_MS / 60_000)} minutes`);
+}
+
+/**
+ * Generate video with Pika Labs API
+ * API: https://docs.pika.art/
+ */
+async function generateWithPika(options: VideoGenerationOptions): Promise<GeneratedVideo> {
+  const apiKey = sanitizeApiKey(await kvGet('pika_key'));
+  if (!apiKey) {
+    throw new Error('Pika API key not configured. Get a key at pika.art');
+  }
+
+  const { prompt, durationSeconds = 3, aspectRatio = '16:9', imageUrl } = options;
+
+  // Pika API v2 - Create video generation
+  const createResponse = await safeFetch('https://api.pika.art/v2/generate', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      prompt: buildEnhancedVideoPrompt(options),
+      duration: Math.min(Math.max(durationSeconds, 1), 10),
+      aspect_ratio: aspectRatio,
+      ...(imageUrl ? { image_url: imageUrl } : {}),
+    }),
+  }, 60000);
+
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text().catch(() => createResponse.statusText);
+    throw new Error(`Pika API error (${createResponse.status}): ${errorText}`);
+  }
+
+  const createData = await createResponse.json();
+  const taskId = createData.id;
+
+  if (!taskId) {
+    throw new Error('Pika did not return a task ID');
+  }
+
+  // Poll for completion
+  const startTime = Date.now();
+  while (Date.now() - startTime < LTX_PROVIDER_TIMEOUT_MS) {
+    await sleep(LTX_POLL_INTERVAL_MS);
+
+    const statusResponse = await safeFetch(`https://api.pika.art/v2/generation/${taskId}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    }, 30000);
+
+    if (!statusResponse.ok) {
+      const errorText = await statusResponse.text().catch(() => statusResponse.statusText);
+      throw new Error(`Pika status check failed (${statusResponse.status}): ${errorText}`);
+    }
+
+    const statusData = await statusResponse.json();
+    const status = String(statusData.status || '').toLowerCase();
+
+    if (status === 'completed' || status === 'done') {
+      const videoUrl = statusData.video_url || statusData.url || statusData.output?.url;
+      if (!videoUrl) {
+        throw new Error('Pika completed but did not return a video URL');
+      }
+      return {
+        url: videoUrl,
+        provider: 'pika',
+        durationSeconds: statusData.duration || durationSeconds,
+        aspectRatio: statusData.aspect_ratio || aspectRatio,
+        thumbnailUrl: statusData.thumbnail_url,
+      };
+    }
+
+    if (status === 'failed' || status === 'error') {
+      throw new Error(statusData.error || statusData.message || 'Pika generation failed');
+    }
+  }
+
+  throw new Error(`Pika generation timed out after ${Math.round(LTX_PROVIDER_TIMEOUT_MS / 60_000)} minutes`);
+}
+
+/**
+ * Generate video with Stability AI Video API
+ * API: https://platform.stability.ai/docs/api/spec-video
+ */
+async function generateWithStableVideo(options: VideoGenerationOptions): Promise<GeneratedVideo> {
+  const apiKey = sanitizeApiKey(await kvGet('stability_key'));
+  if (!apiKey) {
+    throw new Error('Stability AI API key not configured. Get a key at stability.ai');
+  }
+
+  const { prompt, durationSeconds = 5, aspectRatio = '16:9', imageUrl } = options;
+
+  // Stability Video API v2 - Generate video
+  const createResponse = await safeFetch('https://api.stability.ai/v2/generation/video', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      prompt: buildEnhancedVideoPrompt(options),
+      duration: Math.min(Math.max(durationSeconds, 2), 15),
+      aspect_ratio: aspectRatio,
+      ...(imageUrl ? { image_url: imageUrl } : {}),
+    }),
+  }, 60000);
+
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text().catch(() => createResponse.statusText);
+    throw new Error(`Stability AI API error (${createResponse.status}): ${errorText}`);
+  }
+
+  const createData = await createResponse.json();
+  const taskId = createData.id;
+
+  if (!taskId) {
+    throw new Error('Stability AI did not return a task ID');
+  }
+
+  // Poll for completion
+  const startTime = Date.now();
+  while (Date.now() - startTime < LTX_PROVIDER_TIMEOUT_MS) {
+    await sleep(LTX_POLL_INTERVAL_MS);
+
+    const statusResponse = await safeFetch(`https://api.stability.ai/v2/generation/video/${taskId}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    }, 30000);
+
+    if (!statusResponse.ok) {
+      const errorText = await statusResponse.text().catch(() => statusResponse.statusText);
+      throw new Error(`Stability AI status check failed (${statusResponse.status}): ${errorText}`);
+    }
+
+    const statusData = await statusResponse.json();
+    const status = String(statusData.status || '').toLowerCase();
+
+    if (status === 'completed' || status === 'succeeded') {
+      const videoUrl = statusData.video_url || statusData.url || statusData.output?.video_url;
+      if (!videoUrl) {
+        throw new Error('Stability AI completed but did not return a video URL');
+      }
+      return {
+        url: videoUrl,
+        provider: 'stablevideo',
+        durationSeconds: statusData.duration || durationSeconds,
+        aspectRatio: statusData.aspect_ratio || aspectRatio,
+        thumbnailUrl: statusData.thumbnail_url,
+      };
+    }
+
+    if (status === 'failed' || status === 'error') {
+      throw new Error(statusData.error || statusData.message || 'Stability AI generation failed');
+    }
+  }
+
+  throw new Error(`Stability AI generation timed out after ${Math.round(LTX_PROVIDER_TIMEOUT_MS / 60_000)} minutes`);
+}
+
 async function generateWithLtx23(options: VideoGenerationOptions): Promise<GeneratedVideo> {
-  const apiKey = sanitizeApiKey((await kvGet('fal_key')) || (await kvGet('ltx_key')));
+  let apiKey = sanitizeApiKey((await kvGet('fal_key')) || (await kvGet('ltx_key')));
+  if (!apiKey) {
+    apiKey = process.env.LTX_API_KEY || process.env.FAL_API_KEY || '';
+  }
   if (!apiKey) {
     throw new Error('LTX video provider is not configured. Add a Fal/LTX API key in Settings.');
   }
@@ -552,7 +806,7 @@ async function generateWithOpenLtx23(options: VideoGenerationOptions): Promise<G
   });
 }
 
-export async function generateVideo(options: VideoGenerationOptions): Promise<GeneratedVideo> {
+export async function generateVideo(options: VideoGenerationOptions): Promise<MediaAsset> {
   const prompt = options.prompt?.trim();
   if (!prompt) {
     throw new Error('Video prompt cannot be empty');
@@ -574,20 +828,49 @@ export async function generateVideo(options: VideoGenerationOptions): Promise<Ge
 
   let lastError: Error | null = null;
 
-  for (const provider of attempts) {
+  for (let i = 0; i < attempts.length; i++) {
+    const provider = attempts[i];
     try {
+      let videoResult: GeneratedVideo;
+      const isFallback = i > 0;
+      const totalProviders = attempts.length;
+      
+      // Report progress at start of each provider attempt
+      options.onProgress?.(isFallback ? `Fallback: Trying ${provider}...` : `Generating video with ${provider}...`, Math.round((i / totalProviders) * 90) + 5);
+      
       switch (provider) {
         case 'ltx23-open':
-          return await generateWithOpenLtx23({ ...cleanOptions, provider });
+          videoResult = await generateWithOpenLtx23({ ...cleanOptions, provider });
+          break;
+        case 'runway':
+          videoResult = await generateWithRunway({ ...cleanOptions, provider });
+          break;
+        case 'pika':
+          videoResult = await generateWithPika({ ...cleanOptions, provider });
+          break;
+        case 'stablevideo':
+          videoResult = await generateWithStableVideo({ ...cleanOptions, provider });
+          break;
         case 'ltx23':
         default:
-          return await generateWithLtx23({ ...cleanOptions, provider });
+          videoResult = await generateWithLtx23({ ...cleanOptions, provider });
+          break;
       }
+      
+      options.onProgress?.(`${provider} completed!`, 100);
+      
+      return mediaAssetManager.wrapAsset(videoResult.url, 'video', provider, {
+        duration: videoResult.durationSeconds,
+        aspectRatio: videoResult.aspectRatio,
+        thumbnailUrl: videoResult.thumbnailUrl
+      });
     } catch (error) {
       lastError = pickMoreRelevantVideoError(lastError, error as Error);
       console.warn(`Video generation failed on ${provider}, trying fallback`, lastError);
+      options.onProgress?.(`${provider} failed, trying next provider...`, Math.round((i / totalProviders) * 90) + 10);
     }
   }
 
+  options.onProgress?.('All video providers failed', 0);
   throw lastError || new Error('All video providers failed');
 }

@@ -396,33 +396,89 @@ export async function processPayment(
 
   const transactionId = `txn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-  const mockPaymentSuccess = Math.random() > 0.1;
+  // Use Stripe for real payments
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
   
-  if (mockPaymentSuccess) {
-    await updateOrderStatus(orderId, 'paid', transactionId);
-    
-    if (order.items.some(item => {
-      const product = products.find(p => p.id === item.productId);
-      return product?.pricingType === 'recurring';
-    })) {
-      for (const item of order.items) {
-        const product = await getProduct(item.productId);
-        if (product?.pricingType === 'recurring') {
-          await createSubscription({
-            userId: order.userId,
-            productId: item.productId,
-            status: 'active',
-            currentPeriodStart: new Date().toISOString(),
-            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            cancelAtPeriodEnd: false,
-          });
-        }
-      }
-    }
+  if (stripeKey && order.total > 0) {
+    try {
+      const response = await fetch('https://api.stripe.com/v1/payment_intents', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${stripeKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          amount: String(Math.round(order.total * 100)),
+          currency: order.currency.toLowerCase(),
+          payment_method: paymentDetails.paymentMethodId as string || 'card',
+          customer: paymentDetails.customerId as string || '',
+          metadata: JSON.stringify({ orderId }),
+        }),
+      });
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || 'Payment failed');
+      }
+
+      const paymentData = await response.json();
+      
+      // Confirm the payment
+      const confirmResponse = await fetch(`https://api.stripe.com/v1/payment_intents/${paymentData.id}/confirm`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${stripeKey}`,
+        },
+      });
+
+      if (!confirmResponse.ok) {
+        await updateOrderStatus(orderId, 'failed');
+        return { success: false, error: 'Payment confirmation failed' };
+      }
+
+      const confirmData = await confirmResponse.json();
+      
+      if (confirmData.status === 'succeeded') {
+        await updateOrderStatus(orderId, 'paid', transactionId);
+        
+        // Create subscriptions for recurring products
+        if (order.items.some(item => {
+          const product = products.find(p => p.id === item.productId);
+          return product?.pricingType === 'recurring';
+        })) {
+          for (const item of order.items) {
+            const product = await getProduct(item.productId);
+            if (product?.pricingType === 'recurring') {
+              await createSubscription({
+                userId: order.userId,
+                productId: item.productId,
+                status: 'active',
+                currentPeriodStart: new Date().toISOString(),
+                currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+                cancelAtPeriodEnd: false,
+              });
+            }
+          }
+        }
+
+        return { success: true, transactionId };
+      } else {
+        await updateOrderStatus(orderId, 'failed');
+        return { success: false, error: confirmData.error || 'Payment not completed' };
+      }
+    } catch (error) {
+      console.error('[Monetization] Payment error:', error);
+      await updateOrderStatus(orderId, 'failed');
+      return { success: false, error: error instanceof Error ? error.message : 'Payment processing failed' };
+    }
+  }
+
+  // Fallback: If no Stripe key, try to process as free/demo
+  if (order.total === 0) {
+    await updateOrderStatus(orderId, 'paid', transactionId);
     return { success: true, transactionId };
   }
 
   await updateOrderStatus(orderId, 'failed');
-  return { success: false, error: 'Payment declined' };
+  return { success: false, error: 'Payment system not configured. Set STRIPE_SECRET_KEY environment variable.' };
 }

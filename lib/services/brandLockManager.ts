@@ -13,6 +13,7 @@
 import { memoryManager } from '../core/MemoryManager';
 import { loadBrandKit, saveBrandKit, type BrandKit } from './memoryService';
 import { perceptionService } from './multiModalPerceptionService';
+import { brandVersionManager } from './brandVersionManager';
 
 export type ContentSyle = 
   | 'voice_storytelling_animated'
@@ -70,6 +71,9 @@ export class BrandLockManager {
     
     // Update the formal Brand Kit in memory
     await saveBrandKit(finalKit);
+    
+    // Create an initial version snapshot
+    await brandVersionManager.createSnapshot(finalKit, 'Initial brand identity lock-in', 'system');
     
     // Use the MemoryManager to update specific fields for high-level access
     await memoryManager.updateBrandMemory({

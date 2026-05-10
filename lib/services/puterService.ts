@@ -363,6 +363,12 @@ function ensurePuterScript(): Promise<boolean> {
     const script = document.createElement('script');
     script.src = PUTER_SCRIPT_URL;
     script.async = true;
+    // SECURITY: Use SRI hash when available for script integrity verification
+    // Note: Update this hash when the Puter CDN version changes
+    if (PUTER_SCRIPT_SRI) {
+      script.integrity = PUTER_SCRIPT_SRI;
+    }
+    script.crossOrigin = 'anonymous';
     script.onload = () => {
       if (window.puter) {
         resolve(true);

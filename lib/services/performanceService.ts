@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServerClient } from '@/lib/supabase/server';
 
 export interface PerformanceMetrics {
   views: number;
@@ -17,12 +18,7 @@ export interface PerformanceInsight {
 }
 
 function getSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    return null;
-  }
-  return createClient(url, key);
+  return getSupabaseServerClient();
 }
 
 export class performanceService {
@@ -30,7 +26,7 @@ export class performanceService {
 
   private static get supabase() {
     if (!this._supabase) {
-      this._supabase = getSupabaseClient();
+      this._supabase = getSupabaseServerClient();
     }
     return this._supabase;
   }

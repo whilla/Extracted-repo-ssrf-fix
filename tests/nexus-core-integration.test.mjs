@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nexusCore } from '../lib/core/NexusCore';
+import { nexusCore } from '../lib/core/NexusCore.ts';
 
 test('NexusCore: full orchestration pipeline integration', async (t) => {
   await t.test('should successfully execute a a-content request', async () => {
     const request = {
       userInput: 'Create a high-conversion hook for a SaaS tool that automates tax returns',
-      taskType: 'content' as const,
+      taskType: 'content',
       platform: 'twitter',
       maxAgents: 3,
     };
@@ -22,7 +22,7 @@ test('NexusCore: full orchestration pipeline integration', async (t) => {
   await t.test('should handle invalid request types gracefully', async () => {
     const request = {
       userInput: 'Test',
-      taskType: 'invalid' as any,
+      taskType: 'invalid',
     };
 
     const result = await nexusCore.execute(request);
@@ -35,7 +35,7 @@ test('NexusCore: full orchestration pipeline integration', async (t) => {
     // In a real CI environment, we would mock the budget check
     const result = await nexusCore.execute({
       userInput: 'Budget Test',
-      taskType: 'content' as const,
+      taskType: 'content',
     });
     
     // If we have a budget, it should succeed. If we simulate no budget, it should fail.

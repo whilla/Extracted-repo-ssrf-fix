@@ -10,6 +10,11 @@ export interface AnalyticsData {
   topHashtags: Array<{ tag: string; uses: number }>;
   postingTimes: { [time: string]: number };
   pillarPerformance: { [pillar: string]: number };
+  retentionRates: { [platform: string]: number }; // Percentage of viewers staying
+  audienceDemographics: {
+    topLocations: Array<{ country: string; percentage: number }>;
+    topAgeGroups: Array<{ range: string; percentage: number }>;
+  };
 }
 
 const ANALYTICS_PATH = `${PATHS.analytics}/data.json`;
@@ -22,6 +27,11 @@ function createEmptyAnalytics(): AnalyticsData {
     topHashtags: [],
     postingTimes: {},
     pillarPerformance: {},
+    retentionRates: {},
+    audienceDemographics: {
+      topLocations: [],
+      topAgeGroups: [],
+    },
   };
 }
 
@@ -35,6 +45,11 @@ function normalizeAnalytics(data: Partial<AnalyticsData> | null): AnalyticsData 
     topHashtags: data?.topHashtags || [],
     postingTimes: data?.postingTimes || {},
     pillarPerformance: data?.pillarPerformance || {},
+    retentionRates: data?.retentionRates || {},
+    audienceDemographics: data?.audienceDemographics || {
+      topLocations: [],
+      topAgeGroups: [],
+    },
   };
 }
 

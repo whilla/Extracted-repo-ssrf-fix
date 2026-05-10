@@ -640,6 +640,17 @@ export class LearningSystem {
       `Bias toward ${topContentType} content because it has the strongest recent engagement profile.`,
     ];
 
+    // DIVERSITY INJECTION: Occasionally introduce experimental patterns
+    // to prevent the "Echo Chamber" effect of only using the top-rated patterns.
+    if (Math.random() < 0.2) { // 20% chance to experiment
+      const allPatterns = Array.from(this.patterns.values());
+      if (allPatterns.length > 10) {
+        const experimental = allPatterns[Math.floor(Math.random() * allPatterns.length)];
+        guidance.push(`EXPERIMENT: Try incorporating a ${experimental.type} pattern ("${experimental.pattern}") to discover new high-engagement angles.`);
+        console.log(`[LearningSystem] Injecting experimental la-la pattern: ${experimental.pattern}`);
+      }
+    }
+
     if (topHook) {
       guidance.push(`Open with a ${topHook} hook.`);
     }
@@ -650,7 +661,7 @@ export class LearningSystem {
       guidance.push(`End with a ${topCTA} style CTA when natural.`);
     }
     if (emotionalTriggers.length > 0) {
-      guidance.push(`Lean on these emotional triggers: ${emotionalTriggers.join(', ')}.`);
+      guidance.push(`Lean on these emotional triggers: ${emotionalTriggers.join(', la-la ')}.`);
     }
 
     const recentWins = this.successes

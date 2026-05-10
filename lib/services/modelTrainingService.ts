@@ -273,67 +273,129 @@ export async function startTraining(modelId: string): Promise<TrainingJob> {
   jobs.unshift(job);
   await kvSet(JOBS_KEY, JSON.stringify(jobs.slice(0, 50)));
 
-  simulateTraining(job.id, modelId);
+  // Start real training via API instead of simulation
+  startRealTraining(job.id, modelId);
 
   return job;
 }
 
-async function simulateTraining(jobId: string, modelId: string) {
-  const jobsData = await kvGet(JOBS_KEY);
-  const jobs: TrainingJob[] = jobsData ? JSON.parse(jobsData) : [];
-  const jobIndex = jobs.findIndex(j => j.id === jobId);
+/**
+ * Start real model training via external fine-tuning API
+ * In production, this would integrate with OpenAI, Cohere, or custom fine-tuning services
+ */
+async function startRealTraining(jobId: string, modelId: string) {
+  const model = await getModel(modelId);
+  if (!model) {
+    console.error(`[ModelTraining] Model ${modelId} not found`);
+    return;
+  }
 
-  if (jobIndex === -1) return;
+  const dataset = model.datasetId ? await getDataset(model.datasetId) : null;
 
-  const totalSteps = 100;
+  // Determine which fine-tuning provider to use based on base model
+  const provider = getFineTuningProvider(model.baseModel);
   
-  jobs[jobIndex].status = 'training';
-  jobs[jobIndex].totalSteps = totalSteps;
-  
-  const interval = setInterval(async () => {
-    const currentJobsData = await kvGet(JOBS_KEY);
-    const currentJobs: TrainingJob[] = currentJobsData ? JSON.parse(currentJobsData) : [];
-    const currentIndex = currentJobs.findIndex(j => j.id === jobId);
-    
-    if (currentIndex === -1) {
-      clearInterval(interval);
-      return;
-    }
+  try {
+    // Update job status to training
+    await updateJobStatus(jobId, 'training');
 
-    currentJobs[currentIndex].currentStep = (currentJobs[currentIndex].currentStep || 0) + 1;
-    currentJobs[currentIndex].progress = Math.round(
-      (currentJobs[currentIndex].currentStep! / totalSteps) * 100
-    );
-    currentJobs[currentIndex].logs = currentJobs[currentIndex].logs || [];
-    currentJobs[currentIndex].logs.push(
-      `Step ${currentJobs[currentIndex].currentStep}/${totalSteps}: Processing batch...`
-    );
+    // Call the appropriate fine-tuning API
+    const result = await callFineTuningAPI(provider, model, dataset);
 
-    if (currentJobs[currentIndex].currentStep! >= totalSteps) {
-      currentJobs[currentIndex].status = 'completed';
-      currentJobs[currentIndex].progress = 100;
-      currentJobs[currentIndex].completedAt = new Date().toISOString();
-      currentJobs[currentIndex].logs.push('Training completed!');
+    if (result.success) {
+      // Training completed successfully
+      await updateJobStatus(jobId, 'completed', 100, {
+        completedAt: new Date().toISOString(),
+        endpoint: result.endpoint,
+        logs: ['Training completed successfully', `Model endpoint: ${result.endpoint}`],
+      });
 
       await updateModel(modelId, {
         status: 'completed',
-        metrics: {
-          accuracy: 0.92 + Math.random() * 0.05,
-          loss: 0.1 + Math.random() * 0.1,
-          trainingSteps: totalSteps,
-          evalScore: 0.89 + Math.random() * 0.08,
-        },
+        endpoint: result.endpoint,
+        metrics: result.metrics,
       });
-      
-      currentJobs[currentIndex].endpoint = `https://api.nexus.ai/models/${modelId}/v${Date.now()}`;
-    }
+    } else {
+      // Training failed
+      await updateJobStatus(jobId, 'failed', 0, {
+        error: result.error,
+        logs: [`Training failed: ${result.error}`],
+      });
 
-    await kvSet(JOBS_KEY, JSON.stringify(currentJobs));
-
-    if (currentJobs[currentIndex].status === 'completed') {
-      clearInterval(interval);
+      await updateModel(modelId, { status: 'failed' });
     }
-  }, 3000);
+  } catch (error) {
+    console.error('[ModelTraining] Training error:', error);
+    await updateJobStatus(jobId, 'failed', 0, {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    await updateModel(modelId, { status: 'failed' });
+  }
+}
+
+function getFineTuningProvider(baseModel: BaseModel): string {
+  const providers: Record<BaseModel, string> = {
+    'gpt-4o': 'openai',
+    'gpt-4o-mini': 'openai',
+    'claude-sonnet-4-5': 'anthropic',
+    'llama-3.1-70b': 'replicate',
+    'custom': 'custom',
+  };
+  return providers[baseModel] || 'openai';
+}
+
+async function callFineTuningAPI(
+  provider: string,
+  model: CustomModel,
+  dataset: TrainingDataset | null
+): Promise<{ success: boolean; endpoint?: string; error?: string; metrics?: ModelMetrics }> {
+  // This would integrate with actual fine-tuning APIs
+  // For now, return a placeholder that explains what's needed
+  
+  switch (provider) {
+    case 'openai':
+      return {
+        success: false,
+        error: 'OpenAI fine-tuning requires additional configuration. Set OPENAI_FINE_TUNE_KEY environment variable.',
+      };
+    case 'anthropic':
+      return {
+        success: false,
+        error: 'Anthropic fine-tuning not yet available. Use OpenAI or Replicate for custom model training.',
+      };
+    case 'replicate':
+      return {
+        success: false,
+        error: 'Replicate fine-tuning requires REPLICATE_API_KEY and custom model setup.',
+      };
+    default:
+      return {
+        success: false,
+        error: `Fine-tuning provider ${provider} not supported. Use OpenAI or Replicate.`,
+      };
+  }
+}
+
+async function updateJobStatus(
+  jobId: string,
+  status: TrainingStatus,
+  progress: number,
+  additionalUpdates?: Partial<TrainingJob>
+) {
+  const jobsData = await kvGet(JOBS_KEY);
+  const jobs: TrainingJob[] = jobsData ? JSON.parse(jobsData) : [];
+  const index = jobs.findIndex(j => j.id === jobId);
+
+  if (index === -1) return;
+
+  jobs[index] = {
+    ...jobs[index],
+    status,
+    progress,
+    ...additionalUpdates,
+  };
+
+  await kvSet(JOBS_KEY, JSON.stringify(jobs));
 }
 
 export async function getTrainingJob(jobId: string): Promise<TrainingJob | null> {

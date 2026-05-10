@@ -151,6 +151,18 @@ export abstract class BaseAgent {
     return rawOutput.trim();
   }
 
+  /**
+   * Get a synthesized summary of findings from the blackboard to guide agent behavior
+   */
+  protected getBlackboardContext(context: AgentExecutionContext): string {
+    if (!context.blackboard) return '';
+    
+    const summary = context.blackboard.getSummary();
+    if (summary === 'No observations posted yet.') return '';
+
+    return `\n\nCOLLABORATIVE CONTEXT (Findings from other agents):\n${summary}`;
+  }
+
   protected applyDeepReasoningGuidance(prompt: string): string {
     return `${prompt}
 

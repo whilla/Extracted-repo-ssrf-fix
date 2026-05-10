@@ -9,30 +9,43 @@ export class n8nBridgeService {
   private static n8nPort = process.env.N8N_PORT || '5678';
   private static bridgeSecret = process.env.N8N_BRIDGE_SECRET || '';
 
+  private static getBaseUrl(): string {
+    return this.n8nUrl.startsWith('http') 
+      ? this.n8nUrl 
+      : `http://${this.n8nUrl}:${this.n8nPort}`;
+  }
+
+  /**
+   * Check if n8n is available and configured
+   */
+  static async isAvailable(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.getBaseUrl()}/healthz`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Trigger an n8n workflow via webhook
-   * @param workflowId The ID of the n8n workflow to trigger
-   * @param payload The data to send to the workflow
-   * @returns The response from the n8n workflow
    */
   static async triggerWorkflow(workflowId: string, payload: any) {
     if (!this.bridgeSecret) {
       throw new Error('N8N_BRIDGE_SECRET is not configured in environment variables');
     }
 
-    // Handle both absolute URLs and host/port combinations
-    const baseUrl = this.n8nUrl.startsWith('http') 
-      ? this.n8nUrl 
-      : `http://${this.n8nUrl}:${this.n8nPort}`;
-      
-    const url = `${baseUrl}/webhook/${workflowId}`;
+    const url = `${this.getBaseUrl()}/webhook/${workflowId}`;
 
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-NexusAI-Bridge-Secret': this.bridgeSecret, // Secure validation header
+          'X-NexusAI-Bridge-Secret': this.bridgeSecret,
         },
         body: JSON.stringify({
           ...payload,
@@ -53,7 +66,59 @@ export class n8nBridgeService {
   }
 
   /**
-   * Call n8n REST API for management tasks (e.g. listing workflows)
+   * Trigger workflow and wait for execution ID for status checking
+   */
+  static async triggerWorkflowAsync(workflowId: string, payload: any): Promise<string> {
+    const result: any = await this.triggerWorkflow(workflowId, payload);
+    return result.executionId || result.id || result.workflowId || '';
+  }
+
+  /**
+   * Get workflow execution status
+   */
+  static async getExecutionStatus(executionId: string): Promise<any> {
+    return this.callN8nApi(`/executions/${executionId}`, { method: 'GET' });
+  }
+
+  /**
+   * List all workflows
+   */
+  static async listWorkflows(): Promise<any[]> {
+    const result: any = await this.callN8nApi('/workflows', { method: 'GET' });
+    return result.data || [];
+  }
+
+  /**
+   * Get specific workflow details
+   */
+  static async getWorkflow(workflowId: string): Promise<any> {
+    return this.callN8nApi(`/workflows/${workflowId}`, { method: 'GET' });
+  }
+
+  /**
+   * Activate a workflow
+   */
+  static async activateWorkflow(workflowId: string): Promise<void> {
+    await this.callN8nApi(`/workflows/${workflowId}/activate`, { method: 'POST' });
+  }
+
+  /**
+   * Deactivate a workflow
+   */
+  static async deactivateWorkflow(workflowId: string): Promise<void> {
+    await this.callN8nApi(`/workflows/${workflowId}/deactivate`, { method: 'POST' });
+  }
+
+  /**
+   * Get recent executions
+   */
+  static async getRecentExecutions(limit = 10): Promise<any[]> {
+    const result: any = await this.callN8nApi(`/executions?limit=${limit}`, { method: 'GET' });
+    return result.data || [];
+  }
+
+  /**
+   * Call n8n REST API for management tasks
    */
   static async callN8nApi(endpoint: string, options: any = {}) {
     const apiKey = process.env.N8N_API_KEY;
@@ -61,7 +126,7 @@ export class n8nBridgeService {
       throw new Error('N8N_API_KEY is not configured');
     }
 
-    const url = `http://${this.n8nUrl}:${this.n8nPort}/api/v1${endpoint}`;
+    const url = `${this.getBaseUrl()}/api/v1${endpoint}`;
 
     try {
       const response = await fetch(url, {

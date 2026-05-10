@@ -142,6 +142,9 @@ export class WriterAgent extends BaseAgent {
       prompt += `\n\nAvoid similarity to this previous version:\n"${context.previousContent.substring(0, 200)}..."`;
     }
 
+    // COLLABORATION: Integrate findings from other agents
+    prompt += this.getBlackboardContext(context);
+
     if (context.governorFeedback) {
       prompt += `\n\nCRITICAL: Address this feedback: ${context.governorFeedback}`;
     }
@@ -287,6 +290,9 @@ export class CriticAgent extends BaseAgent {
       prompt = prompt.replace('{{brandContext}}', 'Focus on engagement and authenticity');
     }
 
+    // COLLABORATION: Integrate findings from other agents
+    prompt += this.getBlackboardContext(context);
+
     // Add governor feedback
     if (context.governorFeedback) {
       prompt += `\n\nPrevious validation issues to fix:\n${context.governorFeedback}`;
@@ -428,6 +434,9 @@ export class OptimizerAgent extends BaseAgent {
       prompt = prompt.replace('{{brandContext}}', 'Focus on maximum engagement');
     }
 
+    // COLLABORATION: Integrate findings from other agents
+    prompt += this.getBlackboardContext(context);
+
     if (context.governorFeedback) {
       prompt += `\n\nGovernor feedback to address:\n${context.governorFeedback}`;
     }
@@ -503,8 +512,8 @@ export class HybridAgent extends BaseAgent {
   }
 }
 
-import { SynthesisAgent } from './SynthesisAgent';
-export { SynthesisAgent };
+import { SynthesisAgent, VisualCriticAgent } from './SynthesisAgent';
+export { SynthesisAgent, VisualCriticAgent };
 
 const CRITIC_PROMPT = `You are a ruthless but fair content critic. Your job is to make good content GREAT.
 

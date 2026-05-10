@@ -13,7 +13,7 @@ import { kvGet, kvSet } from '../services/puterService';
 import { universalChat } from '../services/aiService';
 import { generateImage as generateImageAsset } from '../services/imageGenerationService';
 import { generateVideo as generateVideoAsset } from '../services/videoGenerationService';
-import { synthesizeVoice } from '../services/voiceService';
+import { generateMusic } from '../services/musicGenerationService';
 import { tokenBudgetManager } from '../services/tokenBudgetManager';
 
 // Provider Types
@@ -452,8 +452,7 @@ export class ProviderRouter {
 
       case 'music':
         // Production Implementation: Use specialized music synthesis
-        // This now calls the actual production pipeline instead of a mock
-        const musicUrl = await synthesizeVoice(prompt); 
+        const musicUrl = await generateMusic({ prompt });
         return JSON.stringify({
           type: 'music',
           url: musicUrl,

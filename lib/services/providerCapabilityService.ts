@@ -282,6 +282,28 @@ const PROVIDER_DEFINITIONS: Omit<ProviderCapability, 'status' | 'lastHealthCheck
     pricing: { inputTokens: 0, outputTokens: 0 },
     requiresApiKey: false,
   },
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    capabilities: {
+      chat: true,
+      vision: true,
+      imageGeneration: false,
+      audioGeneration: false,
+      codeGeneration: true,
+      functionCalling: true,
+      streaming: true,
+      embeddings: false,
+    },
+    models: [
+      { id: 'claude-3-5-sonnet-20240620', name: 'Claude 3.5 Sonnet', contextWindow: 200000, maxOutputTokens: 8192, capabilities: ['chat', 'vision', 'code'], recommended: true, deprecated: false, bestFor: ['analysis', 'writing'] },
+      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', contextWindow: 200000, maxOutputTokens: 4096, capabilities: ['chat', 'vision', 'code'], recommended: false, deprecated: false, bestFor: ['complex-reasoning'] },
+      { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', contextWindow: 200000, maxOutputTokens: 8192, capabilities: ['chat', 'vision', 'code'], recommended: true, deprecated: false, bestFor: ['fast-tasks', 'cost-effective'] },
+    ],
+    rateLimits: { requestsPerMinute: 50, tokensPerMinute: 100000, tokensPerDay: 1000000 },
+    pricing: { inputTokens: 0.003, outputTokens: 0.015 },
+    requiresApiKey: true,
+  },
 ];
 
 // Load all provider capabilities with current status
@@ -307,6 +329,7 @@ export async function loadProviderCapabilities(): Promise<ProviderCapability[]> 
 async function checkApiKeyConfigured(providerId: string): Promise<boolean> {
   const keyMap: Record<string, string> = {
     groq: 'groq_key',
+    anthropic: 'anthropic_key',
     openrouter: 'openrouter_key',
     githubmodels: 'github_models_key',
     bytez: 'bytez_key',

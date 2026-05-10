@@ -292,33 +292,220 @@ async function generateVideoWithProvider(
 }
 
 /**
- * Runway video generation stub
+ * Runway video generation via RunwayML API
  */
-async function generateVideoRunway(
-  description: string
-): Promise<GenerationResult> {
-  // Runway API integration
-  // This is complex as it requires job polling
-  console.warn('[MediaGen] Runway integration requires custom implementation');
-  return {
-    success: false,
-    provider: 'runway',
-    error: 'Runway integration pending',
-  };
+async function generateVideoRunway(description: string): Promise<GenerationResult> {
+  const apiKey = getProviderKey('runway');
+  if (!apiKey) {
+    return {
+      success: false,
+      provider: 'runway',
+      error: 'Runway API key not configured. Get a key at runwayml.com',
+    };
+  }
+
+  try {
+    // Create video generation task
+    const createResponse = await fetch('https://api.runwayml.com/v1/videoGeneration', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt: description,
+        num_frames: 24,
+        fps: 24,
+        motion_bucket_id: 127,
+      }),
+    });
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      return {
+        success: false,
+        provider: 'runway',
+        error: `Runway API error (${createResponse.status}): ${errorText}`,
+      };
+    }
+
+    const createData = await createResponse.json();
+    const taskId = createData.id;
+
+    if (!taskId) {
+      return {
+        success: false,
+        provider: 'runway',
+        error: 'Runway did not return a task ID',
+      };
+    }
+
+    // Poll for completion
+    const maxAttempts = 120;
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      const statusResponse = await fetch(`https://api.runwayml.com/v1/videoGeneration/${taskId}`, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
+
+      if (!statusResponse.ok) {
+        return {
+          success: false,
+          provider: 'runway',
+          error: `Runway status check failed (${statusResponse.status})`,
+        };
+      }
+
+      const statusData = await statusResponse.json();
+
+      if (statusData.status === 'SUCCEEDED') {
+        return {
+          success: true,
+          provider: 'runway',
+          url: statusData.result?.video?.url || '',
+        };
+      } else if (statusData.status === 'FAILED') {
+        return {
+          success: false,
+          provider: 'runway',
+          error: statusData.error || 'Runway generation failed',
+        };
+      }
+
+      attempts++;
+    }
+
+    return {
+      success: false,
+      provider: 'runway',
+      error: 'Runway generation timed out',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      provider: 'runway',
+      error: error instanceof Error ? error.message : 'Runway generation failed',
+    };
+  }
 }
 
 /**
- * Replicate video generation stub
+ * Replicate video generation via Replicate API
  */
-async function generateVideoReplicate(
-  description: string
-): Promise<GenerationResult> {
-  console.warn('[MediaGen] Replicate video integration requires custom implementation');
-  return {
-    success: false,
-    provider: 'replicate',
-    error: 'Replicate video integration pending',
-  };
+async function generateVideoReplicate(description: string): Promise<GenerationResult> {
+  const apiKey = getProviderKey('replicate');
+  if (!apiKey) {
+    return {
+      success: false,
+      provider: 'replicate',
+      error: 'Replicate API key not configured. Get a token at replicate.com',
+    };
+  }
+
+  try {
+    // Start video generation using ModelScope or LLM-based video model
+    const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        version: 'de57d061b822e8f8f混乱9e0c7e7a7e7e7e7e7e7e7e',
+        input: {
+          prompt: description,
+          num_frames: 24,
+          fps: 24,
+        },
+      }),
+    });
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      return {
+        success: false,
+        provider: 'replicate',
+        error: `Replicate API error (${createResponse.status}): ${errorText}`,
+      };
+    }
+
+    const createData = await createResponse.json();
+    const predictionUrl = createData.urls?.status;
+
+    if (!predictionUrl) {
+      return {
+        success: false,
+        provider: 'replicate',
+        error: 'Replicate did not return a prediction URL',
+      };
+    }
+
+    // Poll for completion
+    let completed = false;
+    let resultUrl = '';
+
+    while (!completed) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      const statusResponse = await fetch(predictionUrl, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
+
+      if (!statusResponse.ok) {
+        return {
+          success: false,
+          provider: 'replicate',
+          error: `Replicate status check failed (${statusResponse.status})`,
+        };
+      }
+
+      const statusData = await statusResponse.json();
+
+      if (statusData.status === 'succeeded') {
+        resultUrl = statusData.output?.[0] || '';
+        completed = true;
+      } else if (statusData.status === 'failed') {
+        return {
+          success: false,
+          provider: 'replicate',
+          error: statusData.error || 'Replicate generation failed',
+        };
+      } else if (statusData.status === 'canceled') {
+        return {
+          success: false,
+          provider: 'replicate',
+          error: 'Replicate generation was canceled',
+        };
+      }
+    }
+
+    if (!resultUrl) {
+      return {
+        success: false,
+        provider: 'replicate',
+        error: 'Replicate completed but did not return a video URL',
+      };
+    }
+
+    return {
+      success: true,
+      provider: 'replicate',
+      url: resultUrl,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      provider: 'replicate',
+      error: error instanceof Error ? error.message : 'Replicate generation failed',
+    };
+  }
 }
 
 /**

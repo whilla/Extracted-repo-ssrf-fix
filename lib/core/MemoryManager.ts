@@ -18,6 +18,19 @@ export interface MemoryContext {
   contentHistory: ContentHistoryEntry[];
   performanceLogs: PerformanceLogEntry[];
   agentLogs: AgentLogEntry[];
+  campaignContext?: CampaignContext; // NEW: Campaign-level continuity
+}
+
+export interface CampaignContext {
+  campaignId: string;
+  outputs: {
+    content: string;
+    hooks: string[];
+    themes: string[];
+    timestamp: string;
+  }[];
+  constraints: string[];
+  globalGoal: string;
 }
 
 export interface BrandMemory {
@@ -135,7 +148,7 @@ export class MemoryManager {
   /**
    * Build context for AI generation
    */
-  async buildContext(userInput: string): Promise<MemoryContext> {
+  async buildContext(userInput: string, campaignId?: string): Promise<MemoryContext> {
     if (!this.initialized) await this.initialize();
 
     // Get recent content for context (avoid repetition)
@@ -152,11 +165,21 @@ export class MemoryManager {
       .filter(l => l.wasSelected)
       .slice(-50);
 
+    // NEW: Fetch campaign context if campaignId is provided
+    let campaignContext: CampaignContext | undefined;
+    if (campaignId) {
+      const campaignData = await kvGet(`nexus_campaign_${campaignId}`);
+      if (campaignData) {
+        campaignContext = JSON.parse(campaignData);
+      }
+    }
+
     return {
       brandMemory: this.brandMemory,
       contentHistory: recentContent,
       performanceLogs: recentPerformance,
       agentLogs: recentAgentLogs,
+      campaignContext,
     };
   }
 
@@ -563,7 +586,33 @@ export class MemoryManager {
       .sort((a, b) => b.avgScore - a.avgScore);
   }
 
-  // ==================== MEMORY AGING ====================
+  /**
+   * Update campaign memory with a new output
+   */
+  async updateCampaignMemory(campaignId: string, output: {
+    content: string;
+    hooks: string[];
+    themes: string[];
+  }): Promise<void> {
+    const campaignData = await kvGet(`nexus_campaign_${campaignId}`);
+    let campaign: CampaignContext = campaignData 
+      ? JSON.parse(campaignData) 
+      : { campaignId, outputs: [], constraints: [], globalGoal: '' };
+
+    campaign.outputs.push({
+      content,
+      hooks,
+      themes,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Keep last 50 outputs for a campaign
+    if (campaign.outputs.length > 50) {
+      campaign.outputs = campaign.outputs.slice(-50);
+    }
+
+    await kvSet(`nexus_campaign_${campaignId}`, JSON.stringify(campaign));
+  }
 
   /**
    * Age old memory entries
