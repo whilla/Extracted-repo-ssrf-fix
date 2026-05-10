@@ -66,7 +66,6 @@ export const youtubeTranscriptService = {
    * Helper to extract the 11-character YouTube video ID.
    */
   extractVideoId(input: string): string {
-    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e)=\s*//g;
     const match = input.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e)=)|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
     return match ? match[1] : input;
   }
