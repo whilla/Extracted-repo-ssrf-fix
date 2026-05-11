@@ -1,18 +1,7 @@
-import { createClient } from '@/utils/supabase/client';
-import { Database } from '@/supabase/client';
-
-let cachedClient: ReturnType<typeof createClient<Database>> | null = null;
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 export const getSupabaseClient = () => {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
-    return null;
-  }
-
-  if (!cachedClient) {
-    cachedClient = createClient<Database>();
-  }
-
-  return cachedClient;
+  return getSupabaseBrowserClient();
 };
 
 export const signInWithEmail = async (email: string, password: string) => {

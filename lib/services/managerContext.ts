@@ -24,13 +24,13 @@ export function createManagerContext(): ManagerContext {
   return {
     kv: {
       get: async (key) => await kvGet(key),
-      set: async (key, value) => await kvSet(key, value),
+      set: async (key, value): Promise<void> => { await kvSet(key, value); },
     },
     agents: {
-      updateWeights: async (id, weights) => {
+      updateWeights: async (id, weights): Promise<void> => {
         await updateAgent(id, { scoringWeights: weights });
       },
-      updatePerformance: async (id, score) => {
+      updatePerformance: async (id, score): Promise<void> => {
         await updateAgent(id, { performanceScore: score });
       },
     },

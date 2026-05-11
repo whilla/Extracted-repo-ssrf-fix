@@ -11,7 +11,7 @@ export async function savePlan(plan: any) {
       plan_data: plan,
       status: plan.status,
       final_output: plan.finalOutput,
-    });
+    } as any);
 
   if (error) throw error;
 }
@@ -23,7 +23,7 @@ export async function getPlan(id: string) {
     .from('orchestration_plans')
     .select('*')
     .eq('id', id)
-    .single();
+    .single() as { data: any; error: any };
 
   if (error) throw error;
   return data;

@@ -172,7 +172,7 @@ class VoiceConversationService {
     // Stop any ongoing speech
     this.synthesis.cancel();
     
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const utterance = new SpeechSynthesisUtterance(text);
       
       if (this.selectedVoice) {

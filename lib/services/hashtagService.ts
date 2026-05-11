@@ -47,6 +47,12 @@ const PLATFORM_HASHTAG_LIMITS: Record<Platform, number> = {
   threads: 5,
   youtube: 15,
   pinterest: 20,
+  discord: 10,
+  reddit: 20,
+  whatsapp: 10,
+  telegram: 10,
+  snapchat: 5,
+  general: 10,
 };
 
 // Generate hashtags for content

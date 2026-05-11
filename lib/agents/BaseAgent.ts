@@ -25,7 +25,11 @@ export type AgentCapability =
   | 'optimization'
   | 'engagement_analysis'
   | 'brand_alignment'
-  | 'multi_task';
+  | 'multi_task'
+  | 'critical_validation'
+  | 'visual_description'
+  | 'synthesis'
+  | 'visual_critique';
 
 export interface AgentConfig {
   name: string;
@@ -142,7 +146,7 @@ export abstract class BaseAgent {
   /**
    * Build the execution prompt - must be implemented by each agent
    */
-  protected abstract buildPrompt(context: AgentExecutionContext): string;
+  protected abstract buildPrompt(context: AgentExecutionContext): string | Promise<string>;
 
   /**
    * Process the raw AI output - can be overridden for custom processing
@@ -204,7 +208,8 @@ Deep Reasoning Mode:
 
     try {
       // Build the prompt
-      const prompt = this.applyDeepReasoningGuidance(this.buildPrompt(context));
+      const builtPrompt = await this.buildPrompt(context);
+      const prompt = this.applyDeepReasoningGuidance(builtPrompt);
       await this.recordDecision({
         timestamp: new Date().toISOString(),
         summary: `Built prompt for ${this.config.role} using provider ${context.provider.id}`,

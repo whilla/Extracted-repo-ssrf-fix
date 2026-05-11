@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       }
 
       case 'invoice.payment_succeeded': {
-        const invoice = event.data.object;
+        const invoice = event.data.object as Record<string, unknown>;
         const subscriptionId = invoice.subscription as string;
         const customerId = invoice.customer as string;
         
@@ -113,8 +113,8 @@ export async function POST(request: Request) {
         if (subscriptionId) {
           await updateSubscriptionStatus(subscriptionId, 'active');
           
-          // Update period end
-          const periodEnd = invoice.lines?.data?.[0]?.period?.end;
+          const lines = invoice.lines as { data?: Array<{ period?: { end?: number } }> } | undefined;
+          const periodEnd = lines?.data?.[0]?.period?.end;
           if (periodEnd) {
             await updateSubscriptionPeriod(subscriptionId, new Date(periodEnd * 1000).toISOString());
           }
@@ -168,10 +168,10 @@ async function saveSubscriptions(subs: Record<string, unknown>): Promise<void> {
 async function updateSubscriptionStatus(stripeSubscriptionId: string, status: string): Promise<void> {
   const subscriptions = await loadSubscriptions();
   
-  // Find subscription by stripe ID or update all for that customer
   for (const [id, sub] of Object.entries(subscriptions)) {
-    if ((sub as Record<string, unknown>).stripeSubscriptionId === stripeSubscriptionId) {
-      subscriptions[id] = { ...sub, status };
+    const subRecord = sub as Record<string, unknown>;
+    if (subRecord.stripeSubscriptionId === stripeSubscriptionId) {
+      subscriptions[id] = { ...subRecord, status };
       break;
     }
   }
@@ -183,8 +183,9 @@ async function updateSubscriptionPeriod(stripeSubscriptionId: string, periodEnd:
   const subscriptions = await loadSubscriptions();
   
   for (const [id, sub] of Object.entries(subscriptions)) {
-    if ((sub as Record<string, unknown>).stripeSubscriptionId === stripeSubscriptionId) {
-      subscriptions[id] = { ...sub, currentPeriodEnd: periodEnd };
+    const subRecord = sub as Record<string, unknown>;
+    if (subRecord.stripeSubscriptionId === stripeSubscriptionId) {
+      subscriptions[id] = { ...subRecord, currentPeriodEnd: periodEnd };
       break;
     }
   }

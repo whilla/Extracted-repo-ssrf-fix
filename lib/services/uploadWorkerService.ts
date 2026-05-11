@@ -66,11 +66,12 @@ function removeInlineHashtags(text: string): string {
 }
 
 function formatAdaptedUploadText(adapter: RoutedUploadAdapter): string {
-  const hashtagLine = adapter.hashtags
-    .map((tag) => (tag.startsWith('#') ? tag : `#${tag}`))
+  const hashtags = (adapter as any).hashtags as string[] | undefined;
+  const hashtagLine = (hashtags || [])
+    .map((tag: string) => (tag.startsWith('#') ? tag : `#${tag}`))
     .join(' ')
     .trim();
-  return [adapter.text.trim(), hashtagLine].filter(Boolean).join('\n\n');
+  return [(adapter as any).text?.trim() || '', hashtagLine].filter(Boolean).join('\n\n');
 }
 
 export function selectNextQueuedPostJob(queue: QueuedPostJob[]): QueuedPostJob | null {
@@ -123,7 +124,7 @@ export function routeQueuedJobToAdapters(job: QueuedPostJob): RoutedUploadAdapte
   const hashtags = extractHashtags(job.text);
   const cleanText = removeInlineHashtags(job.text) || job.text.trim();
 
-  return job.platforms.map((platform) => ({
+  return job.platforms.map((platform: Platform) => ({
     ...adaptContentForPlatform(cleanText, hashtags, platform),
     mediaUrl: job.mediaUrl,
     scheduledAt: job.scheduledAt,
@@ -187,7 +188,7 @@ export async function storeUploadResult(
 ): Promise<void> {
   if (result.ok) {
     await updateQueuedPostJob(job.id, { status: 'posted', lastError: undefined });
-    await analyticsService.updateAnalytics({
+    const { data: analyticsData } = await (analyticsService.updateAnalytics as any)({
       text: job.text,
       platforms: job.platforms,
       scheduledAt: job.scheduledAt,

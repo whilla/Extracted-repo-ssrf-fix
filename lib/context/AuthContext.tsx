@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { signIn, signOut, getUser, isSignedIn, getCachedAuthUser, hasCachedAuthSession, clearCachedAuth } from '@/lib/services/puterService';
 import { initMemory, isOnboardingComplete, loadBrandKit } from '@/lib/services/memoryService';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { BrandKit } from '@/lib/types';
 
 const GUEST_MODE_KEY = 'nexus:guest-mode';

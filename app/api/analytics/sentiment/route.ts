@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { sentimentService } from '@/lib/services/sentimentService';
-import { analyticsService } from '@/lib/services/analyticsService';
 import { kvGet } from '@/lib/services/puterService';
 import { DirectReaderService } from '@/lib/services/directReaderService';
 
@@ -34,7 +33,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const analytics = await analyticsService.getPostAnalytics(postId);
     const comments = await fetchCommentsForPost(postId);
 
     if (!comments || comments.length === 0) {

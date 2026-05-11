@@ -110,7 +110,7 @@ export default function DiscoveryPage() {
             {isLoading ? (
               <LoadingPulse />
             ) : trends.length === 0 ? (
-              <GlassCard className="p-8 text-center text-gray-500">No trending news found for "{query}"</GlassCard>
+              <GlassCard className="p-8 text-center text-gray-500">No trending news found for &quot;{query}&quot;</GlassCard>
             ) : (
               <div className="space-y-4">
                 {trends.map((item, i) => (
@@ -145,7 +145,7 @@ export default function DiscoveryPage() {
             {isLoading ? (
               <LoadingPulse />
             ) : searchResults.length === 0 ? (
-              <GlassCard className="p-8 text-center text-gray-500">No search results found for "{query}"</GlassCard>
+              <GlassCard className="p-8 text-center text-gray-500">No search results found for &quot;{query}&quot;</GlassCard>
             ) : (
               <div className="space-y-4">
                 {searchResults.map((result, i) => (

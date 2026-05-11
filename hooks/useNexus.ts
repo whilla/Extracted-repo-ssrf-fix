@@ -37,10 +37,10 @@ export interface AgentInfo {
 }
 
 export interface SystemStatus {
-  initialized: boolean;
-  agentCount: number;
+  isInitialized: boolean;
+  activeAgents: number;
   totalRequests: number;
-  successRate: number;
+  totalSuccesses: number;
   lastError: string | null;
 }
 
@@ -168,6 +168,10 @@ export function useNexus(): UseNexusReturn {
         success: false,
         output: '',
         score: 0,
+        suite: {
+          champion: { text: '', assets: [], version: 0 },
+          challengers: [],
+        },
         allOutputs: [],
         selectedAgent: '',
         provider: 'none',

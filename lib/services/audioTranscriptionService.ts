@@ -6,6 +6,7 @@ const execPromise = promisify(exec);
 
 export interface TranscriptionResult {
   text: string;
+  success?: boolean;
   duration?: number;
   confidence?: number;
 }

@@ -4,6 +4,15 @@ import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { adaptContentForPlatform } from '@/lib/services/platformAdapterService';
 import { sanitizeApiKey } from '@/lib/services/providerCredentialUtils';
 
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
 // Professional Server-Side Worker for NexusAI
 
 async function getAyrshareKeyForUser(supabase: any, userId: string): Promise<string | null> {
@@ -27,16 +36,16 @@ async function processJob(supabase: any, job: any) {
     return { ok: false, error: 'Ayrshare API key not configured in database' };
   }
 
-  const platforms = job.platforms;
-  const text = job.text;
-  const mediaUrl = job.mediaUrl;
-  const hashtags = []; // In a real app, we'd extract these or use the agent's output
+  const platforms = job.platforms as string[];
+  const text = job.text as string;
+  const mediaUrl = job.mediaUrl as string | undefined;
+  const hashtags: string[] = [];
 
   const postIds: Record<string, string> = {};
   const errors: Record<string, string> = {};
 
   for (const platform of platforms) {
-    const adapted = adaptContentForPlatform(text, hashtags, platform);
+    const adapted = adaptContentForPlatform(text, hashtags, platform as any);
     const finalText = `${adapted.text}\\n\\n${adapted.hashtags.join(' ')}`;
 
     try {
@@ -81,19 +90,32 @@ export async function POST(request: Request) {
       console.error('[api/worker/process] WORKER_SECRET not configured in production');
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
-  }
 
-  if (expectedToken) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
     const token = authHeader.slice(7);
     if (
       token.length !== expectedToken.length ||
-      !crypto.timingSafeEqual(Buffer.from(token, 'utf8'), Buffer.from(expectedToken, 'utf8'))
+      !timingSafeEqual(token, expectedToken)
     ) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+  } else if (expectedToken) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.slice(7);
+    if (
+      token.length !== expectedToken.length ||
+      !timingSafeEqual(token, expectedToken)
+    ) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  } else {
+    console.warn('[api/worker/process] WORKER_SECRET not set - running without authentication');
   }
 
   const supabase = getSupabaseServerClient();
@@ -123,29 +145,30 @@ export async function POST(request: Request) {
       processed: 0,
       posted: 0,
       failed: 0,
-      errors: [] as any[],
+      errors: [] as { jobId: string; error: string }[],
     };
 
-    for (const job of jobs) {
-      await supabase.from('posts_queue').update({ status: 'processing' }).eq('id', job.id);
+    for (const job of jobs as any[]) {
+      const jobRecord = job as { id: string; user_id: string; platforms: string[]; text: string; mediaUrl?: string; attempts?: number };
+      await (supabase.from('posts_queue') as any).update({ status: 'processing' }).eq('id', jobRecord.id);
       
-      const result = await processJob(supabase, job);
+      const result = await processJob(supabase, jobRecord);
       
       if (result.ok) {
-        await supabase.from('posts_queue').update({ 
+        await (supabase.from('posts_queue') as any).update({ 
           status: 'posted', 
-          updatedAt: new Date().toISOString() 
-        }).eq('id', job.id);
+          updated_at: new Date().toISOString() 
+        }).eq('id', jobRecord.id);
         results.posted++;
       } else {
-        await supabase.from('posts_queue').update({ 
+        await (supabase.from('posts_queue') as any).update({ 
           status: 'failed', 
-          lastError: result.error, 
-          attempts: (job.attempts || 0) + 1,
-          updatedAt: new Date().toISOString() 
-        }).eq('id', job.id);
+          last_error: result.error ?? '', 
+          attempts: (jobRecord.attempts || 0) + 1,
+          updated_at: new Date().toISOString() 
+        }).eq('id', jobRecord.id);
         results.failed++;
-        results.errors.push({ jobId: job.id, error: result.error });
+        results.errors.push({ jobId: jobRecord.id, error: result.error ?? '' });
       }
       results.processed++;
     }

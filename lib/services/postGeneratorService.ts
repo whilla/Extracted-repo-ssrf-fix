@@ -172,6 +172,12 @@ export async function generatePost(
     threads: 500,
     youtube: 5000,
     pinterest: 500,
+    discord: 2000,
+    reddit: 40000,
+    whatsapp: 4096,
+    telegram: 4096,
+    snapchat: 1000,
+    general: 5000,
   };
 
   const charLimit = platformCharLimits[platform];

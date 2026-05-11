@@ -117,7 +117,7 @@ Generate creative content ideas now.`;
       role: 'assistant',
       content: response,
       timestamp: new Date().toISOString(),
-      attachments: undefined,
+      
     });
     session.updatedAt = Date.now();
 
@@ -145,7 +145,7 @@ export async function refineIdea(
     role: 'user',
     content: `Let's refine this idea: "${ideaText}"\n\nQuestion: ${refinementQuestion}`,
     timestamp: new Date().toISOString(),
-    attachments: undefined,
+    
   });
 
   const systemPrompt = `You are helping refine a content idea with iterative suggestions.
@@ -181,7 +181,7 @@ Format as JSON:
       role: 'assistant',
       content: response,
       timestamp: new Date().toISOString(),
-      attachments: undefined,
+      
     });
     session.updatedAt = Date.now();
 
@@ -208,9 +208,10 @@ export async function exploreAngles(
 
   // Add user message
   session.messages.push({
-    role: 'user',
+    id: `msg_${Date.now()}`,
+    role: 'user' as const,
     content: `Explore ${angleCount} different angles to approach this idea: "${ideaText}"`,
-    attachments: undefined,
+    timestamp: new Date().toISOString(),
   });
 
   const systemPrompt = `You are a creative strategist exploring multiple content angles.
@@ -235,9 +236,10 @@ Return ONLY a JSON array of strings: ["angle1", "angle2", "angle3"]`;
     const angles = JSON.parse(jsonMatch[0]) as string[];
 
     session.messages.push({
-      role: 'assistant',
+      id: `msg_${Date.now()}`,
+      role: 'assistant' as const,
       content: response,
-      attachments: undefined,
+      timestamp: new Date().toISOString(),
     });
     session.updatedAt = Date.now();
 
@@ -268,9 +270,10 @@ export async function continueBrainstorm(
 
   // Add user message
   session.messages.push({
-    role: 'user',
+    id: `msg_${Date.now()}`,
+    role: 'user' as const,
     content: message,
-    attachments: undefined,
+    timestamp: new Date().toISOString(),
   });
 
   const systemPrompt = `You are a creative brainstorming partner helping develop content ideas for:
@@ -288,9 +291,10 @@ Continue the brainstorm conversation naturally. Suggest refinements, alternative
     );
 
     session.messages.push({
-      role: 'assistant',
+      id: `msg_${Date.now()}`,
+      role: 'assistant' as const,
       content: response,
-      attachments: undefined,
+      timestamp: new Date().toISOString(),
     });
     session.updatedAt = Date.now();
 

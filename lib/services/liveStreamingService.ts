@@ -4,7 +4,6 @@
  */
 
 import { kvGet, kvSet } from './puterService';
-import { generateId } from './memoryService';
 
 export type StreamStatus = 'idle' | 'connecting' | 'live' | 'paused' | 'ended' | 'failed';
 export type StreamPlatform = 'youtube' | 'twitch' | 'facebook' | 'instagram' | 'linkedin' | 'custom';
@@ -113,7 +112,7 @@ const SESSIONS_KEY = 'stream_sessions';
 const OVERLAYS_KEY = 'stream_overlays';
 const POLLS_KEY = 'live_polls';
 
-function generateId(): string {
+function generateStreamId(): string {
   return `stream_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -179,7 +178,7 @@ export async function createStreamConfig(
   };
 
   const config: StreamConfig = {
-    id: generateId(),
+    id: generateStreamId(),
     name,
     platform,
     enabled: true,
@@ -240,7 +239,7 @@ export async function startStream(
   const sessions = await loadSessions();
 
   const session: StreamSession = {
-    id: generateId(),
+    id: generateStreamId(),
     configId,
     title,
     description,
@@ -432,7 +431,7 @@ export async function createPoll(
   const polls: LivePoll[] = pollsData ? JSON.parse(pollsData) : [];
 
   const poll: LivePoll = {
-    id: generateId(),
+    id: generateStreamId(),
     question,
     options,
     active: true,

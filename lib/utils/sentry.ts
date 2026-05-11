@@ -5,6 +5,20 @@
 
 import { isProduction, getEnvConfig } from '@/lib/config/envConfig';
 
+declare global {
+  interface Window {
+    Sentry?: {
+      init?: (options: Record<string, unknown>) => void;
+      captureException?: (error: unknown, options?: Record<string, unknown>) => void;
+      captureMessage?: (message: string, level?: string) => void;
+      setUser?: (user: { id: string; email?: string; username?: string } | null) => void;
+      addBreadcrumb?: (breadcrumb: Record<string, unknown>) => void;
+      browserTracingIntegration?: () => Record<string, unknown>;
+      replayIntegration?: (options: Record<string, unknown>) => Record<string, unknown>;
+    };
+  }
+}
+
 let sentryInitialized = false;
 
 export function initSentry() {
@@ -14,8 +28,9 @@ export function initSentry() {
 
   const env = getEnvConfig();
   
-  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).Sentry) {
-    const Sentry = (window as unknown as Record<string, unknown>).Sentry;
+  if (typeof window !== 'undefined' && window.Sentry) {
+    // @ts-expect-error - Sentry loaded via script tag
+    const Sentry = window.Sentry;
     
     if (typeof Sentry.init === 'function') {
       Sentry.init({
@@ -52,8 +67,8 @@ export function captureException(error: unknown, context?: Record<string, unknow
     return;
   }
 
-  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).Sentry) {
-    const Sentry = (window as unknown as Record<string, unknown>).Sentry;
+  if (typeof window !== 'undefined' && window.Sentry) {
+    const Sentry = window.Sentry;
     
     if (typeof Sentry.captureException === 'function') {
       Sentry.captureException(error, {
@@ -69,8 +84,8 @@ export function captureMessage(message: string, level: 'info' | 'warning' | 'err
     return;
   }
 
-  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).Sentry) {
-    const Sentry = (window as unknown as Record<string, unknown>).Sentry;
+  if (typeof window !== 'undefined' && window.Sentry) {
+    const Sentry = window.Sentry;
     
     if (typeof Sentry.captureMessage === 'function') {
       Sentry.captureMessage(message, level);
@@ -79,8 +94,8 @@ export function captureMessage(message: string, level: 'info' | 'warning' | 'err
 }
 
 export function setUserContext(user: { id: string; email?: string; username?: string } | null) {
-  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).Sentry) {
-    const Sentry = (window as unknown as Record<string, unknown>).Sentry;
+  if (typeof window !== 'undefined' && window.Sentry) {
+    const Sentry = window.Sentry;
     
     if (typeof Sentry.setUser === 'function') {
       if (user) {
@@ -97,8 +112,8 @@ export function setUserContext(user: { id: string; email?: string; username?: st
 }
 
 export function addBreadcrumb(category: string, message: string, data?: Record<string, unknown>) {
-  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).Sentry) {
-    const Sentry = (window as unknown as Record<string, unknown>).Sentry;
+  if (typeof window !== 'undefined' && window.Sentry) {
+    const Sentry = window.Sentry;
     
     if (typeof Sentry.addBreadcrumb === 'function') {
       Sentry.addBreadcrumb({

@@ -1,11 +1,13 @@
 import { createClient } from '@/lib/supabase/server';
 
-export async function saveEvolutionLog(log: {
+export interface EvolutionLog {
   version: string;
   changeType: string;
   description: string;
   diff?: any;
-}) {
+}
+
+export async function saveEvolutionLog(log: EvolutionLog) {
   const supabase = await createClient();
   
   const { error } = await supabase
@@ -15,7 +17,7 @@ export async function saveEvolutionLog(log: {
       change_type: log.changeType,
       description: log.description,
       diff: log.diff,
-    });
+    } as any);
 
   if (error) throw error;
 }

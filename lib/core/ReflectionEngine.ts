@@ -66,7 +66,7 @@ export class ReflectionEngine {
         content: gem.contentPreview,
         score: gem.score,
         impressions: gem.impressions,
-      });
+      } as any);
       patternsUpdated++;
     }
 
@@ -115,7 +115,8 @@ export class ReflectionEngine {
   }
 
   private async saveReflection(report: ReflectionReport): Promise<void> {
-    const logs = await puterService.readFile(this.KEYS.reflectionLog, true) || [];
+    const existingData = await puterService.readFile(this.KEYS.reflectionLog, true);
+    const logs = (Array.isArray(existingData) ? existingData : []) as ReflectionReport[];
     logs.push(report);
     await puterService.writeFile(this.KEYS.reflectionLog, logs);
     await puterService.writeFile(this.KEYS.lastReflectionDate, new Date().toISOString());

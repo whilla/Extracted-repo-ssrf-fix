@@ -45,7 +45,9 @@ export type AuditEventType =
   | 'agent_task_completed'
   | 'agent_error'
   | 'user_login'
-  | 'user_logout';
+  | 'user_logout'
+  | 'service_call_success'
+  | 'service_call_failure';
 
 export interface AgentRun {
   id: string;

@@ -414,11 +414,12 @@ Return strict JSON:
       isRegeneration: false,
     });
 
-    if (!governorValidation.governorApproved) {
+    const govValidation = governorValidation as { governorApproved?: boolean; rejectionReason?: string };
+    if (!govValidation.governorApproved) {
       checks.push({
         name: 'Governor Validation',
         passed: false,
-        message: governorValidation.rejectionReason || 'Governor rejected this content',
+        message: govValidation.rejectionReason || 'Governor rejected this content',
         severity: 'error',
       });
       totalScore -= Math.max(10, 100 - governorValidation.score);

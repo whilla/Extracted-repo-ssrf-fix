@@ -1,6 +1,4 @@
 import { aiService } from './aiService';
-import { multiAgentService } from './multiAgentService';
-import { browserTools } from './browserToolsWrapper'; // We'll create this wrapper next
 import { kvGet, kvSet } from './puterService';
 
 export interface CompetitorAnalysis {
@@ -92,8 +90,8 @@ export const competitiveIntelService = {
    * Helper to execute browser-tool scripts from the skills directory.
    */
   async executeBrowserTool(tool: string, args: string): Promise<{ stdout: string }> {
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
     const execPromise = promisify(exec);
     
     const { stdout } = await execPromise(`node /root/.pi/agent/skills/browser-tools/${tool} "${args}"`);

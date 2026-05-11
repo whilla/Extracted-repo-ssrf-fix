@@ -9,7 +9,7 @@ export interface DirectPublishResult {
   platformUrl?: string;
 }
 
-export type SocialPlatform = 'twitter' | 'linkedin' | 'instagram' | 'facebook' | 'youtube' | 'tiktok' | 'threads' | 'pinterest' | 'twitch' | 'discord' | 'reddit' | 'whatsapp';
+export type SocialPlatform = 'twitter' | 'linkedin' | 'instagram' | 'facebook' | 'youtube' | 'tiktok' | 'threads' | 'pinterest' | 'twitch' | 'discord' | 'reddit' | 'whatsapp' | 'telegram' | 'snapchat' | 'wordpress' | 'medium' | 'ghost' | 'substack' | 'mailchimp' | 'klaviyo' | 'convertkit';
 
 /**
  * DirectPublishService provides first-party API integrations for social platforms
@@ -30,7 +30,7 @@ export class DirectPublishService {
       case 'facebook':
         return this.publishToFacebook(text, mediaUrls);
       case 'youtube':
-        return this.publishToYouTube(text, mediaUrls);
+        return this.publishToYouTube(text, text, mediaUrls);
       case 'tiktok':
         return this.publishToTikTok(text, mediaUrls);
       case 'threads':
@@ -46,8 +46,250 @@ export class DirectPublishService {
       case 'whatsapp':
         const recipient = await kvGet('whatsapp_broadcast_list');
         return nativeProviders.publishWhatsApp(text, recipient || '');
+      case 'telegram':
+        const tgChatId = await kvGet('telegram_chat_id');
+        return nativeProviders.publishTelegram(text, tgChatId || undefined);
+      case 'snapchat':
+        return nativeProviders.publishSnapchat(text, mediaUrls[0]);
+      case 'wordpress':
+        return this.publishToWordPress(text, text);
+      case 'medium':
+        return this.publishToMedium(text, text);
+      case 'ghost':
+        return this.publishToGhost(text, text);
+      case 'substack':
+        return this.publishToSubstack(text, text);
+      case 'mailchimp':
+        return this.publishToMailchimp(text, text);
+      case 'klaviyo':
+        return this.publishToKlaviyo(text, text);
+      case 'convertkit':
+        return this.publishToConvertKit(text, text);
       default:
         return { success: false, error: `Platform ${platform} not supported` };
+    }
+  }
+
+  /**
+   * Publish directly to WordPress
+   */
+  static async publishToWordPress(content: string, title: string): Promise<DirectPublishResult> {
+    try {
+      const apiUrl = await kvGet('wordpress_api_url');
+      const username = await kvGet('wordpress_username');
+      const appPassword = await kvGet('wordpress_application_password');
+      
+      if (!apiUrl || !username || !appPassword) {
+        return { success: false, error: 'WordPress credentials not configured' };
+      }
+
+      const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
+      const endpoint = `${baseUrl}/wp-json/wp/v2/posts`;
+      const authHeader = btoa(`${username}:${appPassword}`);
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${authHeader}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: title.substring(0, 200),
+          content: content,
+          status: 'publish',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'WordPress API request failed');
+      }
+
+      return {
+        success: true,
+        postId: String(data.id),
+        platformUrl: data.link,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown WordPress error',
+      };
+    }
+  }
+
+  /**
+   * Publish directly to Medium
+   */
+  static async publishToMedium(content: string, title: string): Promise<DirectPublishResult> {
+    try {
+      const token = await kvGet('medium_integration_token');
+      const userId = await kvGet('medium_user_id');
+      if (!token || !userId) {
+        return { success: false, error: 'Medium credentials not configured' };
+      }
+
+      const response = await fetch(`https://api.medium.com/v1/users/${userId}/posts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          title: title.substring(0, 200),
+          contentFormat: 'html',
+          content: content,
+          publishStatus: 'public',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Medium API request failed');
+      }
+
+      return {
+        success: true,
+        postId: data.data.id,
+        platformUrl: data.data.url,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown Medium error',
+      };
+    }
+  }
+
+  /**
+   * Publish directly to Ghost
+   */
+  static async publishToGhost(content: string, title: string): Promise<DirectPublishResult> {
+    try {
+      const apiUrl = await kvGet('ghost_api_url');
+      const contentApiKey = await kvGet('ghost_content_api_key');
+      const adminApiKey = await kvGet('ghost_admin_api_key');
+      if (!apiUrl || !contentApiKey || !adminApiKey) {
+        return { success: false, error: 'Ghost credentials not configured' };
+      }
+
+      const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
+      const endpoint = `${baseUrl}/ghost/api/admin/posts/`;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Ghost ${adminApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: title.substring(0, 200),
+          html: content,
+          status: 'published',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Ghost API request failed');
+      }
+
+      return {
+        success: true,
+        postId: data.posts[0].id,
+        platformUrl: `${baseUrl}/post/${data.posts[0].id}/`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown Ghost error',
+      };
+    }
+  }
+
+  /**
+   * Publish directly to Substack
+   * (Note: Substack doesn't have a public API, so this is a stub for future integration)
+   */
+  static async publishToSubstack(content: string, title: string): Promise<DirectPublishResult> {
+    return {
+      success: false,
+      error: 'Substack direct publishing is not yet supported via API. Please use N8N bridge.',
+    };
+  }
+
+  /**
+   * Publish directly to Mailchimp
+   */
+  static async publishToMailchimp(content: string, title: string): Promise<DirectPublishResult> {
+    try {
+      const apiKey = await kvGet('mailchimp_api_key');
+      const listId = await kvGet('mailchimp_list_id');
+      const serverPrefix = await kvGet('mailchimp_server_prefix');
+      if (!apiKey || !listId || !serverPrefix) {
+        return { success: false, error: 'Mailchimp credentials not configured' };
+      }
+
+      const response = await nativeProviders.publishMailchimp(content, title);
+      return {
+        success: response.success,
+        postId: response.postId,
+        error: response.error,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown Mailchimp error',
+      };
+    }
+  }
+
+  /**
+   * Publish directly to Klaviyo
+   */
+  static async publishToKlaviyo(content: string, title: string): Promise<DirectPublishResult> {
+    try {
+      const apiKey = await kvGet('klaviyo_api_key');
+      if (!apiKey) {
+        return { success: false, error: 'Klaviyo API key not configured' };
+      }
+
+      const response = await nativeProviders.publishKlaviyo(content, title);
+      return {
+        success: response.success,
+        postId: response.postId,
+        error: response.error,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown Klaviyo error',
+      };
+    }
+  }
+
+  /**
+   * Publish directly to ConvertKit
+   */
+  static async publishToConvertKit(content: string, title: string): Promise<DirectPublishResult> {
+    try {
+      const apiKey = await kvGet('convertkit_api_key');
+      if (!apiKey) {
+        return { success: false, error: 'ConvertKit API key not configured' };
+      }
+
+      const response = await nativeProviders.publishConvertKit(content, title);
+      return {
+        success: response.success,
+        postId: response.postId,
+        error: response.error,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown ConvertKit error',
+      };
     }
   }
 

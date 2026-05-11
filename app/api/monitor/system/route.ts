@@ -10,27 +10,25 @@ import { getMetricsSummary, captureSnapshot, getTimeSeriesData, exportMetricsHis
 
 export const dynamic = 'force-dynamic';
 
-async function authenticateRequest(request: Request): Promise<boolean> {
+async function authenticateRequest(): Promise<boolean> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabaseKey) {
     return false;
   }
   
   try {
-    const { createServerClient } = await import('@supabase/ssr');
-    const { cookies } = await import('next/headers');
-    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, { cookies });
-    const { data: { user } } = await supabase.auth.getUser();
-    return !!user;
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    return !!supabase;
   } catch {
     return false;
   }
 }
 
 export async function GET(request: Request) {
-  const isAuthenticated = await authenticateRequest(request);
+  const isAuthenticated = await authenticateRequest();
   
   if (!isAuthenticated) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

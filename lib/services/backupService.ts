@@ -4,7 +4,6 @@
  */
 
 import { kvGet, kvSet, listFiles, deleteFile } from './puterService';
-import { getSupabaseClient } from './logService';
 import type { BrandKit, ContentDraft, AppSettings } from '@/lib/types';
 
 const BACKUP_PREFIX = 'nexus_backup_';
@@ -27,7 +26,7 @@ interface BackupData {
   agents: Record<string, unknown>;
 }
 
-function generateId(): string {
+function generateBackupId(): string {
   return `backup_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -40,7 +39,7 @@ async function computeChecksum(data: string): Promise<string> {
 }
 
 export async function createBackup(label?: string): Promise<BackupManifest> {
-  const backupId = generateId();
+  const backupId = generateBackupId();
   const timestamp = new Date().toISOString();
   const checksums: Record<string, string> = {};
 
@@ -54,10 +53,12 @@ export async function createBackup(label?: string): Promise<BackupManifest> {
   try {
     const brandKitFiles = await listFiles('brandKit');
     for (const file of brandKitFiles.slice(0, 20)) {
-      const content = await kvGet(file);
-      if (content) {
-        data.brandKits[file] = content as BrandKit;
-        checksums[file] = await computeChecksum(content);
+      if (typeof file === 'string') {
+        const content = await kvGet(file);
+        if (content) {
+          data.brandKits[file] = JSON.parse(content) as BrandKit;
+          checksums[file] = await computeChecksum(content);
+        }
       }
     }
   } catch (e) {
@@ -67,10 +68,12 @@ export async function createBackup(label?: string): Promise<BackupManifest> {
   try {
     const draftFiles = await listFiles('drafts');
     for (const file of draftFiles.slice(0, 50)) {
-      const content = await kvGet(file);
-      if (content) {
-        data.drafts[file] = content as ContentDraft;
-        checksums[file] = await computeChecksum(content);
+      if (typeof file === 'string') {
+        const content = await kvGet(file);
+        if (content) {
+          data.drafts[file] = JSON.parse(content) as ContentDraft;
+          checksums[file] = await computeChecksum(content);
+        }
       }
     }
   } catch (e) {
@@ -80,7 +83,7 @@ export async function createBackup(label?: string): Promise<BackupManifest> {
   try {
     const settings = await kvGet('settings');
     if (settings) {
-      data.settings = settings as AppSettings;
+      data.settings = JSON.parse(settings) as AppSettings;
       checksums['settings'] = await computeChecksum(settings);
     }
   } catch (e) {

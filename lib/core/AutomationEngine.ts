@@ -686,7 +686,7 @@ export class AutomationEngine {
     }
 
     const brandKit = await loadBrandKit();
-    const safety = await runSafetyChecks(result.output, request.platform ? [request.platform] : [], brandKit);
+    const safety = await runSafetyChecks(result.output ?? '', request.platform ? [request.platform] : [], brandKit);
 
     if (!safety.passed) {
       throw new Error(`Safety check failed: ${safety.blockedReasons.join(', ') || 'platform policy risk detected'}`);
@@ -714,7 +714,7 @@ export class AutomationEngine {
 
       // Add to memory
       await memoryManager.addContent({
-        content: result.output,
+        content: result.output ?? '',
         score: result.score,
         platform: request.platform || 'general',
         wasPublished: false,
@@ -885,7 +885,7 @@ export class AutomationEngine {
 
     const platform = (output.request.platform || 'twitter') as Platform;
     const publishResult = await publishPost({
-      text: output.result.output,
+      text: output.result.output ?? '',
       platforms: [platform],
       source: 'automation',
       generationId: output.generationId,

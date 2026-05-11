@@ -3,8 +3,7 @@
  * RESTful API for third-party integrations
  */
 
-import { kvGet, kvSet } from './puterService';
-import { generateId } from './memoryService';
+import { kvGet, kvSet } from '@/lib/services/puterService';
 
 export type ApiKeyScope = 'read' | 'write' | 'admin';
 export type ApiKeyStatus = 'active' | 'revoked' | 'expired';

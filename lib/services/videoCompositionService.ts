@@ -119,7 +119,7 @@ const COMPOSITIONS_KEY = 'video_compositions';
 const RENDER_JOBS_KEY = 'video_render_v2';
 const STREAMS_KEY = 'live_streams';
 
-function generateId(): string {
+function generateCompositionId(): string {
   return `comp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -149,7 +149,7 @@ export async function createComposition(
   const compositions = await loadCompositions();
 
   const composition: VideoComposition = {
-    id: generateId(),
+    id: generateCompositionId(),
     name,
     clips: [],
     audioTracks: [],
@@ -282,7 +282,7 @@ export async function renderComposition(compositionId: string): Promise<RenderPr
   if (!composition) throw new Error('Composition not found');
 
   const job: RenderProgress = {
-    jobId: generateId(),
+    jobId: generateCompositionId(),
     compositionId,
     status: 'queued',
     progress: 0,
@@ -357,13 +357,13 @@ export async function compositeVideos(
   
   const result = await generateVideo({
     prompt: prompt,
-    durationSeconds: Math.max(...inputs.map(i => i.startTime + i.duration)),
+    durationSeconds: Math.max(...inputs.map(i => (i.startTime ?? 0) + (i.duration ?? 0)), 0),
     aspectRatio: outputSettings.aspectRatio as '16:9' | '9:16' | '1:1' | '4:5' || '16:9',
   });
 
   return {
     outputUrl: result.url,
-    duration: result.durationSeconds,
+    duration: result.durationSeconds ?? 0,
   };
 }
 

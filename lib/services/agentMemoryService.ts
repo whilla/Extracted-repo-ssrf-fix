@@ -480,7 +480,7 @@ export async function buildMemoryContext(agentId: string = 'default'): Promise<s
     const { planService } = await import('./planService');
     const activePlan = await planService.getActivePlan(agentId);
     if (activePlan) {
-      const steps = activePlan.steps.map((s, i) => 
+      const steps = activePlan.steps.map((s: { status: string; description: string }, i: number) => 
         `${i + 1}. [${s.status}] ${s.description} ${s.status === 'completed' ? '✅' : ''}`
       ).join('\n');
       planContext = `\n\nACTIVE AUTOMATION PLAN: ${activePlan.goal}\n${steps}\nStatus: ${activePlan.status}`;

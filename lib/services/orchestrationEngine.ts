@@ -14,6 +14,7 @@ import {
   type AgentOutput,
   type OrchestrationPlan,
   type SubTask,
+  type AgentRole,
 } from './multiAgentService';
 import { savePlan, getPlan } from './planStorageService';
 import { gatherNexusContext } from './discoveryService';
@@ -29,13 +30,30 @@ import {
   makeGovernorDecision,
   recordCost,
   activateFailsafeMode,
-  type GovernorDecision,
-  type ContentValidation,
+  type GovernorValidation,
 } from './governorService';
 import { loadBrandKit } from './memoryService';
 import { buildMemoryContext } from './agentMemoryService';
 import { universalChat } from './aiService';
 import { BrandKit } from '@/lib/validators';
+import { parseCriticVerdict } from './orchestrationPrimitives';
+import type { CriticVerdict as PrimitiveCriticVerdict } from './orchestrationPrimitives';
+
+interface GovernorDecision {
+  approved: boolean;
+  action: 'approve' | 'reject' | 'regenerate' | 'switch_provider';
+  reason: string;
+  alternativeModel?: string;
+}
+
+interface ContentValidation {
+  isValid: boolean;
+  score: number;
+  issues: Array<{ type: string; severity: string; message: string }>;
+  suggestions: string[];
+  governorApproved: boolean;
+  rejectionReason?: string;
+}
 
 // Keyword-based context retrieval for RAG-lite
 interface ContextSection {
@@ -188,7 +206,7 @@ Requirement: Provide the final, perfect output that a specialized agent would ha
 
   return {
     agentId: 'brand-manager-brain',
-    agentRole: 'orchestrator' as any,
+    agentRole: 'orchestrator' as AgentRole,
     content,
     score: 100,
     reasoning: 'Handled by Brand Manager fallback after specialized agent failure',
@@ -255,7 +273,19 @@ const ROLE_CONTEXT_KEY: Record<AgentOutput['agentRole'], string> = {
   hashtag: 'hashtags',
   engagement: 'engagementInsights',
   hybrid: 'hybridOutput',
+  mediaDirector: 'mediaDirectives',
 };
+
+function convertToValidation(v: GovernorValidation): ContentValidation {
+  return {
+    isValid: v.approved,
+    score: v.score,
+    issues: v.issues.map(i => ({ type: i.type, severity: i.severity, message: i.message })),
+    suggestions: v.feedback ? [v.feedback] : [],
+    governorApproved: v.approved,
+    rejectionReason: v.feedback || undefined,
+  };
+}
 
 // Initialize the system
 export async function initializeOrchestrationSystem(): Promise<void> {
@@ -312,6 +342,7 @@ export async function orchestrate(
         status: 'failed',
         createdAt: new Date().toISOString(),
       },
+      trace: [],
       metadata: {
         totalDuration: Date.now() - startTime,
         agentsUsed: 0,
@@ -377,7 +408,7 @@ export async function orchestrate(
         },
         governorDecision: {
           approved: false,
-          action: 'pause',
+          action: 'reject',
           reason: `Paused at task ${result.pausedAtTaskId}`,
         },
         orchestrationPlan: plan,
@@ -451,11 +482,9 @@ export async function orchestrate(
       // CEO Approval Gate: Queue the result for tracking
       const approvalId = await addToApprovalQueue(result.combinedContent, {
         platform: options.platform || 'twitter',
-        agentRole: 'orchestrator',
-        modelUsed: options.preferredModel || 'gpt-4o',
-        score: result.outputs.length > 0 ? result.outputs[0].score : 0,
-        createdAt: new Date().toISOString(),
-        orchestrationPlanId: plan.id,
+        metadata: {
+          orchestrationPlanId: plan.id,
+        },
       });
 
       finalResult = {
@@ -463,7 +492,7 @@ export async function orchestrate(
         finalContent: result.combinedContent,
         agentOutputs: result.outputs,
         trace: result.trace,
-        validation,
+        validation: convertToValidation(validation),
         governorDecision: decision,
         orchestrationPlan: plan,
         metadata: {
@@ -471,7 +500,6 @@ export async function orchestrate(
           agentsUsed: result.outputs.length,
           regenerations,
           modelUsed: options.preferredModel || 'gpt-4o',
-          approvalId,
         },
       };
       break;
@@ -483,7 +511,7 @@ export async function orchestrate(
       continue;
     }
     
-    if (decision.action === 'downgrade' && decision.alternativeModel) {
+    if (decision.action === 'switch_provider' && decision.alternativeModel) {
       options.preferredModel = decision.alternativeModel;
       regenerations++;
       continue;
@@ -496,7 +524,7 @@ export async function orchestrate(
       finalContent: result.combinedContent,
       agentOutputs: result.outputs,
       trace: result.trace,
-      validation,
+      validation: convertToValidation(validation),
       governorDecision: decision,
       orchestrationPlan: plan,
       metadata: {
@@ -517,7 +545,7 @@ export async function orchestrate(
     // Consider activating failsafe if too many failures
     if (regenerations >= maxRegenerations) {
       const state = await loadGovernorState();
-      if (state.rejectedToday > 10) {
+      if (state.rejectedToday !== undefined && state.rejectedToday > 10) {
         await activateFailsafeMode('Too many consecutive failures');
       }
     }
@@ -527,7 +555,7 @@ export async function orchestrate(
       finalContent: '',
       agentOutputs: [],
       trace: [],
-      validation: lastValidation,
+      validation: convertToValidation(lastValidation),
       governorDecision: {
         approved: false,
         action: 'reject',
@@ -551,11 +579,11 @@ async function executeOrchestrationPlan(
   plan: OrchestrationPlan,
   context: Record<string, string>,
   aiProvider: (prompt: string, role: AgentRole) => Promise<string>,
-  options: OrchestrationOptions = {}
+  options: OrchestrationOptions = { requestType: 'content' as const }
 ): Promise<{
   outputs: AgentOutput[];
   combinedContent: string;
-  criticVerdict: CriticVerdict;
+  criticVerdict: PrimitiveCriticVerdict;
   criticFeedback: string;
   trace: Array<{
     taskId: string;
@@ -616,7 +644,7 @@ async function executeOrchestrationPlan(
         
         const output: AgentOutput = {
           agentId: 'system',
-          agentRole: 'trend' as any,
+          agentRole: 'trend' as AgentRole,
           content: discovery.summary,
           score: 100,
           reasoning: 'Real-time discovery data fetched successfully',
@@ -632,7 +660,7 @@ async function executeOrchestrationPlan(
         trace.push({
           taskId: task.id,
           agentId: 'system',
-          role: 'trend' as any,
+          role: 'trend' as AgentRole,
           input: task.input || plan.userRequest,
           prompt: output.fullPrompt,
           output: output.content,
@@ -676,7 +704,7 @@ async function executeOrchestrationPlan(
       }
       
       // Build task-specific context
-      const taskContext = { 
+      const taskContext: Record<string, string> = { 
         ...context, 
         externalContext,
       };
@@ -686,7 +714,7 @@ async function executeOrchestrationPlan(
         for (const depId of task.dependencies) {
           const depOutput = taskOutputs.get(depId);
           if (depOutput) {
-            const contextKey = ROLE_CONTEXT_KEY[depOutput.agentRole];
+            const contextKey = ROLE_CONTEXT_KEY[depOutput.agentRole] ?? 'context';
             taskContext[contextKey] = depOutput.content;
           }
         }
@@ -752,8 +780,8 @@ async function executeOrchestrationPlan(
           return { 
             outputs, 
             combinedContent: '', 
-            criticRejected: false, 
             criticFeedback: '', 
+            criticVerdict: { verdict: 'approve' as const, score: 0, schemaValid: true, critique: '', fixes: [] },
             trace, 
             pausedAtTaskId: (result as any).taskId 
           };
@@ -799,7 +827,15 @@ async function executeOrchestrationPlan(
     .filter((output) => output.agentRole === 'critic')
     .sort((a, b) => b.score - a.score)[0];
   const criticFeedback = criticOutput?.content || '';
-  const criticVerdict = parseCriticVerdict(criticFeedback);
+  const rawVerdict = parseCriticVerdict(criticFeedback);
+  const criticVerdict: PrimitiveCriticVerdict = {
+    verdict: rawVerdict.verdict as 'approve' | 'reject' | 'unknown',
+    score: rawVerdict.score ?? 0,
+    schemaValid: rawVerdict.schemaValid,
+    targetAgent: rawVerdict.targetAgent,
+    critique: (rawVerdict as any).critique || '',
+    fixes: (rawVerdict as any).fixes || [],
+  };
 
   if (criticOutput) {
     criticOutput.metadata = {
@@ -870,7 +906,7 @@ export async function getOrchestrationStatus(): Promise<{
     agentsReady: agents.length > 0,
     agentCount: agents.filter(a => a.evolutionState !== 'deprecated').length,
     governorEnabled: config.enabled,
-    systemMode: state.currentMode,
-    evolutionPending: 0, // Would need to check proposals
+    systemMode: state.currentMode ?? 'normal',
+    evolutionPending: 0,
   };
 }

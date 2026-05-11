@@ -198,7 +198,7 @@ export async function orchestrateStep3_Optimize(sessionId: string): Promise<stri
 
 Content: ${session.finalContent}
 Platform: ${session.brief.platform}
-${session.brandKit?.emotionalTriggers?.length ? `Emotional triggers: ${session.brandKit.emotionalTriggers.join(', ')}` : ''}
+${(session.brandKit as any)?.emotionalTriggers?.length ? `Emotional triggers: ${(session.brandKit as any).emotionalTriggers.join(', ')}` : ''}
 
 Provide BOTH:
 1. Optimized version (better hooks, keywords, rhythm for ${session.brief.platform})

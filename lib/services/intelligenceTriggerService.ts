@@ -3,6 +3,7 @@
 import { sentimentService, SentimentReport } from './sentimentService';
 import { repurposingService } from './repurposingService';
 import { kvGet, kvSet } from './puterService';
+import type { Platform } from '@/lib/types';
 
 export interface TriggerConfig {
   sentimentThreshold: number; // e.g., 0.7 for "Very Positive"
@@ -64,7 +65,7 @@ export const intelligenceTriggerService = {
       const masterContent = `[VIRAL POST ${postId}] Analysis: ${report.overallSentiment.label}. 
       Key Insights: ${report.actionableInsights.join(' ')}`;
 
-      const platforms = ['Twitter', 'LinkedIn', 'TikTok', 'Instagram', 'Facebook'];
+      const platforms: Platform[] = ['twitter', 'linkedin', 'tiktok', 'instagram', 'facebook'];
       
       const campaign = await repurposingService.repurpose({
         masterContent,

@@ -1,8 +1,8 @@
 'use client';
 
 import { aiService } from './aiService';
-import { platformAdapterService } from './platformAdapterService';
-import { multiAgentService } from './multiAgentService';
+import * as platformAdapterService from './platformAdapterService';
+import { selectBestOutput, combineOutputs, type AgentOutput } from './multiAgentService';
 import { kvGet } from './puterService';
 import { youtubeTranscriptService } from './youtubeTranscriptService';
 import { audioTranscriptionService } from './audioTranscriptionService';
@@ -42,7 +42,7 @@ export const repurposingService = {
    * Repurposes master content for multiple platforms simultaneously.
    */
   async repurpose(request: RepurposeRequest): Promise<RepurposeResult> {
-    let { masterContent, platforms, toneAdjustment, competitiveGaps } = request;
+    const { masterContent, platforms, toneAdjustment, competitiveGaps } = request;
     
     // 1. Source Resolution: Convert any media source into a text master
     if (masterContent.includes('youtube.com/') || masterContent.includes('youtu.be/')) {

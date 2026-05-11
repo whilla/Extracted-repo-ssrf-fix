@@ -46,7 +46,7 @@ export class TrendScoutService {
     if (this.initialized) return;
     
     const savedTrends = await puterService.readFile(this.KEYS.activeTrends, true);
-    if (savedTrends) this.currentTrends = savedTrends;
+    if (savedTrends) this.currentTrends = (savedTrends as unknown) as TrendSignal[];
     
     this.initialized = true;
     console.log('[TrendScout] Initialized and monitoring signals...');
@@ -105,7 +105,7 @@ export class TrendScoutService {
   async brainstormTrendIdeas(): Promise<TrendProposal[]> {
     if (!this.initialized) await this.initialize();
 
-    const brand = await memoryManager.getBrandMemory();
+    const brand = await (memoryManager as any).getBrandMemory();
     const proposals: TrendProposal[] = [];
 
     for (const trend of this.currentTrends) {

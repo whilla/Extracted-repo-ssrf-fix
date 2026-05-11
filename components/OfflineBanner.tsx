@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { isPuterAvailable } from './puterService';
+import { isPuterAvailable } from '@/lib/services/puterService';
 
 export interface OfflineBannerProps {
   className?: string;

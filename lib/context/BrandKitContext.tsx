@@ -26,6 +26,7 @@ const DEFAULT_BRAND_KIT: BrandKit = {
   avoidTopics: [],
   language: 'en',
   hashtagStrategy: ['moderate'],
+  contentPreferences: [],
 };
 
 export function BrandKitProvider({ children }: { children: ReactNode }) {

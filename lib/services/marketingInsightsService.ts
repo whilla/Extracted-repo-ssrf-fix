@@ -50,7 +50,7 @@ export class MarketingInsightsService {
         confidenceScore: this.calculateConfidence(rawData),
       };
     } catch (error) {
-      logger.error('[MarketingInsightsService] Report generation failed:', error);
+      logger.error('[MarketingInsightsService] Report generation failed:', String(error));
       throw error;
     }
   }

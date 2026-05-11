@@ -52,7 +52,7 @@ export class BrandVersionManager {
   async getVersion(versionId: string): Promise<BrandVersion | null> {
     try {
       const content = await readFile(`${this.VERSIONS_PATH}/${versionId}.json`, true);
-      return content as BrandVersion;
+      return content as unknown as BrandVersion;
     } catch {
       return null;
     }

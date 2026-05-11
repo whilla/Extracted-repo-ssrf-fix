@@ -11,7 +11,78 @@ export interface UserContentPreference {
 }
 
 // Content
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  currency: string;
+  imageUrl?: string;
+  url?: string;
+  metadata?: Record<string, any>;
+}
+
+// Video NLE Types
+export type TrackType = 'video' | 'audio' | 'text' | 'image' | 'transition';
+
+export interface TimelineEvent {
+  id: string;
+  startTime: number;
+  duration: number;
+  type: TrackType;
+}
+
+export interface MediaClipEvent extends TimelineEvent {
+  type: 'video' | 'audio';
+  assetUrl: string;
+  assetType: 'video' | 'audio';
+  volume?: number; // 0 to 1
+  opacity?: number; // 0 to 1
+  startOffset?: number; // Offset within the asset
+}
+
+export interface TextOverlayEvent extends TimelineEvent {
+  type: 'text';
+  text: string;
+  fontSize?: number;
+  color?: string;
+  position?: { x: number; y: number };
+  textAlign?: 'left' | 'center' | 'right';
+}
+
+export interface ImageOverlayEvent extends TimelineEvent {
+  type: 'image';
+  assetUrl: string;
+  scale?: number;
+  position?: { x: number; y: number };
+  opacity?: number;
+}
+
+export interface TransitionEvent extends TimelineEvent {
+  type: 'transition';
+  fromEventId: string;
+  toEventId: string;
+  transitionType: 'fade' | 'cross_dissolve' | 'wipe' | 'slide';
+}
+
+export interface Track {
+  id: string;
+  name: string;
+  type: TrackType;
+  events: (MediaClipEvent | TextOverlayEvent | ImageOverlayEvent | TransitionEvent)[];
+}
+
+export interface Timeline {
+  id: string;
+  name: string;
+  duration: number;
+  aspectRatio: '16:9' | '9:16' | '1:1' | '4:5';
+  tracks: Track[];
+}
+
 export interface ContentDraft {
+...
+...
   id: string;
   created: string;
   updated: string;
@@ -50,7 +121,17 @@ export type Platform =
   | 'pinterest'
   | 'discord'
   | 'reddit'
-  | 'whatsapp';
+  | 'whatsapp'
+  | 'telegram'
+  | 'snapchat'
+  | 'wordpress'
+  | 'medium'
+  | 'ghost'
+  | 'substack'
+  | 'mailchimp'
+  | 'klaviyo'
+  | 'convertkit'
+  | 'general';
 
 export interface PlatformConfig {
   id: Platform;
@@ -92,9 +173,10 @@ export interface AIMessage {
 }
 
 export interface AIMessageContent {
-  type: 'text' | 'image_url';
+  type: 'text' | 'image_url' | 'video_url';
   text?: string;
   image_url?: { url: string };
+  video_url?: { url: string };
 }
 
 // Agent
@@ -111,7 +193,8 @@ export interface AgentIntent {
     | 'read_file'
     | 'answer_question'
     | 'edit_draft'
-    | 'manage_brand';
+    | 'manage_brand'
+    | 'edit_video_timeline';
   confidence: number;
   params: Record<string, unknown>;
 }

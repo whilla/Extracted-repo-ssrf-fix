@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { collaborationManager } from '@/lib/services/collaborationManager';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Box } from '@/components/ui'; // Mocking standard layout box
 
 interface CollaborationPresenceProps {
   docId: string;

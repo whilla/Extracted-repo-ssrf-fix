@@ -404,7 +404,8 @@ export async function generateVoice(options: VoiceOptions): Promise<string> {
       case 'resemble':
         return generateResembleAI(text, voiceId);
       case 'elevenlabs':
-        return generateElevenLabs(text, voiceId);
+        const asset = await generateElevenLabs(text, voiceId);
+        return asset.url;
       case 'azure':
         return generateAzureTTS(text, voiceId);
       default:
@@ -414,7 +415,7 @@ export async function generateVoice(options: VoiceOptions): Promise<string> {
 
   // Auto-select best available provider (in order of quality)
   const providerAttempts: Array<{ check: () => Promise<boolean>; generate: () => Promise<string>; name: string }> = [
-    { name: 'ElevenLabs', check: async () => !!(await kvGet('elevenlabs_key')) || !!process.env.ELEVENLABS_API_KEY, generate: () => generateElevenLabs(text, voiceId) },
+    { name: 'ElevenLabs', check: async () => !!(await kvGet('elevenlabs_key')) || !!process.env.ELEVENLABS_API_KEY, generate: async () => (await generateElevenLabs(text, voiceId)).url },
     { name: 'Play.ht', check: async () => !!(await kvGet('playht_key')) && !!sanitizeStoredValueForKey('playht_user_id', await kvGet('playht_user_id')) || !!process.env.PLAYHT_API_KEY, generate: () => generatePlayHT(text, voiceId) },
     { name: 'Speechify', check: async () => !!(await kvGet('speechify_key')) || !!process.env.SPEECHIFY_API_KEY, generate: () => generateSpeechify(text, voiceId) },
     { name: 'Resemble', check: async () => !!(await kvGet('resemble_key')) || !!process.env.RESEMBLE_API_KEY, generate: () => generateResembleAI(text, voiceId) },

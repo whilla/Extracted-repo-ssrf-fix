@@ -68,8 +68,8 @@ Rule: Be strict. If it's generic or "AI-sounding", reject it.`;
         isApproved: true, 
         score: 50,
         feedback: 'Critique system unavailable; routing to human approval.',
-        suggestedChanges: [],
-        critiqueCategory: 'general'
+        suggestedChanges: [] as string[],
+        critiqueCategory: 'general' as const
       };
     }
   }
@@ -113,13 +113,13 @@ Rule: Be strict. If it's generic or "AI-sounding", reject it.`;
 
     return { 
       finalContent: currentContent, 
-      iterations, 
+      iteration, 
       finalCritique: { 
         isApproved: false, 
         score: 0, 
         feedback: 'Max iterations reached without full approval. Human review required.', 
         suggestedChanges: [], 
-        critiqueCategory: 'general' 
+critiqueCategory: 'general' as const
       } 
     };
   }

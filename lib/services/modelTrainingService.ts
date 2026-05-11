@@ -4,7 +4,6 @@
  */
 
 import { kvGet, kvSet } from './puterService';
-import { generateId } from './memoryService';
 
 export type ModelType = 'text' | 'chat' | 'embedding' | 'image' | 'voice';
 export type TrainingStatus = 'pending' | 'preparing' | 'training' | 'completed' | 'failed';
@@ -86,7 +85,7 @@ const MODELS_KEY = 'custom_models';
 const JOBS_KEY = 'training_jobs';
 const EMBEDDINGS_KEY = 'embeddings';
 
-function generateId(): string {
+function generateModelId(): string {
   return `model_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -117,7 +116,7 @@ export async function createDataset(
 
   const fullExamples: TrainingExample[] = examples.map(e => ({
     ...e,
-    id: generateId(),
+    id: generateModelId(),
   }));
 
   const totalTokens = fullExamples.reduce((sum, e) => 
@@ -125,7 +124,7 @@ export async function createDataset(
   );
 
   const dataset: TrainingDataset = {
-    id: generateId(),
+    id: generateModelId(),
     name,
     description,
     examples: fullExamples,
@@ -151,7 +150,7 @@ export async function addExampleToDataset(
 
   datasets[index].examples.push({
     ...example,
-    id: generateId(),
+    id: generateModelId(),
   });
   datasets[index].updatedAt = new Date().toISOString();
 
@@ -197,7 +196,7 @@ export async function createModel(
   };
 
   const model: CustomModel = {
-    id: generateId(),
+    id: generateModelId(),
     name,
     description,
     type,
@@ -260,7 +259,7 @@ export async function startTraining(modelId: string): Promise<TrainingJob> {
   await updateModel(modelId, { status: 'preparing' });
 
   const job: TrainingJob = {
-    id: generateId(),
+    id: generateModelId(),
     modelId,
     status: 'preparing',
     progress: 0,
@@ -306,9 +305,9 @@ async function startRealTraining(jobId: string, modelId: string) {
       // Training completed successfully
       await updateJobStatus(jobId, 'completed', 100, {
         completedAt: new Date().toISOString(),
-        endpoint: result.endpoint,
+        endpoint: result.endpoint as any,
         logs: ['Training completed successfully', `Model endpoint: ${result.endpoint}`],
-      });
+      } as any);
 
       await updateModel(modelId, {
         status: 'completed',
@@ -463,7 +462,7 @@ export async function addToIndex(
   const embeddings: EmbeddingVector[] = embeddingsData ? JSON.parse(embeddingsData) : [];
 
   embeddings.unshift({
-    id: generateId(),
+    id: generateModelId(),
     modelId,
     text,
     vector: embedding,
@@ -502,9 +501,9 @@ export async function useCustomModel(
   
   const response = await universalChat(prompt, {
     model: model.baseModel,
-    temperature: options?.temperature ?? model.config.temperature,
+    temperature: options?.temperature ?? model.config.temperature as any,
     maxTokens: options?.maxTokens ?? model.config.maxTokens,
-  });
+  } as any);
 
   return response;
 }

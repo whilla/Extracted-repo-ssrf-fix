@@ -303,7 +303,7 @@ export async function updateTenant(
       const sanitizedSettings: TenantSettings = { ...existing.settings };
       for (const key of MUTABLE_SETTINGS) {
         if (key in updates.settings) {
-          (sanitizedSettings as Record<string, unknown>)[key] = (updates.settings as Record<string, unknown>)[key];
+          (sanitizedSettings as unknown as Record<string, unknown>)[key] = (updates.settings as unknown as Record<string, unknown>)[key];
         }
       }
       sanitizedUpdates.settings = sanitizedSettings;

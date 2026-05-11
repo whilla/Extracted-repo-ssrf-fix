@@ -131,11 +131,22 @@ export const publishOrchestrator = {
     const sanitized = sanitizeApiKey(key);
     if (!sanitized) throw new Error('Ayrshare API key not configured');
 
-    const PLATFORM_MAP: Record<Platform, string> = {
-      twitter: 'twitter', instagram: 'instagram', tiktok: 'tiktok',
-      linkedin: 'linkedin', facebook: 'facebook', threads: 'threads',
-      youtube: 'youtube', pinterest: 'pinterest',
-    };
+const PLATFORM_MAP: Record<Platform, string> = {
+  twitter: 'twitter',
+  instagram: 'instagram',
+  tiktok: 'tiktok',
+  linkedin: 'linkedin',
+  facebook: 'facebook',
+  threads: 'threads',
+  youtube: 'youtube',
+  pinterest: 'pinterest',
+  discord: 'discord',
+  reddit: 'reddit',
+  whatsapp: 'whatsapp',
+  telegram: 'telegram',
+  snapchat: 'snapchat',
+  general: 'general',
+};
 
     const response = await fetch('https://api.ayrshare.com/api/post', {
       method: 'POST',

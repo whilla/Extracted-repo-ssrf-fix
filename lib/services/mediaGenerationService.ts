@@ -64,8 +64,8 @@ export async function generateVideo(brief: string, provider: string = 'ltx23'): 
       url: result.url,
       provider: result.provider,
       duration: result.durationSeconds,
-      aspectRatio: result.aspectRatio,
-      thumbnailUrl: result.thumbnailUrl,
+      width: (result as any).width,
+      height: (result as any).height,
       timestamp: new Date().toISOString(),
     };
   } catch (error) {

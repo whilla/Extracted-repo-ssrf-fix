@@ -201,7 +201,7 @@ Return JSON:
           ? parsed.tone 
           : 'professional';
         const emojis = Array.isArray(parsed.emojis) 
-          ? parsed.emojis.filter(e => typeof e === 'string')
+          ? parsed.emojis.filter((e: unknown) => typeof e === 'string')
           : sentimentEmojis[engagement.sentiment || 'neutral'];
         const shouldRespond = typeof parsed.shouldRespond === 'boolean' ? parsed.shouldRespond : true;
         const reason = typeof parsed.reason === 'string' ? parsed.reason : 'AI suggestion';

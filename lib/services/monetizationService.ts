@@ -4,7 +4,6 @@
  */
 
 import { kvGet, kvSet } from './puterService';
-import { generateId } from './memoryService';
 
 export type ProductType = 'digital' | 'physical' | 'subscription' | 'service';
 export type PricingType = 'one_time' | 'recurring' | 'free';
@@ -85,7 +84,7 @@ const ORDERS_KEY = 'orders';
 const SUBSCRIPTIONS_KEY = 'subscriptions';
 const AFFILIATES_KEY = 'affiliates';
 
-function generateId(): string {
+function generateProductId(): string {
   return `prod_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -116,7 +115,7 @@ export async function createProduct(product: Omit<Product, 'id' | 'createdAt' | 
 
   const newProduct: Product = {
     ...product,
-    id: generateId(),
+    id: generateProductId(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -183,7 +182,7 @@ export async function createOrder(order: Omit<Order, 'id' | 'createdAt' | 'statu
 
   const newOrder: Order = {
     ...order,
-    id: generateId(),
+    id: generateProductId(),
     status: 'pending',
     createdAt: new Date().toISOString(),
   };
@@ -233,7 +232,7 @@ export async function createSubscription(subscription: Omit<Subscription, 'id' |
 
   const newSub: Subscription = {
     ...subscription,
-    id: generateId(),
+    id: generateProductId(),
     createdAt: new Date().toISOString(),
   };
 
@@ -285,7 +284,7 @@ export async function createAffiliateLink(
   }
 
   const link: AffiliateLink = {
-    id: generateId(),
+    id: generateProductId(),
     productId,
     code,
     commission,

@@ -100,7 +100,7 @@ export class MultiModalPerceptionService {
     const data = await readFile(path);
     if (!data) throw new Error(`Asset not found at ${path}`);
 
-    const size = typeof data === 'string' ? data.length : (data.byteLength || data.length || 0);
+    const size = typeof data === 'string' ? data.length : ((data as any).byteLength || (data as any).length || 0);
     if (size > MAX_FILE_SIZE) {
       throw new Error(`File size exceeds maximum of ${MAX_FILE_SIZE} bytes`);
     }
@@ -130,10 +130,10 @@ export class MultiModalPerceptionService {
     return await this.callWithRetry(async () => {
       const analysis = await universalChat(
         `You are a vision model. Analyze this image and describe its visual style, layout, colors, composition, and key elements. Provide a detailed description that could be used to recreate similar artwork.`,
-        { 
+        {
           model: 'gpt-4o',
-          attachments: [{ type: 'image', data: imagePayload }]
-        }
+          attachments: [{ type: 'image', data: imagePayload }] as any
+        } as any
       );
       
       return {
@@ -149,13 +149,13 @@ export class MultiModalPerceptionService {
   private async analyzeVideo(data: any): Promise<AssetObservation> {
     return await this.callWithRetry(async () => {
       const videoData = typeof data === 'string' ? data : Buffer.from(data).toString('base64');
-      
+
       const analysis = await universalChat(
         `Analyze this video content. Describe the movement, pacing, visual energy, key scenes, transitions, and overall cinematic style. Extract any text or logos visible.`,
-        { 
+        {
           model: 'gpt-4o',
-          attachments: [{ type: 'video', data: videoData }]
-        }
+          attachments: [{ type: 'video', data: videoData }] as any
+        } as any
       );
 
       return {
@@ -174,10 +174,10 @@ export class MultiModalPerceptionService {
 
       const analysis = await universalChat(
         `Analyze this audio file. Identify the tone, mood, tempo (BPM estimate), key, instrumentation, vocal presence, and overall energy. Describe what type of content this is (music, speech, ambient, etc.).`,
-        { 
+        {
           model: 'gpt-4o',
-          attachments: [{ type: 'audio', data: audioData }]
-        }
+          attachments: [{ type: 'audio', data: audioData }] as any
+        } as any
       );
 
       return {
@@ -191,10 +191,9 @@ export class MultiModalPerceptionService {
   }
 
   private async analyzeDocument(data: any): Promise<AssetObservation> {
-    // Use Vision AI directly for all documents - more reliable for all PDF types
     return await this.callWithRetry(async () => {
       const imagePayload = typeof data === 'string' ? data : Buffer.from(data).toString('base64');
-      
+
       const analysis = await universalChat(
         `You are analyzing a PDF/document. 
 
@@ -208,10 +207,10 @@ Analyze this document thoroughly and provide:
 7. Target audience if identifiable
 
 Extract as much detail as possible.`,
-        { 
+        {
           model: 'gpt-4o',
-          attachments: [{ type: 'image', data: imagePayload }]
-        }
+          attachments: [{ type: 'image', data: imagePayload }] as any
+        } as any
       );
 
       return {

@@ -193,7 +193,7 @@ export async function endServiceCall(
       duration,
       service: serviceName,
       operation: context.operation,
-    },
+    } as any,
   });
 }
 

@@ -271,6 +271,16 @@ export class MemoryManager {
   }
 
   /**
+   * Get brand memory
+   */
+  async getBrandMemory(): Promise<BrandMemory | null> {
+    if (!this.brandMemory) {
+      await this.loadBrandMemory();
+    }
+    return this.brandMemory;
+  }
+
+  /**
    * Add successful hook pattern
    */
   async addSuccessfulHook(hook: string): Promise<void> {
@@ -600,9 +610,9 @@ export class MemoryManager {
       : { campaignId, outputs: [], constraints: [], globalGoal: '' };
 
     campaign.outputs.push({
-      content,
-      hooks,
-      themes,
+      content: output.content,
+      hooks: output.hooks,
+      themes: output.themes,
       timestamp: new Date().toISOString(),
     });
 

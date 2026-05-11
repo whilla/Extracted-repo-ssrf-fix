@@ -50,7 +50,7 @@ class Logger {
     return envLevel ? LOG_LEVELS[envLevel] ?? LogLevel.INFO : LogLevel.INFO;
   }
 
-  private formatLog(level: LogLevel, category: string, message: string, context?: LogContext): LogEntry {
+  protected formatLog(level: LogLevel, category: string, message: string, context?: LogContext): LogEntry {
     return {
       timestamp: new Date().toISOString(),
       level: LogLevel[level],
@@ -60,11 +60,11 @@ class Logger {
     };
   }
 
-  private shouldLog(level: LogLevel): boolean {
+  protected shouldLog(level: LogLevel): boolean {
     return level >= this.minLevel;
   }
 
-  private output(entry: LogEntry): void {
+  protected output(entry: LogEntry): void {
     const { timestamp, level, category, message, context, duration, requestId, userId } = entry;
 
     const prefix = requestId ? `[${requestId}] ` : '';
@@ -73,9 +73,10 @@ class Logger {
 
     const logMessage = `${timestamp} ${level} [${category}]${prefix}${message}${userSuffix}${durationSuffix}`;
 
-    if (level === LogLevel.ERROR || level === LogLevel.FATAL) {
+    const numericLevel = typeof level === 'number' ? level : LOG_LEVELS[level.toLowerCase()] ?? LogLevel.INFO;
+    if (numericLevel >= LogLevel.ERROR) {
       console.error(logMessage, context || '');
-    } else if (level === LogLevel.WARN) {
+    } else if (numericLevel >= LogLevel.WARN) {
       console.warn(logMessage, context || '');
     } else {
       console.log(logMessage, context || '');
@@ -97,32 +98,32 @@ class Logger {
 
   debug(category: string, message: string, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.DEBUG)) return;
-    const entry = this.formatLog(LogLevel.DEBUG, category, message, context);
-    this.output(entry);
+    const entry = (this as any).formatLog(LogLevel.DEBUG, category, message, context);
+    (this as any).output(entry);
   }
 
   info(category: string, message: string, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.INFO)) return;
-    const entry = this.formatLog(LogLevel.INFO, category, message, context);
-    this.output(entry);
+    const entry = (this as any).formatLog(LogLevel.INFO, category, message, context);
+    (this as any).output(entry);
   }
 
   warn(category: string, message: string, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.WARN)) return;
-    const entry = this.formatLog(LogLevel.WARN, category, message, context);
-    this.output(entry);
+    const entry = (this as any).formatLog(LogLevel.WARN, category, message, context);
+    (this as any).output(entry);
   }
 
   error(category: string, message: string, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.ERROR)) return;
-    const entry = this.formatLog(LogLevel.ERROR, category, message, context);
-    this.output(entry);
+    const entry = (this as any).formatLog(LogLevel.ERROR, category, message, context);
+    (this as any).output(entry);
   }
 
   fatal(category: string, message: string, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.FATAL)) return;
-    const entry = this.formatLog(LogLevel.FATAL, category, message, context);
-    this.output(entry);
+    const entry = (this as any).formatLog(LogLevel.FATAL, category, message, context);
+    (this as any).output(entry);
   }
 
   child(context: LogContext): ChildLogger {
@@ -179,27 +180,27 @@ class RequestLogger {
   constructor(private parent: Logger, private requestId: string) {}
 
   debug(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.DEBUG, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.DEBUG, category, message, context);
     entry.requestId = this.requestId;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   info(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.INFO, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.INFO, category, message, context);
     entry.requestId = this.requestId;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   warn(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.WARN, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.WARN, category, message, context);
     entry.requestId = this.requestId;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   error(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.ERROR, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.ERROR, category, message, context);
     entry.requestId = this.requestId;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   withUser(userId: string): UserLogger {
@@ -215,31 +216,31 @@ class UserLogger {
   constructor(private parent: Logger, private userId: string, private requestId?: string) {}
 
   debug(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.DEBUG, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.DEBUG, category, message, context);
     entry.userId = this.userId;
     entry.requestId = this.requestId;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   info(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.INFO, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.INFO, category, message, context);
     entry.userId = this.userId;
     entry.requestId = this.requestId;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   warn(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.WARN, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.WARN, category, message, context);
     entry.userId = this.userId;
     entry.requestId = this.requestId;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   error(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.ERROR, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.ERROR, category, message, context);
     entry.userId = this.userId;
     entry.requestId = this.requestId;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 }
 
@@ -247,24 +248,24 @@ class DurationLogger {
   constructor(private parent: Logger, private requestId: string, private duration: number) {}
 
   info(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.INFO, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.INFO, category, message, context);
     entry.requestId = this.requestId;
     entry.duration = this.duration;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   warn(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.WARN, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.WARN, category, message, context);
     entry.requestId = this.requestId;
     entry.duration = this.duration;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 
   error(category: string, message: string, context?: LogContext): void {
-    const entry = this.parent.formatLog(LogLevel.ERROR, category, message, context);
+    const entry = (this.parent as any).formatLog(LogLevel.ERROR, category, message, context);
     entry.requestId = this.requestId;
     entry.duration = this.duration;
-    this.parent.output(entry);
+    (this.parent as any).output(entry);
   }
 }
 

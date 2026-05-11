@@ -1,260 +1,168 @@
 'use client';
 
 import { persistBlobMediaAsset, type PersistedMediaAsset } from './mediaAssetPersistenceService';
+import { Timeline, TimelineAssemblyInput, TimelineAssemblyResult, MediaClipEvent, TextOverlayEvent, ImageOverlayEvent } from '@/lib/types';
 
-export interface FinalMediaAssemblyInput {
-  imageUrl?: string;
-  videoUrl?: string;
-  voiceUrl?: string;
-  musicUrl?: string;
-  mixPlan?: {
-    settings: {
-      voiceVolume: number;
-      musicVolume: number;
-      fxVolume: number;
-    };
-  };
-  durationSeconds?: number;
-  generationId?: string;
-}
+/**
+ * TimelineRenderer handles the programmatic assembly of a media timeline
+ * by playing it back on a canvas and recording the stream.
+ */
+export class TimelineRenderer {
+  private canvas: HTMLCanvasElement;
+  private context: CanvasRenderingContext2D;
+  private width: number;
+  private height: number;
+  private activeMedia: Map<string, HTMLMediaElement> = new Map();
+  private activeImages: Map<string, HTMLImageElement> = new Map();
 
-export interface FinalMediaAssemblyResult {
-  asset: PersistedMediaAsset | null;
-  warnings: string[];
-}
-
-function canUseMediaRecorder(mimeType: string): boolean {
-  return typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function'
-    ? MediaRecorder.isTypeSupported(mimeType)
-    : false;
-}
-
-function chooseRecorderMimeType(): string {
-  const candidates = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-  ];
-
-  for (const candidate of candidates) {
-    if (canUseMediaRecorder(candidate)) {
-      return candidate;
-    }
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = width;
+    this.canvas.height = height;
+    this.context = this.canvas.getContext('2d')!;
   }
 
-  return 'video/webm';
-}
+  private async preloadAssets(timeline: Timeline): Promise<void> {
+    const loadAsset = async (url: string, type: 'video' | 'audio') => {
+      if (this.activeMedia.has(url)) return;
+      
+      const element = document.createElement(type === 'video' ? 'video' : 'audio');
+      element.crossOrigin = 'anonymous';
+      element.preload = 'auto';
+      element.src = url;
 
-function clampDuration(value: number | undefined): number {
-  if (!value || !Number.isFinite(value)) return 12;
-  return Math.max(4, Math.min(120, value));
-}
-
-async function loadVideo(url: string): Promise<HTMLVideoElement> {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    video.crossOrigin = 'anonymous';
-    video.preload = 'auto';
-    video.muted = true;
-    video.playsInline = true;
-    video.src = url;
-    video.onloadedmetadata = () => resolve(video);
-    video.onerror = () => reject(new Error('Failed to load source video for final assembly'));
-  });
-}
-
-async function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('Failed to load source image for final assembly'));
-    image.src = url;
-  });
-}
-
-async function loadAudio(url: string): Promise<HTMLAudioElement> {
-  return new Promise((resolve, reject) => {
-    const audio = document.createElement('audio');
-    audio.crossOrigin = 'anonymous';
-    audio.preload = 'auto';
-    audio.src = url;
-    audio.onloadedmetadata = () => resolve(audio);
-    audio.onerror = () => reject(new Error('Failed to load source audio for final assembly'));
-  });
-}
-
-async function safePlay(media: HTMLMediaElement): Promise<void> {
-  try {
-    await media.play();
-  } catch {
-    // Playback can still advance via currentTime updates in some browsers; keep going.
-  }
-}
-
-export async function assembleFinalMedia(input: FinalMediaAssemblyInput): Promise<FinalMediaAssemblyResult> {
-  const warnings: string[] = [];
-
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return { asset: null, warnings: ['Final assembly requires a browser runtime.'] };
-  }
-
-  if (typeof MediaRecorder === 'undefined' || typeof AudioContext === 'undefined') {
-    return { asset: null, warnings: ['Final assembly is not supported in this browser.'] };
-  }
-
-  if (!input.videoUrl && !input.imageUrl) {
-    return { asset: null, warnings: ['Final assembly requires at least one visual asset.'] };
-  }
-
-  const recorderMimeType = chooseRecorderMimeType();
-  const audioContext = new AudioContext();
-  const audioDestination = audioContext.createMediaStreamDestination();
-
-  let video: HTMLVideoElement | null = null;
-  let image: HTMLImageElement | null = null;
-  let voice: HTMLAudioElement | null = null;
-  let music: HTMLAudioElement | null = null;
-
-  try {
-    if (input.videoUrl) {
-      video = await loadVideo(input.videoUrl);
-    } else if (input.imageUrl) {
-      image = await loadImage(input.imageUrl);
-    }
-
-    if (input.voiceUrl) {
-      try {
-        voice = await loadAudio(input.voiceUrl);
-      } catch (error) {
-        warnings.push(error instanceof Error ? error.message : 'Voice track could not be loaded.');
-      }
-    }
-
-    if (input.musicUrl) {
-      try {
-        music = await loadAudio(input.musicUrl);
-      } catch (error) {
-        warnings.push(error instanceof Error ? error.message : 'Music track could not be loaded.');
-      }
-    }
-
-    const width = video?.videoWidth || image?.naturalWidth || 1080;
-    const height = video?.videoHeight || image?.naturalHeight || 1920;
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      return { asset: null, warnings: ['Canvas 2D context is unavailable for final assembly.'] };
-    }
-
-    const durationSeconds = clampDuration(
-      input.durationSeconds
-      || video?.duration
-      || voice?.duration
-      || music?.duration
-    );
-
-    const canvasStream = canvas.captureStream(30);
-    const combinedStream = new MediaStream([
-      ...canvasStream.getVideoTracks(),
-      ...audioDestination.stream.getAudioTracks(),
-    ]);
-
-    const gainSettings = input.mixPlan?.settings || {
-      voiceVolume: 1,
-      musicVolume: 0.24,
-      fxVolume: 0.18,
+      await new Promise<void>((resolve, reject) => {
+        element.onloadedmetadata = () => resolve();
+        element.onerror = () => reject(new Error(`Failed to load asset: ${url}`));
+      });
+      
+      this.activeMedia.set(url, element);
     };
 
-    if (voice) {
-      const source = audioContext.createMediaElementSource(voice);
-      const gain = audioContext.createGain();
-      gain.gain.value = gainSettings.voiceVolume;
-      source.connect(gain).connect(audioDestination);
-    }
-
-    if (music) {
-      const source = audioContext.createMediaElementSource(music);
-      const gain = audioContext.createGain();
-      gain.gain.value = gainSettings.musicVolume;
-      source.connect(gain).connect(audioDestination);
-    }
-
-    const recorder = new MediaRecorder(combinedStream, { mimeType: recorderMimeType });
-    const chunks: BlobPart[] = [];
-
-    recorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) {
-        chunks.push(event.data);
+    for (const track of timeline.tracks) {
+      for (const event of track.events) {
+        if ('assetUrl' in event) {
+          await loadAsset(event.assetUrl, event.assetType);
+        }
       }
-    };
+    }
+  }
 
-    const completion = new Promise<Blob>((resolve) => {
-      recorder.onstop = () => {
-        resolve(new Blob(chunks, { type: recorder.mimeType || recorderMimeType }));
+  private renderTimelineAtTime(timeline: Timeline, elapsed: number): void {
+    this.context.fillStyle = 'black';
+    this.context.fillRect(0, 0, this.width, this.height);
+
+    for (const track of timeline.tracks) {
+      for (const event of track.events) {
+        const isPast = elapsed < event.startTime;
+        const isFuture = elapsed >= event.startTime + event.duration;
+        if (isPast || isFuture) continue;
+
+        if (event.type === 'video' || event.type === 'audio') {
+          const clip = event as MediaClipEvent;
+          const media = this.activeMedia.get(clip.assetUrl);
+          if (media) {
+            const localTime = elapsed - clip.startTime + (clip.startOffset || 0);
+            if (Math.abs(media.currentTime - localTime) > 0.1) {
+              media.currentTime = localTime;
+            }
+            if (clip.type === 'video') {
+              this.context.globalAlpha = clip.opacity ?? 1;
+              this.context.drawImage(media, 0, 0, this.width, this.height);
+              this.context.globalAlpha = 1.0;
+            }
+          }
+        } else if (event.type === 'text') {
+          const textEvent = event as TextOverlayEvent;
+          this.context.fillStyle = textEvent.color || 'white';
+          this.context.font = `${textEvent.fontSize || 48}px sans-serif`;
+          this.context.textAlign = textEvent.textAlign || 'center';
+          this.context.fillText(textEvent.text, this.width / 2, this.height / 2);
+        } else if (event.type === 'image') {
+          const imgEvent = event as ImageOverlayEvent;
+          const img = this.activeImages.get(imgEvent.assetUrl);
+          if (img) {
+            this.context.globalAlpha = imgEvent.opacity ?? 1;
+            const scale = imgEvent.scale ?? 1;
+            const w = img.naturalWidth * scale;
+            const h = img.naturalHeight * scale;
+            const x = imgEvent.position?.x ?? (this.width - w) / 2;
+            const y = imgEvent.position?.y ?? (this.height - h) / 2;
+            this.context.drawImage(img, x, y, w, h);
+            this.context.globalAlpha = 1.0;
+          }
+        }
+      }
+    }
+  }
+
+  async assemble(input: TimelineAssemblyInput): Promise<TimelineAssemblyResult> {
+    const { timeline, generationId } = input;
+    const warnings: string[] = [];
+
+    if (typeof window === 'undefined') return { asset: null, warnings: ['Browser required'] };
+
+    try {
+      await this.preloadAssets(timeline);
+
+      const recorderMimeType = this.getMimeType();
+      const canvasStream = this.canvas.captureStream(30);
+      const combinedStream = new MediaStream([
+        ...canvasStream.getVideoTracks(),
+      ]);
+
+      const recorder = new MediaRecorder(combinedStream, { mimeType: recorderMimeType });
+      const chunks: BlobPart[] = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+      const completion = new Promise<Blob>((resolve) => {
+        recorder.onstop = () => resolve(new Blob(chunks, { type: recorderMimeType }));
+      });
+
+      recorder.start();
+
+      const startTime = performance.now();
+      let animationFrameId = 0;
+
+      const renderLoop = () => {
+        const elapsed = (performance.now() - startTime) / 1000;
+        this.renderTimelineAtTime(timeline, elapsed);
+
+        if (elapsed < timeline.duration) {
+          animationFrameId = window.requestAnimationFrame(renderLoop);
+        } else {
+          window.cancelAnimationFrame(animationFrameId);
+          recorder.stop();
+        }
       };
-    });
 
-    const drawFrame = () => {
-      if (video) {
-        context.drawImage(video, 0, 0, width, height);
-      } else if (image) {
-        context.drawImage(image, 0, 0, width, height);
-      }
-    };
+      renderLoop();
+      const blob = await completion;
 
-    let rafId = 0;
-    const renderLoop = () => {
-      drawFrame();
-      rafId = window.requestAnimationFrame(renderLoop);
-    };
+      // CLEANUP: Clear cached assets to prevent memory leaks
+      this.activeMedia.clear();
+      this.activeImages.clear();
 
-    recorder.start();
-    await audioContext.resume();
-    drawFrame();
-    renderLoop();
+      const persisted = await persistBlobMediaAsset(blob, {
+        kind: 'video',
+        generationId: generationId || `gen_${Date.now()}`,
+        fileExtension: recorderMimeType.includes('webm') ? 'webm' : 'mp4',
+      });
 
-    if (video) {
-      video.currentTime = 0;
-      await safePlay(video);
+      return { asset: persisted, warnings };
+    } catch (error) {
+      return { asset: null, warnings: [error instanceof Error ? error.message : 'Assembly failed'] };
     }
-    if (voice) {
-      voice.currentTime = 0;
-      await safePlay(voice);
+  }
+
+  private getMimeType(): string {
+    if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function') {
+      const candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+      for (const c of candidates) if (MediaRecorder.isTypeSupported(c)) return c;
     }
-    if (music) {
-      music.currentTime = 0;
-      music.loop = durationSeconds > (music.duration || 0) && music.duration > 0;
-      await safePlay(music);
-    }
-
-    await new Promise((resolve) => window.setTimeout(resolve, durationSeconds * 1000));
-
-    window.cancelAnimationFrame(rafId);
-    recorder.stop();
-    video?.pause();
-    voice?.pause();
-    music?.pause();
-
-    const blob = await completion;
-    const persisted = await persistBlobMediaAsset(blob, {
-      kind: 'video',
-      generationId: input.generationId,
-      fileExtension: 'webm',
-    });
-
-    if (!persisted) {
-      warnings.push('Final media was assembled but could not be persisted as a durable asset.');
-    }
-
-    return { asset: persisted, warnings };
-  } catch (error) {
-    warnings.push(error instanceof Error ? error.message : 'Final assembly failed.');
-    return { asset: null, warnings };
-  } finally {
-    await audioContext.close().catch(() => undefined);
+    return 'video/webm';
   }
 }

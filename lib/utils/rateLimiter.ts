@@ -34,9 +34,8 @@ const apiConfigs: Record<string, RateLimitConfig> = {
 };
 
 function getClientKey(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : request.ip || 'unknown';
-  return `rate_limit:${ip}`;
+  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  return `rate_limit:${forwarded}`;
 }
 
 function getRouteConfig(pathname: string): RateLimitConfig {

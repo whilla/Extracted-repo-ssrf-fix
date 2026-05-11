@@ -3,8 +3,7 @@
  * Database-backed queue replacing the fragile in-memory JSON implementation.
  */
 
-import { supabase } from '@/lib/supabase'; // Assuming supabase client is available
-import type { JobStatus, JobPriority } from './types'; // Define these in a types file or locally
+import { createClient } from '@/lib/supabase/server';
 
 export interface Job<T = unknown> {
   id: string;
@@ -31,6 +30,7 @@ export const jobQueueService = {
     workspaceId?: string,
     options: { priority?: number; maxAttempts?: number } = {}
   ): Promise<string> {
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from('system_jobs')
       .insert({
@@ -41,9 +41,9 @@ export const jobQueueService = {
         priority: options.priority ?? 2,
         max_attempts: options.maxAttempts ?? 3,
         status: 'pending',
-      })
+      } as any)
       .select()
-      .single();
+      .single() as any;
 
     if (error) throw new Error(`Queue Insert Failed: ${error.message}`);
     return data.id;
@@ -54,7 +54,7 @@ export const jobQueueService = {
    * to prevent multiple workers from picking up the same job.
    */
   async claimNextJob(): Promise<Job | null> {
-    // This uses a Supabase RPC or a complex query to ensure atomicity
+    const supabase = await createClient();
     const { data, error } = await supabase.rpc('claim_next_job');
     
     if (error) {
@@ -68,12 +68,11 @@ export const jobQueueService = {
    * Mark a job as completed.
    */
   async completeJob(jobId: string, result?: any): Promise<void> {
-    const { error } = await supabase
-      .from('system_jobs')
-      .update({
+    const supabase = await createClient();
+    const { error } = await (supabase.from('system_jobs') as any).update({
         status: 'completed',
         completed_at: new Date().toISOString(),
-        payload: { ...JSON.parse(await (await supabase.from('system_jobs').select('payload').eq('id', jobId).single()).data?.payload || '{}'), result },
+        payload: { ...JSON.parse(await (await supabase.from('system_jobs').select('payload').eq('id', jobId).single() as any).data?.payload || '{}'), result },
       })
       .eq('id', jobId);
 
@@ -84,19 +83,18 @@ export const jobQueueService = {
    * Mark a job as failed and handle retries.
    */
   async failJob(jobId: string, error: string): Promise<void> {
+    const supabase = await createClient();
     const { data: job } = await supabase
       .from('system_jobs')
       .select('attempts, max_attempts')
       .eq('id', jobId)
-      .single();
+      .single() as any;
 
     if (!job) return;
 
     const nextStatus = job.attempts + 1 < job.max_attempts ? 'pending' : 'failed';
     
-    const { error: updateError } = await supabase
-      .from('system_jobs')
-      .update({
+    const { error: updateError } = await (supabase.from('system_jobs') as any).update({
         status: nextStatus,
         attempts: job.attempts + 1,
         error_message: error,
@@ -111,11 +109,12 @@ export const jobQueueService = {
    * Get status of a specific job.
    */
   async getJobStatus(jobId: string): Promise<Job | null> {
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from('system_jobs')
       .select('*')
       .eq('id', jobId)
-      .single();
+      .single() as any;
 
     if (error) return null;
     return data as Job;

@@ -81,7 +81,7 @@ export function MediaGallery({ assets, onSelect, onDelete, onDownload, loading }
                   : 'bg-bg-glass text-gray-400 border border-border hover:text-white'
               }`}
             >
-              {type === 'all' ? 'All' : getTypeIcon(type as MediaType) + ' ' + (type === 'all' ? 'All' : getTypeLabel(type as MediaType))}
+              {type === 'all' ? 'All' : getTypeIcon(type as MediaType) + ' ' + getTypeLabel(type as MediaType)}
             </button>
           ))}
         </div>

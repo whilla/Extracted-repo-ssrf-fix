@@ -4,7 +4,6 @@
  */
 
 import { kvGet, kvSet } from './puterService';
-import { generateId } from './memoryService';
 
 export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
 
@@ -51,6 +50,7 @@ export interface ActivityLog {
 
 export interface InviteLink {
   id: string;
+  teamId: string;
   workspaceId: string;
   role: TeamRole;
   expiresAt: string;
@@ -70,7 +70,7 @@ const rolePermissions: Record<TeamRole, string[]> = {
   viewer: ['view_content', 'view_analytics'],
 };
 
-function generateId(): string {
+function generateTeamId(): string {
   return `team_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -92,7 +92,7 @@ export async function createTeam(
   const teams = await loadTeams();
 
   const owner: TeamMember = {
-    id: generateId(),
+    id: generateTeamId(),
     userId: ownerId,
     email: ownerEmail,
     name: ownerName,
@@ -102,7 +102,7 @@ export async function createTeam(
   };
 
   const workspace: TeamWorkspace = {
-    id: generateId(),
+    id: generateTeamId(),
     name: options.name,
     description: options.description,
     ownerId,
@@ -148,7 +148,7 @@ export async function addMember(
   if (index === -1) return false;
 
   const member: TeamMember = {
-    id: generateId(),
+    id: generateTeamId(),
     userId,
     email,
     name,
@@ -208,16 +208,17 @@ export function hasPermission(role: TeamRole, permission: string): boolean {
 export async function createInviteLink(
   teamId: string,
   role: TeamRole,
+  createdBy: string,
   expiresInHours: number = 72,
-  maxUses?: number,
-  createdBy: string
+  maxUses?: number
 ): Promise<InviteLink> {
   const invitesData = await kvGet(INVITES_KEY);
   const invites: InviteLink[] = invitesData ? JSON.parse(invitesData) : [];
 
   const invite: InviteLink = {
-    id: generateId(),
+    id: generateTeamId(),
     teamId,
+    workspaceId: teamId,
     role,
     expiresAt: new Date(Date.now() + expiresInHours * 60 * 60 * 1000).toISOString(),
     maxUses,
@@ -281,7 +282,7 @@ async function logActivity(
   const activities: ActivityLog[] = activitiesData ? JSON.parse(activitiesData) : [];
 
   activities.unshift({
-    id: generateId(),
+    id: generateTeamId(),
     workspaceId,
     userId,
     userName,
@@ -376,7 +377,7 @@ export async function shareContent(
   permissions: SharedContent['permissions']
 ): Promise<SharedContent> {
   const share: SharedContent = {
-    id: generateId(),
+    id: generateTeamId(),
     workspaceId,
     contentType,
     contentId,

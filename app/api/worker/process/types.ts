@@ -1,66 +1,8 @@
-import { SupabaseClient, Session } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { adaptContentForPlatform } from '@/lib/services/platformAdapterService';
+import { sanitizeApiKey } from '@/lib/services/providerCredentialUtils';
 
-export type ServerClient = SupabaseClient<Database>;
-
-export interface Database {
-  public: {
-    Tables: {
-      user_secrets: {
-        Row: {
-          user_id: string;
-          key_name: string;
-          value: string;
-        };
-        Insert: {
-          user_id: string;
-          key_name: string;
-          value: string;
-        };
-        Update: {
-          user_id?: string;
-          key_name?: string;
-          value?: string;
-        };
-      };
-      posts_queue: {
-        Row: {
-          id: string;
-          user_id: string;
-          platforms: string[];
-          text: string;
-          mediaUrl: string | null;
-          status: string;
-          postId: string | null;
-          error: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          platforms: string[];
-          text: string;
-          mediaUrl?: string | null;
-          status?: string;
-          postId?: string | null;
-          error?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          user_id?: string;
-          platforms?: string[];
-          text?: string;
-          mediaUrl?: string | null;
-          status?: string;
-          postId?: string | null;
-          error?: string | null;
-          updated_at?: string;
-        };
-      };
-    };
-  };
-}
+export type ServerClient = SupabaseClient;
 
 export interface PostJob {
   id: string;
@@ -73,6 +15,7 @@ export interface PostJob {
   error: string | null;
   created_at: string;
   updated_at: string;
+  attempts?: number;
 }
 
 export interface UserSecret {
@@ -82,18 +25,22 @@ export interface UserSecret {
 }
 
 export async function getAyrshareKeyForUser(supabase: ServerClient, userId: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('user_secrets')
-    .select('value')
-    .eq('user_id', userId)
-    .eq('key_name', 'ayrshare_key')
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('user_secrets')
+      .select('value')
+      .eq('user_id', userId)
+      .eq('key_name', 'ayrshare_key')
+      .single();
 
-  if (error || !data) return null;
-  return sanitizeApiKey(data.value);
+    if (error || !data) return null;
+    return sanitizeApiKey(data.value);
+  } catch {
+    return null;
+  }
 }
 
-async function processJob(supabase: ServerClient, job: PostJob) {
+export async function processJob(supabase: ServerClient, job: PostJob) {
   const userId = job.user_id;
   const apiKey = await getAyrshareKeyForUser(supabase, userId);
 
@@ -110,7 +57,7 @@ async function processJob(supabase: ServerClient, job: PostJob) {
   const errors: Record<string, string> = {};
 
   for (const platform of platforms) {
-    const adapted = adaptContentForPlatform(text, hashtags, platform);
+    const adapted = adaptContentForPlatform(text, hashtags, platform as any);
     const finalText = `${adapted.text}\n\n${adapted.hashtags.join(' ')}`;
 
     try {
@@ -146,9 +93,3 @@ async function processJob(supabase: ServerClient, job: PostJob) {
     errors,
   };
 }
-
-function sanitizeApiKey(key: string): string {
-  return key.trim().replace(/['"]/g, '');
-}
-
-import { adaptContentForPlatform } from '@/lib/services/platformAdapterService';

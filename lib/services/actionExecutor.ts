@@ -1,5 +1,5 @@
 import { n8nBridgeService } from './n8nBridgeService';
-import { ACTION_REGISTRY } from './actionRegistry';
+import { ACTION_REGISTRY } from '@/lib/agents/actionRegistry';
 
 export class ActionExecutor {
   /**
@@ -66,8 +66,7 @@ export class ActionExecutor {
   private static async routeToApproval(action: any, params: any, agentId: string, userId: string) {
     console.log(`[ActionExecutor] Routing action ${action.name} to approval system...`);
     
-    // We use the existing Supabase structure for approvals
-    const { data, error } = await fetch(`/api/approvals/create`, {
+    const response = await fetch(`/api/approvals/create`, {
       method: 'POST',
       body: JSON.stringify({
         userId,
@@ -79,11 +78,13 @@ export class ActionExecutor {
       }),
     });
 
-    if (error) throw error;
+    if (!response.ok) {
+      throw new Error(`Failed to create approval: ${response.status}`);
+    }
 
     return {
       status: 'pending_approval',
-      message: `The action "${action.name}" requires approval before execution.`,
+      result: await response.json(),
     };
   }
 }

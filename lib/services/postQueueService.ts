@@ -3,7 +3,23 @@
 import type { Platform } from '@/lib/types';
 import { generateId } from './memoryService';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import type { QueuedPostJob } from '@/lib/types';
+
+export interface QueuedPostJob {
+  id: string;
+  text: string;
+  platforms: Platform[];
+  mediaUrl?: string;
+  generationId?: string;
+  pipelineRunId?: string;
+  niche?: string;
+  hook?: string;
+  scheduledAt?: string;
+  status: 'queued' | 'processing' | 'posted' | 'failed';
+  attempts: number;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export async function enqueuePostJob(input: {
   text: string;

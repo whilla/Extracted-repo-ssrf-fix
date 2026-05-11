@@ -14,6 +14,7 @@ import { universalChat } from '../services/aiService';
 import { generateImage as generateImageAsset } from '../services/imageGenerationService';
 import { generateVideo as generateVideoAsset } from '../services/videoGenerationService';
 import { generateMusic } from '../services/musicGenerationService';
+import { textToSpeech } from '../services/voiceService';
 import { tokenBudgetManager } from '../services/tokenBudgetManager';
 
 // Provider Types
@@ -442,7 +443,8 @@ export class ProviderRouter {
         return image.url;
       
       case 'audio':
-        const audioUrl = await synthesizeVoice(prompt);
+        const { blob } = await textToSpeech(prompt);
+        const audioUrl = URL.createObjectURL(blob);
         return JSON.stringify({
           type: 'audio',
           url: audioUrl,

@@ -23,6 +23,19 @@ const PLATFORM_LIMITS: Record<Platform, number> = {
   threads: 500,
   youtube: 5000,
   pinterest: 500,
+  discord: 2000,
+  reddit: 40000,
+  whatsapp: 4096,
+  telegram: 4096,
+  snapchat: 1000,
+  wordpress: 30000,
+  medium: 100000,
+  ghost: 30000,
+  substack: 30000,
+  mailchimp: 50000,
+  klaviyo: 50000,
+  convertkit: 50000,
+  general: 5000,
 };
 
 export function adaptContentForPlatform(

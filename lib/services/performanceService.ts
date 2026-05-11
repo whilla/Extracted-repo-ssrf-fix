@@ -57,7 +57,7 @@ export class performanceService {
         agent_id: agentId,
         metrics: metrics,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'post_id, platform' });
+      } as any, { onConflict: 'post_id, platform' });
 
     if (error) {
       console.error('[performanceService] Error updating metrics:', error);
@@ -126,12 +126,12 @@ export class performanceService {
       const jsonMatch = response.match(/\[[\s\S]*\]/);
       if (!jsonMatch) return [];
       
-      const insights: PerformanceInsight[] = JSON.parse(jsonMatch[0]);
+      const insights = JSON.parse(jsonMatch[0]) as PerformanceInsight[];
       
       // Save insights to the database
       const { error } = await supabase
         .from('performance_insights')
-        .insert(insights.map(i => ({ ...i, agent_id: agentId })));
+        .insert(insights.map(i => ({ ...i, agent_id: agentId })) as any);
 
       if (error) throw error;
       

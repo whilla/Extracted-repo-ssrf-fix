@@ -11,8 +11,10 @@
 
 import { learningSystem } from '../core/LearningSystem';
 import { memoryManager } from '../core/MemoryManager';
-import { governor } from '../core/GovernorSystem';
+import { governorSystem } from '../core/GovernorSystem';
 import { puterService } from './puterService';
+
+const governor = governorSystem;
 
 export type SteeringType = 'fact_correction' | 'tone_adjustment' | 'hard_constraint' | 'style_preference';
 
@@ -61,7 +63,7 @@ export class AgentSteeringService {
     } else if (feedback.toLowerCase().includes('audience')) {
       // Logic to update targetAudience in brandkit.json
       const brandKit = await puterService.readFile(puterService.PATHS.brandKit, true) || {};
-      brandKit.targetAudience = feedback;
+      (brandKit as any).targetAudience = feedback;
       await puterService.writeFile(puterService.PATHS.brandKit, brandKit);
     }
 
@@ -78,7 +80,7 @@ export class AgentSteeringService {
       postId: `steer_${Date.now()}`,
       platform: 'general',
       content: context || 'N/A',
-      score: 0, // Low score indicates this was a correction
+      impressions: 0,
       engagements: 0,
     });
 
@@ -99,16 +101,16 @@ export class AgentSteeringService {
   }
 
   private async handleHardConstraint(feedback: string): Promise<{ success: boolean; effect: string }> {
-    const currentRules = await governor.getRules();
-    
+    const hardConstraints = (governor as any).hardConstraints || [];
+
     let ruleId: string;
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       ruleId = `human_${crypto.randomUUID()}`;
     } else {
       ruleId = `human_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     }
-    
-    currentRules.push({
+
+    hardConstraints.push({
       id: ruleId,
       type: 'hard_constraint',
       pattern: feedback,
@@ -116,8 +118,8 @@ export class AgentSteeringService {
       severity: 'critical',
       message: `User constraint: ${feedback}`
     });
-    
-    await governor.updateRules(currentRules);
+
+    (governor as any).hardConstraints = hardConstraints;
 
     return { 
       success: true, 

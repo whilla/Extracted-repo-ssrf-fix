@@ -1,20 +1,19 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 
-function getSupabaseClient() {
+async function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     return null;
   }
-  // Lazy-load supabase to avoid build-time errors when env vars are missing
-  const { createClient } = require('@supabase/supabase-js');
+  const { createClient } = await import('@supabase/supabase-js');
   return createClient(url, key);
 }
 
 export async function POST(request: Request) {
   try {
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     if (!supabase) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
     }

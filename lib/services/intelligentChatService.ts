@@ -129,7 +129,7 @@ export async function intelligentChat(
         tone: brand.tone,
         uniqueSellingPoint: brand.characterLock,
         targetAudience: brand.audience,
-      } : undefined,
+      } as any : undefined,
     });
 
     // Parse response to extract reasoning and suggestions

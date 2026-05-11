@@ -482,6 +482,12 @@ function getPlatformCharLimit(platform: Platform): number {
     threads: 500,
     youtube: 5000,
     pinterest: 500,
+    discord: 2000,
+    reddit: 40000,
+    whatsapp: 65536,
+    telegram: 4096,
+    snapchat: 1000,
+    general: 10000,
   };
   
   return limits[platform] || 5000;

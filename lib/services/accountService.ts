@@ -30,6 +30,7 @@ export interface ProviderConfig {
   freeTierLimits?: string;
   requiresApiKey: boolean;
   requiresOAuth?: boolean;
+  note?: string;
 }
 
 // All supported providers
@@ -87,7 +88,6 @@ export const PROVIDERS: ProviderConfig[] = [
     freeTier: false,
     freeTierLimits: 'Subscription required',
     requiresApiKey: true,
-    requiresCookie: true, // Uses cookie-based auth, not API key
     note: 'Suno no longer offers public API. Requires subscription + browser cookie extraction.',
   },
   {

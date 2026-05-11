@@ -1,6 +1,6 @@
 import { marketingInsightsService } from './marketingInsightsService';
 import { loadBrandKit } from './memoryService';
-import { kvGet } from './puterService';
+import { puterService } from './puterService';
 import { logger } from '@/lib/utils/logger';
 
 /**
@@ -53,7 +53,7 @@ export class AutomationBot {
    */
   async runWeeklyStrategyLoop() {
     try {
-      logger.info('[AutomationBot] Starting weekly strategy synthesis...');
+      logger.info('AutomationBot', '[AutomationBot] Starting weekly strategy synthesis...');
       
       const brandKit = await loadBrandKit();
       if (!brandKit) return;
@@ -68,11 +68,11 @@ export class AutomationBot {
         brandKit
       }, null, 2));
 
-      logger.info(`[AutomationBot] Weekly report generated and saved to ${reportPath}`);
+      logger.info('AutomationBot', `[AutomationBot] Weekly report generated and saved to ${reportPath}`);
       
       // Optionally trigger a notification via notificationService
     } catch (error) {
-      logger.error('[AutomationBot] Weekly strategy loop failed:', error);
+      logger.error('[AutomationBot] Weekly strategy loop failed:', String(error));
     }
   }
 }

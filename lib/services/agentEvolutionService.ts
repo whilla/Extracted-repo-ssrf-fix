@@ -17,6 +17,9 @@ import { PromptManager } from './promptManager';
 import { stateStore } from './supabaseStore';
 
 import { validateContent, validateEvolutionProposal } from './governorService';
+import { universalChat as aiUniversalChat } from './aiService';
+
+const universalChat = aiUniversalChat;
 
 // Evolution Types
 export interface EvolutionProposal {

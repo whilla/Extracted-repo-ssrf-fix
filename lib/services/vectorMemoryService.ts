@@ -21,7 +21,7 @@ export class vectorMemoryService {
     if (!this._supabase) {
       this._supabase = getSupabaseClient();
     }
-    return this._supabase;
+    return this._supabase as any;
   }
 
   /**
@@ -65,7 +65,7 @@ export class vectorMemoryService {
       .insert({
         ...item,
         embedding,
-      });
+      } as any);
 
     if (error) {
       console.error('[vectorMemoryService] Error saving memory:', error);
@@ -89,8 +89,8 @@ export class vectorMemoryService {
 
     // We call a Supabase RPC function 'match_agent_memories' 
     // which performs the cosine similarity search in pgvector
-    const { data, error } = await supabase.rpc('match_agent_memories', {
-      query_embedding: queryEmbedding,
+    const { data, error } = await (supabase as any).rpc('match_agent_memories', {
+      query_embedding: queryEmbedding as any,
       filter_agent_id: agent_id,
       match_threshold: 0.7,
       match_count: limit,

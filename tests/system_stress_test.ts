@@ -53,7 +53,7 @@ async function runSystemStressTest() {
       analyzedAt: new Date().toISOString(),
     };
 
-    const triggerResult = await intelligenceTriggerService.evaluateAndTrigger(mockSentimentReport);
+    const triggerResult = await intelligenceTriggerService.evaluateAndTrigger(mockSentimentReport as any);
     console.log(`✅ Trigger Result: ${triggerResult.triggered ? 'VIRAL MOMENTUM DETECTED' : 'No trigger'}`);
     console.log(`Reason: ${triggerResult.reason}`);
 
@@ -69,7 +69,7 @@ async function runSystemStressTest() {
     };
 
     // Triggering the orchestrator
-    await publishOrchestrator.routePublish(mockPost, campaign.variations[0].text);
+    await publishOrchestrator.routePublish(mockPost.platforms[0] as any, campaign.variations[0].text);
     console.log('✅ Content routed to Discord (Native) and Twitter (Orchestrated).');
 
     console.log('\\n--------------------------------------------------');

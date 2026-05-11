@@ -118,8 +118,22 @@ nexusai/
 | `ELEVENLABS_API_KEY` | No | ElevenLabs voice generation |
 | `N8N_URL` | No | N8N automation URL |
 | `N8N_API_KEY` | No | N8N API key |
+| `SHOPIFY_STORE_URL` | No | Shopify store domain (e.g. mystore.myshopify.com) |
+| `SHOPIFY_ACCESS_TOKEN` | No | Shopify Admin API access token |
+| `ETSY_API_KEY` | No | Etsy API key |
+| `MAILCHIMP_API_KEY` | No | Mailchimp API key |
+| `MAILCHIMP_LIST_ID` | No | Mailchimp audience list ID |
+| `MAILCHIMP_SERVER_PREFIX` | No | Mailchimp server prefix (e.g. us19) |
+| `KLAVIYO_API_KEY` | No | Klaviyo API key |
+| `CONVERTKIT_API_KEY` | No | ConvertKit API key |
+| `SHOPIFY_STORE_URL` | No | Shopify store domain (e.g. mystore.myshopify.com) |
+| `SHOPIFY_ACCESS_TOKEN` | No | Shopify Admin API access token |
+| `MAILCHIMP_API_KEY` | No | Mailchimp API key |
+| `MAILCHIMP_LIST_ID` | No | Mailchimp audience list ID |
+| `MAILCHIMP_SERVER_PREFIX` | No | Mailchimp server prefix (e.g. us19) |
+| `KLAVIYO_API_KEY` | No | Klaviyo API key |
+| `CONVERTKIT_API_KEY` | No | ConvertKit API key |
 
-## Free Alternatives
 
 The app supports free alternatives for paid services:
 - **Voice**: Web Speech API, Azure Cognitive Services (500K chars/mo free)

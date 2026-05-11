@@ -15,7 +15,10 @@ export interface MediaAsset {
   provider: string;
   mimeType: string;
   duration?: number;
+  durationSeconds?: number;
   dimensions?: { width: number; height: number };
+  aspectRatio?: string;
+  thumbnailUrl?: string;
   createdAt: string;
   metadata: Record<string, any>;
 }

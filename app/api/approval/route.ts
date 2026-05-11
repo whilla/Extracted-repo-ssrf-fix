@@ -4,17 +4,21 @@ import { getPendingApprovals, updateApprovalStatus, getApprovalQueue } from '@/l
 
 async function getAuthenticatedUser(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabaseKey) {
     return null;
   }
   
   try {
-    const { createServerClient } = await import('@supabase/ssr');
-    const { cookies } = await import('next/headers');
-    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, { cookies });
-    const { data: { user } } = await supabase.auth.getUser();
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader) return null;
+    
+    const { data: { user } } = await supabase.auth.getUser(
+      authHeader.replace('Bearer ', '')
+    );
     return user;
   } catch {
     return null;
@@ -115,12 +119,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const success = await updateApprovalStatus(id, status, feedback);
-    if (!success) {
+    try {
+      await updateApprovalStatus(id, status, feedback);
+      return NextResponse.json({ success: true });
+    } catch {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 });
     }
-
-    return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

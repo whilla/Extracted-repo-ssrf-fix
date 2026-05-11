@@ -9,7 +9,7 @@ import { kvDelete, kvGet, kvSet } from '@/lib/services/puterService';
 import { saveProviderAccount, verifyProviderKey } from '@/lib/services/accountService';
 import { sanitizeApiKey, sanitizeStoredValueForKey } from '@/lib/services/providerCredentialUtils';
 import { setActiveChatModel } from '@/lib/services/providerControl';
-import {
+import { 
   Brain,
   Zap,
   Cloud,
@@ -22,7 +22,10 @@ import {
   EyeOff,
   ExternalLink,
   CheckCircle2,
+  Lock,
 } from 'lucide-react';
+
+import { SecretsVault } from '@/components/nexus/SecretsVault';
 
 // All supported AI providers
 const AI_PROVIDERS = [
@@ -169,7 +172,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [providerValidation, setProviderValidation] = useState<Record<string, { status: 'idle' | 'checking' | 'valid' | 'invalid'; message?: string }>>({});
-  const [activeTab, setActiveTab] = useState<'ai' | 'publishing' | 'audio' | 'image' | 'discovery'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'publishing' | 'audio' | 'image' | 'discovery' | 'secrets'>('ai');
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -469,6 +472,7 @@ export default function SettingsPage() {
           { id: 'audio', label: 'Audio & Music', icon: Music },
           { id: 'image', label: 'Image & Video', icon: Sparkles },
           { id: 'discovery', label: 'Nexus Discovery', icon: Zap },
+          { id: 'secrets', label: 'Credential Vault', icon: Lock },
         ].map(tab => (
           <button
             key={tab.id}
@@ -931,8 +935,10 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Image Generation Tab */}
-      {activeTab === 'image' && (
+      {/* Secrets Tab */}
+      {activeTab === 'secrets' && (
+        <SecretsVault />
+      )}
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground mb-4">
             Configure image and video generation providers. These selections set the default engines used by the Nexus agent unless you switch them inside chat.

@@ -148,8 +148,8 @@ export function MonitorDashboard() {
               Active Alerts
             </div>
             <div className="text-2xl font-bold">{alertSummary?.active || 0}</div>
-            {alertSummary?.critical > 0 && (
-              <div className="text-xs text-red-500">{alertSummary.critical} critical</div>
+            {(alertSummary?.critical ?? 0) > 0 && (
+              <div className="text-xs text-red-500">{alertSummary?.critical ?? 0} critical</div>
             )}
           </div>
 

@@ -27,12 +27,12 @@ export async function activateFullSystem(northStarGoal: string) {
   }));
   
   // 4. Trigger Initial Evolution Scan
-  await logEvolutionEvent(
-    'config_change',
-    'FULL SYSTEM ACTIVATION: Autopilot Mode Engaged',
-    { reasoning: `Initiating autonomous operations towards goal: ${northStarGoal}` },
-    'positive'
-  );
+  await logEvolutionEvent({
+    version: '1.0.0',
+    changeType: 'config_change',
+    description: 'FULL SYSTEM ACTIVATION: Autopilot Mode Engaged',
+    diff: { reasoning: `Initiating autonomous operations towards goal: ${northStarGoal}` },
+  });
 
   console.log('✅ SYSTEM ACTIVATED. Manager is now operational.');
   

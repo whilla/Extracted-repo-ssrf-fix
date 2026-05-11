@@ -10,7 +10,7 @@ interface GlobalErrorBoundaryProps {
 export default function GlobalErrorBoundary({ children }: GlobalErrorBoundaryProps) {
   return (
     <ErrorBoundary
-      fallback={<ErrorDisplay />}
+      fallback={<ErrorDisplay error={null} />}
       onError={(error, errorInfo) => {
         console.error('[GlobalErrorBoundary] Uncaught error:', error, errorInfo);
       }}

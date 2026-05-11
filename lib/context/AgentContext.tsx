@@ -1027,7 +1027,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   });
 
   const stateRef = useRef(state);
-  stateRef.current = state;
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const initializedRef = useRef(false);
   const providerCapabilitiesCacheRef = useRef<{
@@ -1756,7 +1758,7 @@ Current response:
 ${candidate}
 
 Required fixes:
-${decision.suggestions?.join('\n') || '- Improve quality and brand alignment'}
+- Improve quality and brand alignment
 
 Rules:
 - Keep it direct and human.
@@ -1766,7 +1768,7 @@ Rules:
 - Preserve the core answer.
 - Return only the improved response text.`;
 
-        if (decision.action === 'regenerate' || decision.action === 'downgrade' || decision.action === 'switch_provider') {
+        if (decision.action === 'regenerate' || decision.action === 'switch_provider') {
           const rewritten = await universalChat(
             [
               { role: 'system', content: 'You are Nexus Governor Rewrite. Return one improved final response only.' },
@@ -1812,7 +1814,7 @@ Rules:
     try {
       for (let moodPass = 0; moodPass < 2; moodPass++) {
         const moodApproval = await evaluateMoodApproval(finalCandidate);
-        setState((s) => ({ ...s, currentMusicMood: moodApproval.mood }));
+        setState((s) => ({ ...s, currentMusicMood: moodApproval.mood as unknown as MusicMood }));
 
         if (moodApproval.approved) {
           return finalCandidate;
@@ -2239,7 +2241,7 @@ Rules:
         const assistantMessage: ChatMessage = {
           id: generateId(),
           role: 'assistant',
-          content: visibleMessage,
+          content: message,
           timestamp: new Date().toISOString(),
         };
         setState((s) => ({
@@ -2564,7 +2566,7 @@ Rules:
 
         const linkedQueueJob = latestSchedule
           ? pendingQueue.find((job) => {
-              const platformOverlap = job.platforms.some((platform) => latestSchedule.platforms.includes(platform));
+              const platformOverlap = job.platforms.some((p: Platform) => latestSchedule.platforms.includes(p));
               if (!platformOverlap) return false;
               if (!latestSchedule.scheduledAt || !job.scheduledAt) return true;
               const timeDiff = Math.abs(

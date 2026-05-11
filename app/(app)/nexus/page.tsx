@@ -233,8 +233,8 @@ export default function NexusAIDashboard() {
           {/* System Status Badge */}
           <div className="flex items-center gap-4">
             <StatusBadge 
-              status={systemStatus?.initialized ? 'online' : 'offline'}
-              label={`${systemStatus?.agentCount || 0} Agents`}
+              status={systemStatus?.isInitialized ? 'online' : 'offline'}
+              label={`${systemStatus?.activeAgents || 0} Agents`}
             />
             <StatusBadge 
               status={automation.state.isRunning ? 'active' : 'inactive'}
@@ -570,7 +570,7 @@ export default function NexusAIDashboard() {
           />
           <StatCard
             label="Success Rate"
-            value={`${systemStatus?.successRate?.toFixed(1) || 100}%`}
+            value={`${systemStatus && systemStatus.totalRequests > 0 ? ((systemStatus.totalSuccesses / systemStatus.totalRequests) * 100).toFixed(1) : 100}%`}
             icon={<TrendingUp className="h-5 w-5 text-green-400" />}
           />
           <StatCard

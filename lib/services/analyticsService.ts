@@ -64,8 +64,8 @@ function extractHashtags(text: string): string[] {
 }
 
 function getLatestDraftText(draft: ContentDraft): string {
-  return draft.versions[draft.currentVersion]?.text
-    || draft.versions[draft.versions.length - 1]?.text
+  return draft.versions?.[draft.currentVersion ?? 0]?.text
+    || draft.versions?.[draft.versions.length - 1]?.text
     || '';
 }
 
@@ -139,7 +139,7 @@ class AnalyticsService {
       await writeFile(ANALYTICS_PATH, JSON.stringify(analytics, null, 2));
       return analytics;
     } catch (error) {
-      logger.error('[v0] Analytics fetch error:', error);
+      logger.error('[v0] Analytics fetch error:', String(error));
       return createEmptyAnalytics();
     }
   }
@@ -170,7 +170,7 @@ class AnalyticsService {
       const response = await aiService.chat(prompt, 'claude-sonnet-4-5');
       return response;
     } catch (error) {
-      logger.error('[v0] Insights generation error:', error);
+      logger.error('[v0] Insights generation error:', String(error));
       return 'Unable to generate insights at this time.';
     }
   }
@@ -185,7 +185,7 @@ class AnalyticsService {
       const hourKey = `${hour.toString().padStart(2, '0')}:00`;
       analytics.postingTimes[hourKey] = (analytics.postingTimes[hourKey] || 0) + 1;
 
-      const text = typeof postData.text === 'string' ? postData.text : '';
+      const text = postData.versions?.[postData.currentVersion ?? 0]?.text ?? '';
       for (const hashtag of extractHashtags(text)) {
         const existing = analytics.topHashtags.find(entry => entry.tag === hashtag);
         if (existing) {

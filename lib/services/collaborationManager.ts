@@ -2,7 +2,11 @@ import * as Y from 'yjs';
 
 let WebsocketProvider: any = null;
 try {
-  WebsocketProvider = require('y-websocket').WebsocketProvider;
+  import('y-websocket').then(module => {
+    WebsocketProvider = module.WebsocketProvider;
+  }).catch(() => {
+    console.warn('y-websocket not available, using local-only mode');
+  });
 } catch (e) {
   console.warn('y-websocket not available, using local-only mode');
 }
@@ -147,7 +151,8 @@ export class CollaborationManager {
   public exportAsJson(docId: string): string | null {
     const doc = this.docs.get(docId);
     if (!doc) return null;
-    return Y.encodeStateAsUpdate(doc).toString('base64');
+    const arr = new Uint8Array(Y.encodeStateAsUpdate(doc));
+    return Buffer.from(arr).toString('base64');
   }
 
   /**

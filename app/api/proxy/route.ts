@@ -65,8 +65,12 @@ async function getProxyUser() {
   }
 
   try {
-    const { createServerClient } = require('@supabase/ssr');
-    const { cookies } = require('next/headers');
+    const [supabaseModule, headersModule] = await Promise.all([
+      import('@supabase/ssr'),
+      import('next/headers')
+    ]);
+    const { createServerClient } = supabaseModule;
+    const { cookies } = headersModule;
     const cookieStore = await cookies();
     const supabase = createServerClient(
       supabaseUrl,

@@ -14,6 +14,7 @@ import { memoryManager } from '../core/MemoryManager';
 import { loadBrandKit, saveBrandKit, type BrandKit } from './memoryService';
 import { perceptionService } from './multiModalPerceptionService';
 import { brandVersionManager } from './brandVersionManager';
+import { puterService } from './puterService';
 
 export type ContentSyle = 
   | 'voice_storytelling_animated'
@@ -41,15 +42,16 @@ export class BrandLockManager {
     
     // In a real implementation, we would use a specialized "Brand Extractor" agent
     // to convert the description into a formal BrandKit object.
-    const proposedKit: BrandKit = {
+    const proposedKit = {
       brandName: 'Extracted Brand',
-      tone: 'Professional yet engaging',
+      tone: 'professional',
       targetAudience: 'High-intent seekers',
       niche: 'AI Automation',
       avoidTopics: ['generic corporate speak'],
-      monetizationGoals: ['SaaSsubscriptions'],
       contentPillars: ['Efficiency', 'Innovation'],
-    };
+      visualStyle: 'modern',
+      colorPalette: ['#000000', '#ffffff'],
+    } as any;
 
     this.currentProposal = {
       proposedBrandKit: proposedKit,

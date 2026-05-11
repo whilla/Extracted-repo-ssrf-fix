@@ -965,7 +965,7 @@ export function NexusAgentPanel() {
               })}
               {searchQuery && filteredMessages.length === 0 && (
                 <div className="px-4 py-8 text-center text-xs text-muted-foreground/60">
-                  No messages match "{searchQuery}"
+                  No messages match &quot;{searchQuery}&quot;
                 </div>
               )}
               {isThinking && <ThinkingIndicator task={currentTask} />}

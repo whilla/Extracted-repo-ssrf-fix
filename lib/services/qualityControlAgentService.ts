@@ -115,11 +115,12 @@ export async function runQualityControl(input: QualityCheckInput): Promise<Quali
     platform: input.platform,
   });
 
+  const govValidation = validation as { governorApproved?: boolean };
   reasons.push(...validation.issues.map((issue) => issue.message));
   const adjustedScore = Math.max(0, validation.score - reasons.length * 6);
 
   return {
-    approved: validation.governorApproved && reasons.length === 0,
+    approved: govValidation.governorApproved && reasons.length === 0 ? true : false,
     score: adjustedScore,
     reasons,
   };

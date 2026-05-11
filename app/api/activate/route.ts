@@ -6,7 +6,7 @@ import { activateFullSystem } from '@/lib/services/systemActivation';
 let createServerClientFn: any = null;
 let supabaseInitialized = false;
 
-function getSupabaseModule() {
+async function getSupabaseModule() {
   if (supabaseInitialized) return createServerClientFn;
   
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -14,9 +14,8 @@ function getSupabaseModule() {
   
   if (supabaseUrl && supabaseAnonKey) {
     try {
-      // Use dynamic import to avoid build failures
-      const { createServerClient } = require('@supabase/ssr');
-      createServerClientFn = createServerClient;
+      const supabaseModule = await import('@supabase/ssr');
+      createServerClientFn = supabaseModule.createServerClient;
     } catch {
       // Module not available, continue without supabase
     }
@@ -39,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const createServerClient = getSupabaseModule();
+      const createServerClient = await getSupabaseModule();
       if (!createServerClient) {
         return NextResponse.json({ error: 'Supabase client unavailable' }, { status: 503 });
       }

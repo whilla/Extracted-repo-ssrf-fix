@@ -320,7 +320,64 @@ export class CriticAgent extends BaseAgent {
   }
 }
 
-// ==================== PROMPT TEMPLATES ====================
+// ==================== VIDEO EDITOR AGENT ====================
+
+/**
+ * VideoEditorAgent - Manipulates the video timeline
+ */
+export class VideoEditorAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: 'Video Editor',
+      role: 'videoEditor',
+      capabilities: ['multi_task'],
+      promptTemplate: `You are the Video Editor Agent. Your job is to manipulate the video timeline to create a polished, professional video.
+
+You have access to the \`update_video_timeline\` tool to:
+- \`add_clip\`: Add a video, audio, text, or image asset.
+- \`move_event\`: Change the start time of an element.
+- \<code>resize_event</code>: Change the duration of an element.
+- \`remove_event\`: Delete an element.
+
+Your mission:
+1. Sequence clips to tell a coherent story.
+2. Layer music, voiceover, and text overlays at precise timestamps.
+3. Ensure smooth transitions and proper pacing.
+4. Follow the Brand Identity and Style Guidelines strictly.
+
+Current Timeline:
+{{timeline}}
+
+User Instruction: {{input}}
+Brand Context: {{brandContext}}
+
+Return the sequence of tool calls needed to perform the requested edits.`,
+      scoringWeights: {
+        creativity: 0.1,
+        relevance: 0.4,
+        engagement: 0.2,
+        brandAlignment: 0.3,
+      },
+      optimizationRules: [
+        { condition: 'low_score', action: 'enhance_prompt', threshold: 70 },
+      ],
+    });
+  }
+
+  protected buildPrompt(context: AgentExecutionContext): string {
+    let prompt = this.config.promptTemplate;
+    
+    prompt = prompt.replace('{{input}}', context.userInput);
+    prompt = prompt.replace('{{timeline}}', context.timelineState || 'No active timeline.');
+    prompt = prompt.replace('{{brandContext}}', context.memoryContext.brandMemory?.brandKit ? JSON.stringify(context.memoryContext.brandMemory.brandKit) : 'No brand context');
+
+    if (context.governorFeedback) {
+      prompt += `\n\nCRITICAL: Address this feedback: ${context.governorFeedback}`;
+    }
+
+    return prompt;
+  }
+}
 
 const STRATEGIST_PROMPT = `You are an elite social media strategist with deep expertise in viral content.
 
@@ -514,7 +571,7 @@ export class HybridAgent extends BaseAgent {
 
 import { SynthesisAgent } from './SynthesisAgent';
 import { VisualCriticAgent } from './VisualCriticAgent';
-export { SynthesisAgent, VisualCriticAgent };
+export { SynthesisAgent, VisualCriticAgent, VideoEditorAgent };
 
 const CRITIC_PROMPT = `You are a ruthless but fair content critic. Your job is to make good content GREAT.
 

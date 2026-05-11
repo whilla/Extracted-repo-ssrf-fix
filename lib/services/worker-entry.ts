@@ -3,7 +3,7 @@
 
 import { runSandboxedCode } from './sandboxRunner';
 
-export default async function handler(request, response) {
+export default async function handler(request: any, response: any) {
   if (request.method !== 'POST') {
     response.statusCode = 405;
     return response.end(JSON.stringify({ error: 'Method not allowed' }));
@@ -29,6 +29,6 @@ export default async function handler(request, response) {
   } catch (error) {
     response.statusCode = 500;
     response.setHeader('Content-Type', 'application/json');
-    return response.end(JSON.stringify({ error: error.message || 'Worker Execution Error' }));
+    return response.end(JSON.stringify({ error: (error as Error).message || 'Worker Execution Error' }));
   }
 }

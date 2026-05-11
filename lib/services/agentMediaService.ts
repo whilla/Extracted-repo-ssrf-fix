@@ -59,6 +59,10 @@ export interface MediaGenerationResult {
   provider: string;
 }
 
+interface MediaAssetWithThumbnail extends ChatMediaAsset {
+  thumbnailUrl?: string;
+}
+
 function clampAspectRatio(input?: string): '16:9' | '9:16' | '1:1' | '4:5' {
   if (input === '9:16' || input === '1:1' || input === '4:5') return input;
   return '16:9';

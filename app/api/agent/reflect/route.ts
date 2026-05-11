@@ -2,20 +2,19 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { aiService } from '@/lib/services/aiService';
 
-function getSupabaseClient() {
+async function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     return null;
   }
-  // Lazy-load supabase to avoid build-time errors when env vars are missing
-  const { createClient } = require('@supabase/supabase-js');
+  const { createClient } = await import('@supabase/supabase-js');
   return createClient(url, key);
 }
 
 export async function POST(request: Request) {
   try {
-    const supabase = getSupabaseClient();
+    const supabase = await getSupabaseClient();
     const { agent_id } = await request.json();
 
     if (!agent_id) {
@@ -44,7 +43,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Synthesize data for the AI
-    const performanceSummary = performance.map(p => 
+    const performanceSummary = performance.map((p: { post_id: string; platform: string; metrics: Record<string, unknown> }) => 
       `Post ID: ${p.post_id}, Platform: ${p.platform}, Metrics: ${JSON.stringify(p.metrics)}`
     ).join('\n');
 

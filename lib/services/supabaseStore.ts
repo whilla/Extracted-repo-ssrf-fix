@@ -4,14 +4,21 @@
  */
 
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import type { OrchestrationPlan, AgentConfig, EvolutionProposal, AgentVersion } from '@/lib/services/multiAgentService';
+import type { OrchestrationPlan, AgentConfig } from '@/lib/services/multiAgentService';
+import type { EvolutionProposal, AgentVersion } from './agentEvolutionService';
 
 export class SupabaseStateStore {
   private client = getSupabaseBrowserClient();
 
+  private getClient() {
+    if (!this.client) throw new Error('Supabase client not initialized');
+    return this.client;
+  }
+
   // --- Orchestration Plans ---
   async savePlan(plan: OrchestrationPlan): Promise<void> {
-    const { data, error } = await this.client
+    const client = this.getClient();
+    const { data, error } = await client
       .from('orchestration_plans')
       .upsert({
         id: plan.id,
@@ -28,7 +35,8 @@ export class SupabaseStateStore {
   }
 
   async getPlan(id: string): Promise<OrchestrationPlan | null> {
-    const { data, error } = await this.client
+    const client = this.getClient();
+    const { data, error } = await client
       .from('orchestration_plans')
       .select('*')
       .eq('id', id)
@@ -49,7 +57,8 @@ export class SupabaseStateStore {
 
   // --- Agent Evolution ---
   async saveEvolutionProposal(proposal: EvolutionProposal): Promise<void> {
-    const { error } = await this.client
+    const client = this.getClient();
+    const { error } = await client
       .from('evolution_proposals')
       .upsert({
         id: proposal.id,
@@ -68,7 +77,8 @@ export class SupabaseStateStore {
   }
 
   async loadEvolutionProposals(): Promise<EvolutionProposal[]> {
-    const { data, error } = await this.client
+    const client = this.getClient();
+    const { data, error } = await client
       .from('evolution_proposals')
       .select('*')
       .order('created_at', { ascending: false });
@@ -90,7 +100,8 @@ export class SupabaseStateStore {
   }
 
   async saveAgentVersion(version: AgentVersion): Promise<void> {
-    const { error } = await this.client
+    const client = this.getClient();
+    const { error } = await client
       .from('agent_versions')
       .insert({
         version: version.version,
@@ -105,7 +116,8 @@ export class SupabaseStateStore {
   }
 
   async loadAgentVersions(agentId: string): Promise<AgentVersion[]> {
-    const { data, error } = await this.client
+    const client = this.getClient();
+    const { data, error } = await client
       .from('agent_versions')
       .select('*')
       .eq('agent_id', agentId)

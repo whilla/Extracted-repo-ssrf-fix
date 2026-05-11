@@ -141,7 +141,7 @@ async function validatePromptLikeContent(content: string, label: string): Promis
     .map(issue => `${label}: ${issue.message}`);
 
   return {
-    passed: validation.isValid && errors.length === 0,
+    passed: ((validation as { isValid?: boolean }).isValid ?? true) && errors.length === 0,
     errors,
   };
 }
@@ -688,17 +688,17 @@ export async function applySelfModification(
     await saveCreatedAgent(agent);
     
     // Log to Evolution Dashboard
-    await logEvolutionEvent(
-      modification.type === 'code' ? 'module_deploy' : 'config_change',
-      `Autonomous update to agent ${agent.name} (${modification.type})`,
-      {
+    await logEvolutionEvent({
+      version: '1.0.0',
+      changeType: modification.type === 'code' ? 'module_deploy' : 'config_change',
+      description: `Autonomous update to agent ${agent.name} (${modification.type})`,
+      diff: {
         agentId: agent.id,
         reasoning: modification.reasoning,
         before: modification.before,
         after: modification.after,
       },
-      'positive'
-    );
+    });
     
     // Also update in main agent system
     await updateMainAgentSystem(agent);
@@ -847,17 +847,17 @@ The code must:
       appliedAt: new Date().toISOString(),
     });
     
-    await logEvolutionEvent(
-      'module_deploy',
-      `Created new capability module for ${agent.name}: ${persistedModule.name}`,
-      {
+    await logEvolutionEvent({
+      changeType: 'module_deploy',
+      description: `Created new capability module for ${agent.name}: ${persistedModule.name}`,
+      diff: {
         agentId: agent.id,
         moduleId: persistedModule.id,
         reasoning: request.purpose,
         after: persistedModule.code,
       },
-      'positive'
-    );
+      version: '1.0.0',
+    });
     
     agent.godModeStats.totalModifications++;
     agent.godModeStats.successfulModifications++;
@@ -952,18 +952,18 @@ Provide the improved code. Return JSON:
       appliedAt: new Date().toISOString(),
     });
     
-    await logEvolutionEvent(
-      'module_deploy',
-      `Optimized module ${codeModule.name} for ${agent.name}`,
-      {
+    await logEvolutionEvent({
+      changeType: 'module_deploy',
+      description: `Optimized module ${codeModule.name} for ${agent.name}`,
+      diff: {
         agentId: agent.id,
         moduleId: codeModule.id,
         reasoning: parsed.reasoning || editRequest.improvement,
         before: oldCode,
         after: parsed.code,
       },
-      'positive'
-    );
+      version: '1.0.0',
+    });
     
     agent.godModeStats.totalModifications++;
     agent.godModeStats.successfulModifications++;

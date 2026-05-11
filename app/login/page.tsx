@@ -104,7 +104,7 @@ export default function LoginPage() {
           Google
         </Button>
         <div className="text-center text-sm">
-          <p>Don't have an account? <button onClick={() => router.push('/signup')} className="text-primary hover:underline">Sign Up</button></p>
+          <p>Don&apos;t have an account? <button onClick={() => router.push('/signup')} className="text-primary hover:underline">Sign Up</button></p>
         </div>
       </div>
     </div>

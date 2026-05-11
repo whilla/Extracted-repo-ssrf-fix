@@ -47,7 +47,7 @@ export async function runSandboxedCode<T = any>(
       (async () => {
         // Use vm's native timeout to stop infinite loops on the main thread
         const execution = script.runInContext(sandbox, { timeout: timeoutMs });
-        return await execution(input, sandbox.context);
+        return await execution(input, (sandbox as any).context);
       })(),
       new Promise<never>((_, reject) => 
         setTimeout(() => reject(new Error('Execution timed out')), timeoutMs)

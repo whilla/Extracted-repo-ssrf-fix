@@ -43,17 +43,18 @@ export class AnalyticsIngestionService {
       if (file.is_dir) continue;
 
       try {
-        const content = await puterService.readFile(`${puterService.PATHS.published}/${file.name}`, true);
-        if (!content || typeof content !== 'object') continue;
+        const rawContent = await puterService.readFile(`${puterService.PATHS.published}/${file.name}`, true);
+        if (!rawContent || typeof rawContent !== 'object') continue;
 
-        // Extract post metadata (assuming the file contains an object with externalโพสต์ IDs)
+        const content = rawContent as Record<string, unknown>;
+        
         const postIds = this.extractPostIds(content);
         
         for (const post of postIds) {
           const metrics = await this.fetchPlatformMetrics(post.platform, post.id);
           
           if (metrics) {
-            const contentText = content.text || content.caption;
+            const contentText = (content.text as string) || (content.caption as string);
             if (!contentText) {
               console.warn(`[AnalyticsIngestion] Missing content text for ${file.name}`);
               continue;
@@ -68,7 +69,7 @@ export class AnalyticsIngestionService {
               likes: metrics.likes,
               comments: metrics.comments,
               shares: metrics.shares,
-              generationId: content.generationId,
+              generationId: content.generationId as string | undefined,
             });
             syncedCount++;
             learnedCount++;
@@ -116,8 +117,9 @@ export class AnalyticsIngestionService {
       content.publishedUrls.forEach((url: any) => {
         if (typeof url === 'string') {
           const platform = this.detectPlatformFromUrl(url);
+          if (!platform) return;
           const id = this.extractIdFromUrl(url, platform);
-          if (platform && id) ids.push({ id, platform });
+          if (id) ids.push({ id, platform });
         }
       });
     }
@@ -148,7 +150,7 @@ export class AnalyticsIngestionService {
           if (videoMatch) return videoMatch[1];
           const watchMatch = pathname.match(/\/watch\?v=([a-zA-Z0-9_-]+)/);
           if (watchMatch) return watchMatch[1];
-          return null;
+return null as string | null;
         }
         case 'tiktok': {
           const videoMatch = parsed.pathname.match(/\/video\/(\d+)/);

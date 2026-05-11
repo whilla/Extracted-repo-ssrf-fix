@@ -14,6 +14,7 @@ import {
   setPuterFallbackDisabled,
 } from './providerControl';
 import { providerRegistry } from './providerAdapters';
+import { ToolRegistry, getToolDefinitionsPrompt } from './toolRegistry';
 
 // Available models - including custom provider options
 export const AVAILABLE_MODELS: AIModel[] = [

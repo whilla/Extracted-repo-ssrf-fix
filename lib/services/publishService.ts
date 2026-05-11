@@ -59,6 +59,12 @@ const PLATFORM_MAP: Record<Platform, string> = {
   threads: 'threads',
   youtube: 'youtube',
   pinterest: 'pinterest',
+  discord: 'discord',
+  reddit: 'reddit',
+  whatsapp: 'whatsapp',
+  telegram: 'telegram',
+  snapchat: 'snapchat',
+  general: 'general',
 };
 
 interface AyrshareUserDisplayName {
@@ -99,6 +105,12 @@ function createEmptyPlatformDetails(): Record<Platform, { connected: boolean; us
     threads: { connected: false },
     youtube: { connected: false },
     pinterest: { connected: false },
+    discord: { connected: false },
+    reddit: { connected: false },
+    whatsapp: { connected: false },
+    telegram: { connected: false },
+    snapchat: { connected: false },
+    general: { connected: false },
   };
 }
 

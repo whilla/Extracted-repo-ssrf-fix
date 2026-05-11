@@ -42,13 +42,13 @@ class GracefulShutdown {
 
     process.on('uncaughtException', (error) => {
       this.logger('Uncaught exception, initiating shutdown...');
-      this.onError(error);
+      (this.onError as (e: Error) => void)(error);
       this.shutdown('uncaughtException').catch(this.onError);
     });
 
     process.on('unhandledRejection', (reason) => {
       this.logger(`Unhandled rejection: ${reason}`);
-      this.onError(reason instanceof Error ? reason : new Error(String(reason)));
+      (this.onError as (e: Error) => void)(reason instanceof Error ? reason : new Error(String(reason)));
     });
   }
 
@@ -101,8 +101,8 @@ class GracefulShutdown {
 
   private async closeDatabaseConnections(): Promise<void> {
     try {
-      if (typeof globalThis.__nexusDb !== 'undefined') {
-        await globalThis.__nexusDb.end?.();
+      if (typeof (globalThis as any).__nexusDb !== 'undefined') {
+        await ((globalThis as any).__nexusDb.end as (() => Promise<void>) | undefined)?.();
       }
       this.logger('Database connections closed');
     } catch (error) {
@@ -112,8 +112,8 @@ class GracefulShutdown {
 
   private async closeRedisConnections(): Promise<void> {
     try {
-      if (typeof globalThis.__nexusRedis !== 'undefined') {
-        await globalThis.__nexusRedis.quit?.();
+      if (typeof (globalThis as any).__nexusRedis !== 'undefined') {
+        await ((globalThis as any).__nexusRedis.quit as (() => Promise<void>) | undefined)?.();
       }
       this.logger('Redis connections closed');
     } catch (error) {
@@ -122,11 +122,13 @@ class GracefulShutdown {
   }
 
   private async flushLogs(): Promise<void> {
-    if (typeof process.stdout.flush === 'function') {
-      await process.stdout.flush();
+    const stdout = process.stdout as unknown as { flush?: () => Promise<void> };
+    const stderr = process.stderr as unknown as { flush?: () => Promise<void> };
+    if (typeof stdout.flush === 'function') {
+      await stdout.flush();
     }
-    if (typeof process.stderr.flush === 'function') {
-      await process.stderr.flush();
+    if (typeof stderr.flush === 'function') {
+      await stderr.flush();
     }
   }
 
