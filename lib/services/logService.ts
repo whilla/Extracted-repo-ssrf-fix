@@ -12,16 +12,28 @@ export interface ActionLog {
 }
 
 export class logService {
-  private static supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  private static supabase: ReturnType<typeof createClient> | null = null;
+
+  private static getSupabase() {
+    if (!this.supabase) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      
+      if (!url || !key) {
+        throw new Error('[logService] Missing required Supabase environment variables');
+      }
+      
+      this.supabase = createClient(url, key);
+    }
+    return this.supabase;
+  }
 
   /**
    * Log a new action event in the agent's timeline
    */
   static async logEvent(event: Omit<ActionLog, 'id' | 'created_at'>) {
-    const { error } = await this.supabase
+    const supabase = this.getSupabase();
+    const { error } = await supabase
       .from('agent_action_logs')
       .insert(event);
 
@@ -37,7 +49,8 @@ export class logService {
    * Retrieve the most recent logs for an agent to populate the timeline
    */
   static async getRecentLogs(agentId: string, limit = 50) {
-    const { data, error } = await this.supabase
+    const supabase = this.getSupabase();
+    const { data, error } = await supabase
       .from('agent_action_logs')
       .select('*')
       .eq('agent_id', agentId)
@@ -56,7 +69,8 @@ export class logService {
    * Clear logs for an agent (e.g. when a new plan starts)
    */
   static async clearLogs(agentId: string) {
-    const { error } = await this.supabase
+    const supabase = this.getSupabase();
+    const { error } = await supabase
       .from('agent_action_logs')
       .delete()
       .eq('agent_id', agentId);

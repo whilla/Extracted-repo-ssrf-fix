@@ -17,16 +17,25 @@ export interface PerformanceInsight {
 }
 
 export class performanceService {
-  private static supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  private static supabase: ReturnType<typeof createClient> | null = null;
 
-  /**
-   * Update performance metrics for a specific post
-   */
+  private static getSupabase() {
+    if (!this.supabase) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      
+      if (!url || !key) {
+        throw new Error('[performanceService] Missing required Supabase environment variables');
+      }
+      
+      this.supabase = createClient(url, key);
+    }
+    return this.supabase;
+  }
+
   static async updatePostMetrics(postId: string, platform: string, agentId: string, metrics: PerformanceMetrics) {
-    const { error } = await this.supabase
+    const supabase = this.getSupabase();
+    const { error } = await supabase
       .from('content_performance')
       .upsert({
         post_id: postId,
@@ -44,11 +53,9 @@ export class performanceService {
     return true;
   }
 
-  /**
-   * Retrieve recent top-performing content for an agent
-   */
   static async getTopPerformingContent(agentId: string, limit = 5) {
-    const { data, error } = await this.supabase
+    const supabase = this.getSupabase();
+    const { data, error } = await supabase
       .from('content_performance')
       .select('*')
       .eq('agent_id', agentId)
@@ -63,12 +70,10 @@ export class performanceService {
     return data;
   }
 
-  /**
-   * Synthesize raw metrics into high-level insights using AI
-   */
   static async synthesizeInsights(agentId: string) {
+    const supabase = this.getSupabase();
     const topContent = await this.getTopPerformingContent(agentId, 10);
-    const worstContent = await this.supabase
+    const worstContent = await supabase
       .from('content_performance')
       .select('*')
       .eq('agent_id', agentId)
@@ -93,7 +98,6 @@ export class performanceService {
     ]`;
 
     try {
-      // We use the existing universalChat from aiService
       const { universalChat } = await import('./aiService');
       const response = await universalChat(prompt, { model: 'gpt-4o' });
       const jsonMatch = response.match(/\[[\s\S]*\]/);
@@ -101,8 +105,7 @@ export class performanceService {
       
       const insights: PerformanceInsight[] = JSON.parse(jsonMatch[0]);
       
-      // Save insights to the database
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('performance_insights')
         .insert(insights.map(i => ({ ...i, agent_id: agentId })));
 
@@ -115,11 +118,9 @@ export class performanceService {
     }
   }
 
-  /**
-   * Get the most confident insights for the agent
-   */
   static async getActiveInsights(agentId: string, limit = 3) {
-    const { data, error } = await this.supabase
+    const supabase = this.getSupabase();
+    const { data, error } = await supabase
       .from('performance_insights')
       .select('*')
       .eq('agent_id', agentId)
