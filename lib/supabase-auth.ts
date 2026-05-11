@@ -3,6 +3,16 @@ import { Database } from '@/types/supabase';
 
 let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null;
 
+const getURL = () => {
+  let url =
+    process?.env?.NEXT_PUBLIC_SITE_URL ??
+    process?.env?.NEXT_PUBLIC_VERCEL_URL ??
+    'http://localhost:3000/'
+  url = url.startsWith('http') ? url : `https://${url}`
+  url = url.endsWith('/') ? url : `${url}/`
+  return url
+}
+
 export const getSupabaseClient = () => {
   if (supabaseClient) return supabaseClient;
 
@@ -34,7 +44,7 @@ export const signUpWithMagicLink = async (email: string) => {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`,
+      emailRedirectTo: `${getURL()}auth/callback`,
     },
   });
   if (error) throw error;
@@ -45,7 +55,7 @@ export const signInWithGoogle = async () => {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`,
+      redirectTo: `${getURL()}auth/callback`,
     },
   });
   if (error) throw error;
