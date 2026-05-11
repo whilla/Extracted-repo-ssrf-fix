@@ -26,4 +26,5 @@ export {
   CriticAgent,
   OptimizerAgent,
   HybridAgent,
+  AutomationAgent,
 } from './SpecializedAgents';

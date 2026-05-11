@@ -33,7 +33,6 @@ import {
   OptimizerAgent,
   HybridAgent,
   AutomationAgent,
-  MediaDirectorAgent,
   type AgentOutput,
   type AgentExecutionContext 
 } from '../agents';
@@ -152,7 +151,6 @@ export class NexusCore {
       new OptimizerAgent(),
       new HybridAgent(),
       new AutomationAgent(),
-      new MediaDirectorAgent(),
     ];
 
     agents.forEach(agent => {
@@ -225,15 +223,14 @@ export class NexusCore {
       let governorValidation: GovernorValidation;
 
       if (request.taskType === 'multimedia') {
-        // Specialized Multimedia Flow: Sequential generation of content then assets
         const writer = this.state.activeAgents.get('writer') || new WriterAgent();
-        const director = this.state.activeAgents.get('media') || new MediaDirectorAgent();
+        const hybrid = this.state.activeAgents.get('hybrid') || new HybridAgent();
         
         const contentOutput = await this.executeAgent(writer, executionContext);
         if (!contentOutput.success) throw new Error('Multimedia flow failed at content generation');
 
-        const directorContext = { ...executionContext, previousContent: contentOutput.content };
-        const mediaOutput = await this.executeAgent(director, directorContext);
+        const hybridContext = { ...executionContext, previousContent: contentOutput.content };
+        const mediaOutput = await this.executeAgent(hybrid, hybridContext);
         if (!mediaOutput.success) throw new Error('Multimedia flow failed at media planning');
 
         // Parse media requests and generate in parallel

@@ -652,7 +652,7 @@ Write naturally like a human creator, not an AI. Be bold. Be memorable. Be share
 
 CONTENT:`;
 
-const AUTOMATION_PROMPT = \`You are an expert in n8n and Make.com automation. Your goal is to design a high-efficiency content distribution workflow.
+const AUTOMATION_PROMPT = `You are an expert in n8n and Make.com automation. Your goal is to design a high-efficiency content distribution workflow.
 
 Request: {{input}}
 Target Platform: {{platform}}
@@ -687,5 +687,5 @@ EXAMPLE JSON FORMAT:
   }
 }
 
-Be precise. Ensure the workflow is logical and failsafe. Return ONLY the JSON.\`;
+Be precise. Ensure the workflow is logical and failsafe. Return ONLY the JSON.`;
 

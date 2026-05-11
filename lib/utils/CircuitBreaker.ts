@@ -106,5 +106,3 @@ export class CircuitBreaker {
     return this.state;
   }
 }
-
-export { CircuitBreaker };

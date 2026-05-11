@@ -65,5 +65,3 @@ export class TaskComplexityEvaluator {
     };
   }
 }
-
-export { TaskComplexityEvaluator };
