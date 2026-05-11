@@ -1,6 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 
 const getURL = () => {
   let url =
@@ -23,14 +23,10 @@ export async function GET(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-          set(name: string, value: string, options: CookieOptions) {
-            cookieStore.set(name, value, options);
-          },
-          remove(name: string, options: CookieOptions) {
-            cookieStore.set(name, '', options);
+          getAll: async () => (await cookies()).getAll(),
+          setAll: async (cookiesToSet, _headers) => {
+            const cookieStore = await cookies()
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
           },
         },
       }
@@ -40,4 +36,41 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.redirect(new URL('/dashboard', getURL()));
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll: async () => (await cookies()).getAll(),
+          setAll: async (cookiesToSet, _headers) => {
+            const cookieStore = await cookies()
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+          },
+        },
+      }
+    );
+
+    const { decision, authorizationId } = await request.json();
+
+    if (decision === 'approve') {
+      const { data, error } = await supabase.auth.oauth.approveAuthorization(authorizationId)
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+      return NextResponse.redirect(data.redirect_to)
+    } else {
+      const { data, error } = await supabase.auth.oauth.denyAuthorization(authorizationId)
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+      return NextResponse.redirect(data.redirect_to)
+    }
+  } catch (error) {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+  }
 }
