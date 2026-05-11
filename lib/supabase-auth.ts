@@ -1,8 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createBrowserClient } from '@supabase/ssr';
 import { Database } from '@/types/supabase';
 
+let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null;
+
 export const getSupabaseClient = () => {
+  if (supabaseClient) return supabaseClient;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -10,7 +13,8 @@ export const getSupabaseClient = () => {
     throw new Error('Supabase configuration is missing. Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in your environment variables.');
   }
 
-  return createClientComponentClient<Database>();
+  supabaseClient = createBrowserClient<Database>(url, anonKey);
+  return supabaseClient;
 };
 
 export const signInWithEmail = async (email: string, password: string) => {
@@ -30,7 +34,7 @@ export const signUpWithMagicLink = async (email: string) => {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      emailRedirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`,
     },
   });
   if (error) throw error;
@@ -41,7 +45,7 @@ export const signInWithGoogle = async () => {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`,
     },
   });
   if (error) throw error;
