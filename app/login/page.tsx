@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Chrome } from 'lucide-react';
-import { useAuth } from '@/lib/context/AuthContext';
+
+export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -105,7 +106,7 @@ import { useAuth } from '@/lib/context/AuthContext';
         <div className="text-center text-sm">
           <p>Don't have an account? <button onClick={() => router.push('/signup')} className="text-primary hover:underline">Sign Up</button></p>
         </div>
-      
+      </div>
     </div>
   );
 }
