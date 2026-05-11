@@ -7,11 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Chrome, Rocket } from 'lucide-react';
+import { Chrome } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
-
-export default function LoginPage() {
-  const { bypassAuth } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -108,20 +105,7 @@ export default function LoginPage() {
         <div className="text-center text-sm">
           <p>Don't have an account? <button onClick={() => router.push('/signup')} className="text-primary hover:underline">Sign Up</button></p>
         </div>
-      </div>
-      <div className="mt-6 flex justify-center">
-        <Button 
-          variant="ghost" 
-          className="text-xs text-muted-foreground hover:text-nexus-cyan transition-colors"
-          onClick={() => {
-            bypassAuth();
-            router.push('/dashboard');
-          }}
-        >
-          <Rocket className="mr-2 h-3 w-3" />
-          Skip to App (Dev Mode)
-        </Button>
-      </div>
+      
     </div>
   );
 }
