@@ -1,9 +1,3 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-
-const execPromise = promisify(exec);
-
 export interface TranscriptEntry {
   timestamp: string;
   text: string;
@@ -25,7 +19,10 @@ export const youtubeTranscriptService = {
    */
   async fetchTranscript(urlOrId: string): Promise<YouTubeTranscript> {
     try {
-      // Execute the script from the skill location
+      // Dynamic import to avoid webpack bundling Node.js built-ins
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execPromise = promisify(exec);
       const { stdout } = await execPromise(`node /root/.pi/agent/skills/youtube-transcript/transcript.js "${urlOrId}"`);
       
       const lines = stdout.trim().split('\n');
