@@ -1,8 +1,10 @@
-'use client';
-
 import type { AppSettings, BrandKit, ChatMessage, ContentDraft, DraftVersion, Platform } from '@/lib/types';
 import { getUser, kvGet, kvSet } from './puterService';
-import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+
+async function getSupabase() {
+  const { getSupabaseBrowserClient } = await import('@/lib/supabase/client');
+  return await getSupabase();
+}
 
 const DEFAULT_WORKSPACE_NAME = 'Personal Workspace';
 
@@ -35,7 +37,7 @@ interface DraftRow {
 }
 
 export function isCloudPersistenceEnabled(): boolean {
-  return Boolean(getSupabaseBrowserClient());
+  return Boolean(await getSupabase());
 }
 
 async function getPersistenceUserId(): Promise<string> {
@@ -51,7 +53,7 @@ async function getPersistenceUserId(): Promise<string> {
 }
 
 async function ensureWorkspace(): Promise<WorkspaceRecord | null> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return null;
 
   const userId = await getPersistenceUserId();
@@ -90,7 +92,7 @@ async function ensureWorkspace(): Promise<WorkspaceRecord | null> {
 }
 
 export async function saveCloudBrandKit(brandKit: BrandKit): Promise<boolean> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return false;
 
   const userId = await getPersistenceUserId();
@@ -113,7 +115,7 @@ export async function saveCloudBrandKit(brandKit: BrandKit): Promise<boolean> {
 }
 
 export async function loadCloudBrandKit(): Promise<BrandKit | null> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return null;
 
   const userId = await getPersistenceUserId();
@@ -130,7 +132,7 @@ export async function loadCloudBrandKit(): Promise<BrandKit | null> {
 }
 
 export async function saveCloudDraft(draft: ContentDraft): Promise<boolean> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return false;
 
   const userId = await getPersistenceUserId();
@@ -163,7 +165,7 @@ export async function saveCloudDraft(draft: ContentDraft): Promise<boolean> {
 }
 
 export async function loadCloudDraft(id: string): Promise<ContentDraft | null> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return null;
 
   const userId = await getPersistenceUserId();
@@ -195,7 +197,7 @@ export async function loadCloudDraft(id: string): Promise<ContentDraft | null> {
 }
 
 export async function listCloudDrafts(): Promise<ContentDraft[]> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return [];
 
   const userId = await getPersistenceUserId();
@@ -227,7 +229,7 @@ export async function listCloudDrafts(): Promise<ContentDraft[]> {
 }
 
 export async function saveCloudSettings(settings: AppSettings): Promise<boolean> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return false;
 
   const userId = await getPersistenceUserId();
@@ -249,7 +251,7 @@ export async function saveCloudSettings(settings: AppSettings): Promise<boolean>
 }
 
 export async function loadCloudSettings(): Promise<AppSettings | null> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return null;
 
   const userId = await getPersistenceUserId();
@@ -266,7 +268,7 @@ export async function loadCloudSettings(): Promise<AppSettings | null> {
 }
 
 export async function saveCloudChatHistory(messages: ChatMessage[]): Promise<boolean> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return false;
 
   const userId = await getPersistenceUserId();
@@ -288,7 +290,7 @@ export async function saveCloudChatHistory(messages: ChatMessage[]): Promise<boo
 }
 
 export async function loadCloudChatHistory(): Promise<ChatMessage[]> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return [];
 
   const userId = await getPersistenceUserId();
@@ -305,7 +307,7 @@ export async function loadCloudChatHistory(): Promise<ChatMessage[]> {
 }
 
 export async function saveCloudOnboardingComplete(complete: boolean): Promise<boolean> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return false;
 
   const userId = await getPersistenceUserId();
@@ -327,7 +329,7 @@ export async function saveCloudOnboardingComplete(complete: boolean): Promise<bo
 }
 
 export async function loadCloudOnboardingComplete(): Promise<boolean | null> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = await getSupabase();
   if (!supabase) return null;
 
   const userId = await getPersistenceUserId();
