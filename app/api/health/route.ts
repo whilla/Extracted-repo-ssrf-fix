@@ -7,6 +7,9 @@ import { NextResponse } from 'next/server';
 import { getRateLimitStats } from '@/lib/utils/rateLimiter';
 import { isSupabaseConfigured } from '@/lib/config/envConfig';
 import { kvGet } from '@/lib/services/puterService';
+import { healthCheckAllProviders } from '@/lib/services/providerCapabilityService';
+import { automationEngine } from '@/lib/core/AutomationEngine';
+import { nexusCore } from '@/lib/core/NexusCore';
 
 interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -28,8 +31,7 @@ export async function GET() {
   const checks: HealthStatus['checks'] = {};
   let overallStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
 
-  const start = Date.now();
-
+  // Check Supabase
   try {
     const supabaseConfigured = isSupabaseConfigured();
     checks.supabase = {
@@ -38,35 +40,61 @@ export async function GET() {
     };
     if (!supabaseConfigured) overallStatus = 'degraded';
   } catch (error) {
-    checks.supabase = {
-      status: 'fail',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    };
+    checks.supabase = { status: 'fail', message: error instanceof Error ? error.message : 'Unknown error' };
     overallStatus = 'unhealthy';
   }
 
-  checks.rateLimiter = {
-    status: 'pass',
-    ...getRateLimitStats(),
-  };
-
+  // Check Puter KV storage
   try {
-    const puterTest = await Promise.race([
+    const puterStart = Date.now();
+    await Promise.race([
       kvGet('health_check'),
-      new Promise<null>((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 2000)
-      ),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000)),
     ]);
-    checks.puter = {
-      status: 'pass',
-      latency: Date.now() - start,
+    checks.puter = { status: 'pass', latency: Date.now() - puterStart };
+  } catch {
+    checks.puter = { status: 'warn', message: 'Puter not available or timeout' };
+    if (overallStatus === 'healthy') overallStatus = 'degraded';
+  }
+
+  // Check AI providers
+  try {
+    const providerStart = Date.now();
+    const capabilities = await healthCheckAllProviders();
+    const values = Object.values(capabilities);
+    const onlineCount = values.filter((s): s is 'healthy' => s === 'healthy').length;
+    const totalCount = Object.keys(capabilities).length;
+    checks.aiProviders = {
+      status: onlineCount > 0 ? 'pass' : 'warn',
+      message: `${onlineCount}/${totalCount} providers online`,
+      latency: Date.now() - providerStart,
+    };
+    if (onlineCount === 0) overallStatus = 'degraded';
+  } catch (error) {
+    checks.aiProviders = { status: 'warn', message: 'Provider check failed' };
+  }
+
+  // Check Automation Engine
+  try {
+    const autoState = automationEngine.getState();
+    checks.automation = {
+      status: autoState.isRunning ? 'pass' : 'warn',
+      message: autoState.isRunning ? 'Running' : (autoState.pausedReason || 'Stopped'),
     };
   } catch {
-    checks.puter = {
-      status: 'warn',
-      message: 'Puter not available or timeout',
+    checks.automation = { status: 'warn', message: 'Automation engine not initialized' };
+  }
+
+  // Rate limiter stats
+  checks.rateLimiter = { status: 'pass', ...getRateLimitStats() };
+
+  // Memory usage
+  if (typeof process !== 'undefined' && process.memoryUsage) {
+    const mem = process.memoryUsage();
+    checks.memory = {
+      status: mem.heapUsed / mem.heapTotal < 0.9 ? 'pass' : 'warn',
+      message: `${Math.round(mem.heapUsed / 1024 / 1024)}MB / ${Math.round(mem.heapTotal / 1024 / 1024)}MB`,
     };
-    if (overallStatus === 'healthy') overallStatus = 'degraded';
   }
 
   const health: HealthStatus = {
@@ -78,7 +106,6 @@ export async function GET() {
   };
 
   const statusCode = overallStatus === 'healthy' ? 200 : overallStatus === 'degraded' ? 200 : 503;
-
   return NextResponse.json(health, { status: statusCode });
 }
 

@@ -23,7 +23,11 @@ import {
   ExternalLink,
   CheckCircle2,
   Lock,
+  ShoppingCart,
+  Shield,
+  Users,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { SecretsVault } from '@/components/nexus/SecretsVault';
 
@@ -128,6 +132,74 @@ const AI_PROVIDERS = [
   },
 ];
 
+function CRMTabContent() {
+  const [crmData, setCrmData] = useState<{ totalContacts: number; totalSegments: number; avgScore: number }>({
+    totalContacts: 0,
+    totalSegments: 0,
+    avgScore: 0,
+  });
+
+  useEffect(() => {
+    const loadCRM = async () => {
+      try {
+        const { CRMService } = await import('@/lib/services/crmService');
+        const [customers, segments] = await Promise.all([
+          CRMService.getAllCustomers(),
+          CRMService.getAllSegments(),
+        ]);
+        const totalContacts = customers.success && customers.data ? customers.data.length : 0;
+        const totalSegments = segments.success && segments.data ? segments.data.length : 0;
+        const avgScore = customers.success && customers.data && customers.data.length > 0
+          ? Math.round(customers.data.reduce((s, c) => s + c.score, 0) / customers.data.length)
+          : 0;
+        setCrmData({ totalContacts, totalSegments, avgScore });
+      } catch {}
+    };
+    loadCRM();
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <GlassCard className="p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Users className="w-5 h-5 text-nexus-cyan" />
+          <h3 className="text-lg font-semibold text-foreground">CRM Configuration</h3>
+        </div>
+        <p className="text-sm text-muted-foreground mb-6">
+          Manage customer segments and track audience interactions. CRM data is persisted via Supabase.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="p-4 rounded-lg bg-secondary/10 border border-border/50 text-center">
+            <p className="text-2xl font-bold text-nexus-cyan">{crmData.totalContacts}</p>
+            <p className="text-xs text-muted-foreground mt-1">Total Contacts</p>
+          </div>
+          <div className="p-4 rounded-lg bg-secondary/10 border border-border/50 text-center">
+            <p className="text-2xl font-bold text-nexus-cyan">{crmData.totalSegments}</p>
+            <p className="text-xs text-muted-foreground mt-1">Active Segments</p>
+          </div>
+          <div className="p-4 rounded-lg bg-secondary/10 border border-border/50 text-center">
+            <p className="text-2xl font-bold text-nexus-cyan">{crmData.avgScore}</p>
+            <p className="text-xs text-muted-foreground mt-1">Avg Score</p>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          CRM data is managed through the CRM API endpoints (<code className="text-nexus-cyan">/api/crm/customer</code>, <code className="text-nexus-cyan">/api/crm/segment</code>). All data is stored in Supabase with RLS policies.
+        </p>
+      </GlassCard>
+    </div>
+  );
+}
+
+function parseArraySetting(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return value.split(',').map(s => s.trim()).filter(Boolean);
+  }
+}
+
 export default function SettingsPage() {
   const { user, logout } = useAuth();
   const [settings, setSettings] = useState({
@@ -168,11 +240,22 @@ export default function SettingsPage() {
     userStackKey: '',
     ipStackKey: '',
     numVerifyKey: '',
+    // E-Commerce
+    shopifyStoreUrl: '',
+    shopifyAccessToken: '',
+    amazonApiKey: '',
+    amazonSellerId: '',
+    etsyApiKey: '',
+    etsyShopId: '',
+    // Compliance
+    complianceRegions: [] as string[],
+    blockedTopics: [] as string[],
+    blockedWords: [] as string[],
   });
   const [saving, setSaving] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [providerValidation, setProviderValidation] = useState<Record<string, { status: 'idle' | 'checking' | 'valid' | 'invalid'; message?: string }>>({});
-  const [activeTab, setActiveTab] = useState<'ai' | 'publishing' | 'audio' | 'image' | 'discovery' | 'secrets'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'publishing' | 'audio' | 'image' | 'discovery' | 'secrets' | 'ecommerce' | 'compliance' | 'crm'>('ai');
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -212,6 +295,15 @@ export default function SettingsPage() {
           userStackKey,
           ipStackKey,
           numVerifyKey,
+          shopifyStoreUrl,
+          shopifyAccessToken,
+          amazonApiKey,
+          amazonSellerId,
+          etsyApiKey,
+          etsyShopId,
+          complianceRegions,
+          blockedTopics,
+          blockedWords,
         ] = await Promise.all([
           kvGet('ai_model'),
           kvGet('image_provider'),
@@ -247,6 +339,15 @@ export default function SettingsPage() {
           kvGet('userstack_key'),
           kvGet('ipstack_key'),
           kvGet('numverify_key'),
+          kvGet('shopify_store_url'),
+          kvGet('shopify_access_token'),
+          kvGet('amazon_api_key'),
+          kvGet('amazon_seller_id'),
+          kvGet('etsy_api_key'),
+          kvGet('etsy_shop_id'),
+          kvGet('compliance_regions'),
+          kvGet('blocked_topics'),
+          kvGet('blocked_words'),
         ]);
 
         setSettings({
@@ -284,6 +385,15 @@ export default function SettingsPage() {
           userStackKey: userStackKey || '',
           ipStackKey: ipStackKey || '',
           numVerifyKey: numVerifyKey || '',
+          shopifyStoreUrl: shopifyStoreUrl || '',
+          shopifyAccessToken: shopifyAccessToken || '',
+          amazonApiKey: amazonApiKey || '',
+          amazonSellerId: amazonSellerId || '',
+          etsyApiKey: etsyApiKey || '',
+          etsyShopId: etsyShopId || '',
+          complianceRegions: parseArraySetting(complianceRegions),
+          blockedTopics: parseArraySetting(blockedTopics),
+          blockedWords: parseArraySetting(blockedWords),
         });
       } catch (error) {
         console.error('Settings load error:', error);
@@ -355,10 +465,10 @@ export default function SettingsPage() {
         validateAndPersistProvider('suno', settings.sunoKey),
       ]);
 
-      alert('Settings saved successfully!');
+      toast.success('Settings saved successfully!');
     } catch (error) {
       console.error('Save error:', error);
-      alert('Failed to save settings');
+      toast.error('Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -472,6 +582,9 @@ export default function SettingsPage() {
           { id: 'audio', label: 'Audio & Music', icon: Music },
           { id: 'image', label: 'Image & Video', icon: Sparkles },
           { id: 'discovery', label: 'Nexus Discovery', icon: Zap },
+          { id: 'ecommerce', label: 'E-Commerce', icon: ShoppingCart },
+          { id: 'compliance', label: 'Compliance', icon: Shield },
+          { id: 'crm', label: 'CRM', icon: Users },
           { id: 'secrets', label: 'Credential Vault', icon: Lock },
         ].map(tab => (
           <button
@@ -935,15 +1048,9 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Secrets Tab */}
-      {activeTab === 'secrets' && (
-        <SecretsVault />
-      )}
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground mb-4">
-            Configure image and video generation providers. These selections set the default engines used by the Nexus agent unless you switch them inside chat.
-          </p>
-
+      {/* Image & Video Tab */}
+      {activeTab === 'image' && (
+        <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <GlassCard className="p-5">
               <div className="flex items-center gap-3 mb-4">
@@ -983,7 +1090,6 @@ export default function SettingsPage() {
               </p>
             </GlassCard>
           </div>
-          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Puter AI - Built-in */}
             <GlassCard className="p-5 border-nexus-success/30">
@@ -1133,6 +1239,223 @@ export default function SettingsPage() {
             </GlassCard>
           </div>
         </div>
+      )}
+
+      {/* Discovery Tab */}
+      {activeTab === 'discovery' && (
+        <GlassCard className="p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Zap className="w-5 h-5 text-nexus-cyan" />
+            <h3 className="text-lg font-semibold text-foreground">Nexus Discovery</h3>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Nexus Discovery uses real-time trends and search data to inform content creation.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Configure your MediaStack, SerpStack, and IPStack API keys in the Credential Vault to enable trend discovery.
+          </p>
+        </GlassCard>
+      )}
+
+      {/* E-Commerce Tab */}
+      {activeTab === 'ecommerce' && (
+        <div className="space-y-4">
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <ShoppingCart className="w-5 h-5 text-nexus-cyan" />
+              <h3 className="text-lg font-semibold text-foreground">E-Commerce Integrations</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Configure credentials for publishing content directly to e-commerce platforms.
+            </p>
+
+            {/* Shopify */}
+            <div className="mb-6 p-4 rounded-lg bg-secondary/10 border border-border/50">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Shopify</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Store URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://your-store.myshopify.com"
+                    value={settings.shopifyStoreUrl || ''}
+                    onChange={e => setSettings(s => ({ ...s, shopifyStoreUrl: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Access Token</label>
+                  <div className="relative">
+                    <input
+                      type={showKeys.shopify ? 'text' : 'password'}
+                      placeholder="gpos_..."
+                      value={settings.shopifyAccessToken || ''}
+                      onChange={e => setSettings(s => ({ ...s, shopifyAccessToken: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50 pr-10"
+                    />
+                    <button
+                      onClick={() => setShowKeys(s => ({ ...s, shopify: !s.shopify }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKeys.shopify ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Amazon */}
+            <div className="mb-6 p-4 rounded-lg bg-secondary/10 border border-border/50">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Amazon Selling Partner</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showKeys.amazon ? 'text' : 'password'}
+                      placeholder="amzn-..."
+                      value={settings.amazonApiKey || ''}
+                      onChange={e => setSettings(s => ({ ...s, amazonApiKey: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50 pr-10"
+                    />
+                    <button
+                      onClick={() => setShowKeys(s => ({ ...s, amazon: !s.amazon }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKeys.amazon ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Seller ID</label>
+                  <input
+                    type="text"
+                    placeholder="ATVPDKIKX0DER"
+                    value={settings.amazonSellerId || ''}
+                    onChange={e => setSettings(s => ({ ...s, amazonSellerId: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Etsy */}
+            <div className="p-4 rounded-lg bg-secondary/10 border border-border/50">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Etsy</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showKeys.etsy ? 'text' : 'password'}
+                      placeholder="etsy-api-key"
+                      value={settings.etsyApiKey || ''}
+                      onChange={e => setSettings(s => ({ ...s, etsyApiKey: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50 pr-10"
+                    />
+                    <button
+                      onClick={() => setShowKeys(s => ({ ...s, etsy: !s.etsy }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKeys.etsy ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Shop ID</label>
+                  <input
+                    type="text"
+                    placeholder="your-shop-id"
+                    value={settings.etsyShopId || ''}
+                    onChange={e => setSettings(s => ({ ...s, etsyShopId: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50"
+                  />
+                </div>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Compliance Tab */}
+      {activeTab === 'compliance' && (
+        <div className="space-y-4">
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Shield className="w-5 h-5 text-nexus-cyan" />
+              <h3 className="text-lg font-semibold text-foreground">Content Compliance</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Configure regional content filtering and compliance rules for your content.
+            </p>
+
+            <div className="mb-6 p-4 rounded-lg bg-secondary/10 border border-border/50">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Filter Regions</h4>
+              <p className="text-xs text-muted-foreground mb-3">
+                Select regions to filter content against local laws and cultural sensitivities.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {['us', 'eu', 'uk', 'ca', 'au', 'jp', 'cn', 'in', 'br', 'de', 'fr', 'es'].map(region => (
+                  <button
+                    key={region}
+                    onClick={() => {
+                      const regions = settings.complianceRegions || [];
+                      const updated = regions.includes(region)
+                        ? regions.filter(r => r !== region)
+                        : [...regions, region];
+                      setSettings(s => ({ ...s, complianceRegions: updated }));
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      (settings.complianceRegions || []).includes(region)
+                        ? 'bg-nexus-cyan/20 text-nexus-cyan border border-nexus-cyan/30'
+                        : 'bg-secondary/10 text-muted-foreground border border-border/50 hover:border-nexus-cyan/30'
+                    }`}
+                  >
+                    {region.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-6 p-4 rounded-lg bg-secondary/10 border border-border/50">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Blocked Topics</h4>
+              <input
+                type="text"
+                placeholder="Comma-separated blocked topics"
+                value={(settings.blockedTopics || []).join(', ')}
+                onChange={e => setSettings(s => ({ ...s, blockedTopics: e.target.value.split(',').map(t => t.trim()).filter(Boolean) }))}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Content containing these topics will be flagged or blocked for selected regions.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-lg bg-secondary/10 border border-border/50">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Blocked Words</h4>
+              <input
+                type="text"
+                placeholder="Comma-separated blocked words"
+                value={(settings.blockedWords || []).join(', ')}
+                onChange={e => setSettings(s => ({ ...s, blockedWords: e.target.value.split(',').map(t => t.trim()).filter(Boolean) }))}
+                className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Content containing these words will be flagged or modified for selected regions.
+              </p>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* CRM Tab */}
+      {activeTab === 'crm' && (
+        <CRMTabContent />
+      )}
+
+      {/* Secrets Tab */}
+      {activeTab === 'secrets' && (
+        <SecretsVault />
       )}
 
       {/* Save Button */}

@@ -3,6 +3,7 @@
 import { kvGet, kvSet } from './puterService';
 import { hasConfiguredSecret, sanitizeApiKey } from './providerCredentialUtils';
 import { mediaAssetManager, type MediaAsset } from './mediaAssetManager';
+import { enhanceMusicPrompt } from './promptEnhancer';
 
 // Retry configuration
 const MAX_RETRIES = 2;
@@ -534,7 +535,7 @@ export async function generateMusic(options: MusicGenerationOptions): Promise<st
   }
 
   const safeDuration = Math.min(Math.max(duration, 15), 180);
-  const safeOptions = { ...options, duration: safeDuration };
+  const safeOptions = { ...options, duration: safeDuration, prompt: enhanceMusicPrompt(prompt) };
 
   // If provider specified, use it with fallback
   if (provider) {

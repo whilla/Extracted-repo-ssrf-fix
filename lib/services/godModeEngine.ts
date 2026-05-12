@@ -3,6 +3,7 @@ import type { AIMessage, BrandKit } from '@/lib/types';
 import { kvGet } from './puterService';
 import { universalChat } from './aiService';
 import { hasConfiguredSecret, sanitizeApiKey } from './providerCredentialUtils';
+import { GROQ_URL, NVIDIA_URL, TOGETHER_URL, FIREWORKS_URL, OLLAMA_URL, OPENROUTER_URL } from '@/lib/constants/api';
 
 // ============================================
 // CUSTOM AI PROVIDERS
@@ -32,7 +33,7 @@ export const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'openrouter',
     name: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
+    baseUrl: `${OPENROUTER_URL}/api/v1/chat/completions`,
     models: [
       'anthropic/claude-3.5-sonnet',
       'openai/gpt-4-turbo',
@@ -54,7 +55,7 @@ export const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'groq',
     name: 'Groq (Ultra Fast)',
-    baseUrl: 'https://api.groq.com/openai/v1/chat/completions',
+    baseUrl: `${GROQ_URL}/openai/v1/chat/completions`,
     models: [
       'llama-3.3-70b-versatile',
       'llama-3.1-70b-versatile',
@@ -71,7 +72,7 @@ export const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'nvidia',
     name: 'NVIDIA NIM',
-    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions',
+    baseUrl: `${NVIDIA_URL}/v1/chat/completions`,
     models: [
       'nvidia/llama-3.1-nemotron-70b-instruct',
       'nvidia/nemotron-4-340b-instruct',
@@ -87,7 +88,7 @@ export const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'ollama',
     name: 'Ollama (Local)',
-    baseUrl: 'http://localhost:11434/api/chat',
+    baseUrl: `${OLLAMA_URL}/api/chat`,
     models: [
       'llama3.2:latest',
       'mistral:latest',
@@ -114,7 +115,7 @@ export const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'together',
     name: 'Together AI',
-    baseUrl: 'https://api.together.xyz/v1/chat/completions',
+    baseUrl: `${TOGETHER_URL}/v1/chat/completions`,
     models: [
       'meta-llama/Llama-3.3-70B-Instruct-Turbo',
       'Qwen/Qwen2.5-72B-Instruct-Turbo',
@@ -131,7 +132,7 @@ export const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'fireworks',
     name: 'Fireworks AI',
-    baseUrl: 'https://api.fireworks.ai/inference/v1/chat/completions',
+    baseUrl: `${FIREWORKS_URL}/inference/v1/chat/completions`,
     models: [
       'accounts/fireworks/models/llama-v3p3-70b-instruct',
       'accounts/fireworks/models/mixtral-8x22b-instruct',

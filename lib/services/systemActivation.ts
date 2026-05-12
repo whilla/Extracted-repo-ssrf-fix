@@ -5,6 +5,7 @@ import { initializeOrchestrationSystem, orchestrate } from './orchestrationEngin
 import { loadAgents } from './multiAgentService';
 import { kvGet, kvSet } from './puterService';
 import { logEvolutionEvent } from './evolutionLogService';
+import { automationEngine } from '@/lib/core/AutomationEngine';
 
 export async function activateFullSystem(northStarGoal: string) {
   console.log('🚀 INITIALIZING FULL SYSTEM ACTIVATION...');
@@ -19,14 +20,30 @@ export async function activateFullSystem(northStarGoal: string) {
     status: 'active',
   }));
   
-  // 3. Enable Autopilot Mode
+  // 3. Initialize agents
+  try {
+    await loadAgents();
+  } catch (error) {
+    console.warn('[Activation] Agent loading warning:', error);
+  }
+
+  // 4. Start Automation Engine
+  try {
+    await automationEngine.initialize();
+    await automationEngine.start();
+    console.log('[Activation] Automation engine started successfully.');
+  } catch (error) {
+    console.warn('[Activation] Automation engine start warning:', error);
+  }
+  
+  // 5. Enable Autopilot Mode
   await kvSet('nexus_autopilot_state', JSON.stringify({
     isRunning: true,
     lastRun: new Date().toISOString(),
     currentObjective: northStarGoal,
   }));
   
-  // 4. Trigger Initial Evolution Scan
+  // 6. Trigger Initial Evolution Scan
   await logEvolutionEvent({
     version: '1.0.0',
     changeType: 'config_change',

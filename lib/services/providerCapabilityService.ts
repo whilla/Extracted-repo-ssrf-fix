@@ -3,6 +3,8 @@
  * Tracks provider health, capabilities, and model gating
  */
 
+import { OLLAMA_URL } from '@/lib/constants/api';
+
 import { kvGet, kvSet, readFile, writeFile, PATHS } from './puterService';
 import { pickRecommendedModel } from './providerModelSelection.mjs';
 import { sanitizeApiKey } from './providerCredentialUtils';
@@ -419,7 +421,7 @@ export async function healthCheckProvider(providerId: string): Promise<ProviderC
   // For Ollama, check if local server is running
   if (providerId === 'ollama') {
     try {
-      const ollamaUrl = await kvGet('ollama_url') || 'http://localhost:11434';
+      const ollamaUrl = await kvGet('ollama_url') || OLLAMA_URL;
       const response = await fetch(`${ollamaUrl}/api/tags`, { 
         method: 'GET',
         signal: AbortSignal.timeout(3000),

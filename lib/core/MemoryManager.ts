@@ -19,6 +19,16 @@ export interface MemoryContext {
   performanceLogs: PerformanceLogEntry[];
   agentLogs: AgentLogEntry[];
   campaignContext?: CampaignContext; // NEW: Campaign-level continuity
+  activeInstructions?: string[]; // Persistent user instructions
+}
+
+export interface StoredInstruction {
+  id: string;
+  text: string;
+  source: string;
+  createdAt: string;
+  priority: 'high' | 'medium' | 'low';
+  expiresAt?: string;
 }
 
 export interface CampaignContext {
@@ -109,6 +119,7 @@ export class MemoryManager {
   private contentHistory: ContentHistoryEntry[] = [];
   private performanceLogs: PerformanceLogEntry[] = [];
   private agentLogs: AgentLogEntry[] = [];
+  private instructions: StoredInstruction[] = [];
   private learningPatterns: Map<string, LearningInsight> = new Map();
   private initialized = false;
 
@@ -136,6 +147,7 @@ export class MemoryManager {
       this.loadPerformanceLogs(),
       this.loadAgentLogs(),
       this.loadLearningPatterns(),
+      this.loadInstructions(),
     ]);
 
     // Run memory aging
@@ -180,6 +192,7 @@ export class MemoryManager {
       performanceLogs: recentPerformance,
       agentLogs: recentAgentLogs,
       campaignContext,
+      activeInstructions: this.getActiveInstructions(),
     };
   }
 
@@ -328,6 +341,55 @@ export class MemoryManager {
       await kvSet(KEYS.contentHistory, JSON.stringify(this.contentHistory));
     } catch {
       console.error('[MemoryManager] Failed to save content history');
+    }
+  }
+
+  // ==================== INSTRUCTION MEMORY ====================
+
+  async addInstruction(text: string, source: string, priority: 'high' | 'medium' | 'low' = 'high'): Promise<StoredInstruction> {
+    const instruction: StoredInstruction = {
+      id: `instr_${Date.now()}`,
+      text,
+      source,
+      priority,
+      createdAt: new Date().toISOString(),
+    };
+    this.instructions.push(instruction);
+    await this.saveInstructions();
+    return instruction;
+  }
+
+  getActiveInstructions(): string[] {
+    const now = Date.now();
+    return this.instructions
+      .filter(i => !i.expiresAt || new Date(i.expiresAt).getTime() > now)
+      .sort((a, b) => {
+        const priorityScore = { high: 3, medium: 2, low: 1 };
+        return (priorityScore[b.priority] - priorityScore[a.priority]) || (new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      })
+      .map(i => `[${i.priority.toUpperCase()}] ${i.text}`);
+  }
+
+  async clearExpiredInstructions(): Promise<void> {
+    const now = Date.now();
+    this.instructions = this.instructions.filter(i => !i.expiresAt || new Date(i.expiresAt).getTime() > now);
+    await this.saveInstructions();
+  }
+
+  private async loadInstructions(): Promise<void> {
+    try {
+      const data = await kvGet('nexus_instructions');
+      if (data) this.instructions = JSON.parse(data);
+    } catch {
+      this.instructions = [];
+    }
+  }
+
+  private async saveInstructions(): Promise<void> {
+    try {
+      await kvSet('nexus_instructions', JSON.stringify(this.instructions));
+    } catch {
+      console.error('[MemoryManager] Failed to save instructions');
     }
   }
 

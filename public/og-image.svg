@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">
+  <rect width="1200" height="630" fill="#080B14"/>
+  <rect x="60" y="60" width="1080" height="510" rx="32" fill="#0F1629" stroke="#1E293B" stroke-width="2"/>
+  <path d="M180 420V180h60l136 158V180h60v240h-56L244 260v160h-64Z" fill="#7BD1FF"/>
+  <circle cx="960" cy="180" r="40" fill="#4BFFA5"/>
+  <text x="300" y="340" font-family="system-ui, sans-serif" font-size="64" font-weight="bold" fill="#F8FAFC">NexusAI</text>
+  <text x="300" y="400" font-family="system-ui, sans-serif" font-size="28" fill="#94A3B8">AI-Powered Marketing OS</text>
+  <rect x="300" y="440" width="240" height="4" rx="2" fill="#7BD1FF"/>
+</svg>

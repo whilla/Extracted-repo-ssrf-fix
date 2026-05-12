@@ -4,6 +4,7 @@
  */
 
 import { kvGet } from './puterService';
+import { GROQ_URL, OLLAMA_URL } from '@/lib/constants/api';
 import { isPuterAvailable } from './puterService';
 import { getWorkerHealthSummary } from './workerHeartbeatService';
 import { getGenerationPerformanceSummary } from './generationTrackerService';
@@ -129,7 +130,7 @@ async function testGroq(): Promise<{ success: boolean; latency: number; details?
   }
 
   try {
-    const response = await fetch('https://api.groq.com/openai/v1/models', {
+    const response = await fetch(`${GROQ_URL}/openai/v1/models`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -196,7 +197,7 @@ async function testOpenRouter(): Promise<{ success: boolean; latency: number; de
 // Test Ollama local connection
 async function testOllama(): Promise<{ success: boolean; latency: number; details?: Record<string, unknown> }> {
   const start = Date.now();
-  const ollamaUrl = await kvGet('ollama_url') || 'http://localhost:11434';
+  const ollamaUrl = await kvGet('ollama_url') || OLLAMA_URL;
 
   try {
     const response = await fetch(`${ollamaUrl}/api/tags`, {

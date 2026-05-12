@@ -3,6 +3,7 @@
 import { kvGet, kvSet } from './puterService.ts';
 import { sanitizeApiKey } from './providerCredentialUtils.ts';
 import { mediaAssetManager, type MediaAsset } from './mediaAssetManager.ts';
+import { enhanceVideoPrompt } from './promptEnhancer.ts';
 
 export type VideoProvider = 'ltx23' | 'ltx23-open' | 'runway' | 'pika' | 'stablevideo';
 
@@ -814,7 +815,7 @@ export async function generateVideo(options: VideoGenerationOptions): Promise<Me
 
   const cleanOptions: VideoGenerationOptions = {
     ...options,
-    prompt: prompt.substring(0, 1500),
+    prompt: enhanceVideoPrompt(prompt).substring(0, 1500),
     provider: options.provider || 'ltx23',
     durationSeconds: Math.min(Math.max(options.durationSeconds || 8, 4), 120),
   };

@@ -6,6 +6,7 @@ import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { LoadingPulse } from '@/components/nexus/LoadingPulse';
 import { loadBrandKit, saveBrandKit } from '@/lib/services/memoryService';
+import { toast } from 'sonner';
 
 export default function BrandKitPage() {
   const { user } = useAuth();
@@ -67,10 +68,10 @@ export default function BrandKitPage() {
     try {
       await saveBrandKit(formData);
       setBrandKit(formData);
-      alert('Brand kit saved successfully!');
+      toast.success('Brand kit saved successfully!');
     } catch (error) {
       console.error('[v0] Save error:', error);
-      alert('Failed to save brand kit');
+      toast.error('Failed to save brand kit');
     } finally {
       setSaving(false);
     }

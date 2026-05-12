@@ -53,7 +53,7 @@ export class StrategistAgent extends BaseAgent {
 
     // Add custom instructions
     if (context.customInstructions) {
-      prompt += `\n\nAdditional Instructions: ${context.customInstructions}`;
+      prompt += this.getInstructionOverride(context);
     }
 
     // Add governor feedback if this is a regeneration
@@ -145,6 +145,9 @@ export class WriterAgent extends BaseAgent {
     // COLLABORATION: Integrate findings from other agents
     prompt += this.getBlackboardContext(context);
 
+    // User instruction override
+    prompt += this.getInstructionOverride(context);
+
     if (context.governorFeedback) {
       prompt += `\n\nCRITICAL: Address this feedback: ${context.governorFeedback}`;
     }
@@ -184,10 +187,14 @@ export class HookAgent extends BaseAgent {
     prompt = prompt.replace('{{input}}', context.userInput);
     prompt = prompt.replace('{{platform}}', context.platform);
 
-    // Add brand tone
+    // Add brand context (replaces {{brandContext}} or {{tone}})
     if (context.memoryContext.brandMemory?.brandKit) {
-      prompt = prompt.replace('{{tone}}', context.memoryContext.brandMemory.brandKit.tone);
+      const brand = context.memoryContext.brandMemory.brandKit;
+      const brandContext = `Brand: ${brand.brandName}\nTone: ${brand.tone}\nAudience: ${brand.targetAudience}\nNiche: ${brand.niche}`;
+      prompt = prompt.replace('{{brandContext}}', brandContext);
+      prompt = prompt.replace('{{tone}}', brand.tone);
     } else {
+      prompt = prompt.replace('{{brandContext}}', 'Brand: Not specified\nTone: engaging and authentic');
       prompt = prompt.replace('{{tone}}', 'engaging and authentic');
     }
 
@@ -206,8 +213,14 @@ export class HookAgent extends BaseAgent {
       }
     }
 
+    // COLLABORATION: Integrate findings from other agents
+    prompt += this.getBlackboardContext(context);
+
+    // User instruction override
+    prompt += this.getInstructionOverride(context);
+
     if (context.governorFeedback) {
-      prompt += `\n\nFeedback to address: ${context.governorFeedback}`;
+      prompt += `\n\nCRITICAL: Address this feedback: ${context.governorFeedback}`;
     }
 
     return prompt;
@@ -293,6 +306,9 @@ export class CriticAgent extends BaseAgent {
     // COLLABORATION: Integrate findings from other agents
     prompt += this.getBlackboardContext(context);
 
+    // User instruction override
+    prompt += this.getInstructionOverride(context);
+
     // Add governor feedback
     if (context.governorFeedback) {
       prompt += `\n\nPrevious validation issues to fix:\n${context.governorFeedback}`;
@@ -351,6 +367,8 @@ Current Timeline:
 User Instruction: {{input}}
 Brand Context: {{brandContext}}
 
+The final video must feel like a real human editor produced it — natural pacing, authentic transitions, no robotic timing. Avoid over-polished effects that look AI-generated.
+
 Return the sequence of tool calls needed to perform the requested edits.`,
       scoringWeights: {
         creativity: 0.1,
@@ -370,6 +388,9 @@ Return the sequence of tool calls needed to perform the requested edits.`,
     prompt = prompt.replace('{{input}}', context.userInput);
     prompt = prompt.replace('{{timeline}}', context.timelineState || 'No active timeline.');
     prompt = prompt.replace('{{brandContext}}', context.memoryContext.brandMemory?.brandKit ? JSON.stringify(context.memoryContext.brandMemory.brandKit) : 'No brand context');
+
+    // User instruction override
+    prompt += this.getInstructionOverride(context);
 
     if (context.governorFeedback) {
       prompt += `\n\nCRITICAL: Address this feedback: ${context.governorFeedback}`;
@@ -397,7 +418,9 @@ Provide:
 5. Best posting time suggestion
 6. Expected engagement potential
 
-Be specific and actionable. Think like a growth hacker.`;
+Be specific and actionable. Think like a growth hacker.
+
+CRITICAL: Your response must sound like a human strategist, not an AI. Use natural language. No bullet-point-itis. No corporate speak. Write like a real marketing expert talking to a colleague.`;
 
 const WRITER_PROMPT = `You are a master social media content writer. Your content goes viral because it's authentic, engaging, and impossible to scroll past.
 
@@ -422,9 +445,11 @@ Write the complete post. Make every word count.`;
 
 const HOOK_PROMPT = `You are the world's best hook writer. Your opening lines make people STOP scrolling.
 
+Brand Context:
+{{brandContext}}
+
 Topic: {{input}}
 Platform: {{platform}}
-Tone: {{tone}}
 
 HOOK RULES:
 1. Maximum 15 words per hook
@@ -441,7 +466,9 @@ Generate 5 different hooks, ranked by expected engagement:
 4. [Bold/controversial hook]
 5. [Question-based hook]
 
-Number each hook clearly.`;
+Number each hook clearly.
+
+IMPORTANT: Hooks must sound like a real person wrote them. No AI-isms. No formulaic patterns. Each hook should feel unique, spontaneous, and human.`;
 
 // ==================== OPTIMIZER AGENT ====================
 
@@ -493,6 +520,9 @@ export class OptimizerAgent extends BaseAgent {
 
     // COLLABORATION: Integrate findings from other agents
     prompt += this.getBlackboardContext(context);
+
+    // User instruction override
+    prompt += this.getInstructionOverride(context);
 
     if (context.governorFeedback) {
       prompt += `\n\nGovernor feedback to address:\n${context.governorFeedback}`;
@@ -561,17 +591,26 @@ export class HybridAgent extends BaseAgent {
       prompt += `\n\nProven hook patterns:\n- ${hooks.join('\n- ')}`;
     }
 
+    // User instruction override
+    prompt += this.getInstructionOverride(context);
+
     if (context.governorFeedback) {
       prompt += `\n\nCRITICAL FEEDBACK:\n${context.governorFeedback}`;
     }
+
+    // COLLABORATION: Integrate findings from other agents
+    prompt += this.getBlackboardContext(context);
 
     return prompt;
   }
 }
 
+// ==================== VIDEO EDITOR AGENT ====================
+
 import { SynthesisAgent } from './SynthesisAgent';
 import { VisualCriticAgent } from './VisualCriticAgent';
-export { SynthesisAgent, VisualCriticAgent, VideoEditorAgent };
+
+export { SynthesisAgent, VisualCriticAgent };
 
 const CRITIC_PROMPT = `You are a ruthless but fair content critic. Your job is to make good content GREAT.
 
@@ -642,3 +681,12 @@ Your task: Create the PERFECT piece of content that:
 Write naturally like a human creator, not an AI. Be bold. Be memorable. Be shareable.
 
 CONTENT:`;
+
+export {
+  STRATEGIST_PROMPT,
+  WRITER_PROMPT,
+  HOOK_PROMPT,
+  CRITIC_PROMPT,
+  OPTIMIZER_PROMPT,
+  HYBRID_PROMPT,
+};

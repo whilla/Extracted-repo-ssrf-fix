@@ -16,7 +16,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs}\" --ignore-path .gitignore",
     "typecheck": "tsc --noEmit",
     "prepare": "husky install",
-    "test": "npm run test:agent && npm run test:agent-progress && npm run test:behavior-upgrade && npm run test:retry && npm run test:puter-service && npm run test:chat-storage && npm run test:orchestration && npm run test:nexus-core-integration && npm run test:ai-routing && npm run test:media-assets && npm run test:video-generation && npm run test:brand-identity && npm run test:provider-credentials && npm run test:upload-worker && npm run test:publishing-readiness && npm run test:server-ai-proxy",
+    "test": "npm run test:agent && npm run test:agent-progress && npm run test:behavior-upgrade && npm run test:retry && npm run test:puter-service && npm run test:chat-storage && npm run test:orchestration && npm run test:nexus-core-integration && npm run test:ai-routing && npm run test:media-assets && npm run test:video-generation && npm run test:brand-identity && npm run test:provider-credentials && npm run test:upload-worker && npm run test:publishing-readiness && npm run test:server-ai-proxy && npm run test:new-api-endpoints",
     "test:agent": "node --eval \"import('./tests/agent-behavior.test.mjs')\"",
     "test:agent-progress": "node --eval \"import('./tests/agent-progress.test.mjs')\"",
     "test:behavior-upgrade": "node --eval \"import('./tests/behavior-upgrade.test.mjs')\"",
@@ -32,7 +32,8 @@
     "test:provider-credentials": "node --eval \"import('./tests/provider-credentials.test.mjs')\"",
     "test:upload-worker": "node --eval \"import('./tests/upload-worker.test.mjs')\"",
     "test:publishing-readiness": "node --eval \"import('./tests/publishing-readiness.test.mjs')\"",
-    "test:server-ai-proxy": "node --eval \"import('./tests/server-ai-provider-proxy.test.mjs')\""
+    "test:server-ai-proxy": "node --eval \"import('./tests/server-ai-provider-proxy.test.mjs')\"",
+    "test:new-api-endpoints": "node --test tests/new-api-endpoints.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

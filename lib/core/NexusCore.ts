@@ -207,6 +207,22 @@ export class NexusCore {
 
       const brandKit = await loadBrandKit();
       const memoryContext = await this.state.memoryManager.buildContext(request.userInput);
+
+      // Persist custom instructions to long-term memory
+      if (request.customInstructions) {
+        await this.state.memoryManager.addInstruction(
+          request.customInstructions,
+          'user',
+          'high'
+        );
+      }
+      // Inject remembered instructions into agent context
+      const rememberedInstructions = this.state.memoryManager.getActiveInstructions();
+      const combinedInstructions = [
+        request.customInstructions,
+        ...rememberedInstructions.filter(i => i !== request.customInstructions),
+      ].filter(Boolean).join('\n');
+
       const governorState = await loadGovernorState();
 
       if (governorState.currentMode === 'failsafe') {
@@ -219,7 +235,7 @@ export class NexusCore {
       let finalResult: { content: string; outputs: AgentOutput[]; validation: GovernorValidation; assets: ProductionAsset[] } | null = null;
 
       while (regenerations < 3) {
-        const execution = await this.runPlanExecution(plan, memoryContext, brandKit, request);
+        const execution = await this.runPlanExecution(plan, memoryContext, brandKit, request, combinedInstructions);
         const validation = await this.state.governor.validate(execution.combinedContent, { platform: request.platform });
         
         const decision = await makeGovernorDecision(validation, { regenerationCount: regenerations });
@@ -292,7 +308,7 @@ export class NexusCore {
     };
   }
 
-  private async runPlanExecution(plan: any, memoryContext: any, brandKit: any, request: NexusRequest) {
+  private async runPlanExecution(plan: any, memoryContext: any, brandKit: any, request: NexusRequest, combinedInstructions?: string) {
     const outputs: AgentOutput[] = [];
     const taskOutputs = new Map<string, AgentOutput>();
     const blackboard = new AgentBlackboard(plan.id);
@@ -311,7 +327,7 @@ export class NexusCore {
             userInput: request.userInput,
             memoryContext,
             platform: request.platform || 'twitter',
-            customInstructions: request.customInstructions,
+            customInstructions: combinedInstructions || request.customInstructions,
             provider: await this.state.providerRouter.selectProvider({ taskType: 'content' }),
             blackboard,
           };

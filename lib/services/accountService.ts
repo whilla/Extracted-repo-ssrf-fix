@@ -2,6 +2,7 @@
 
 import { kvGet, kvSet, kvDelete } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { GROQ_URL, OPENROUTER_URL, DEEPSEEK_URL } from '@/lib/constants/api';
 
 // Provider account types
 export interface ProviderAccount {
@@ -368,14 +369,14 @@ export async function verifyProviderKey(providerId: string, apiKey: string): Pro
 
     switch (providerId) {
       case 'openrouter': {
-        const response = await fetch('https://openrouter.ai/api/v1/models', {
+        const response = await fetch(`${OPENROUTER_URL}/api/v1/models`, {
           headers: { 'Authorization': `Bearer ${sanitizedApiKey}` },
         });
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid OpenRouter API key' };
       }
 
       case 'groq': {
-        const response = await fetch('https://api.groq.com/openai/v1/models', {
+        const response = await fetch(`${GROQ_URL}/openai/v1/models`, {
           headers: { 'Authorization': `Bearer ${sanitizedApiKey}` },
         });
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid Groq API key' };
@@ -389,7 +390,7 @@ export async function verifyProviderKey(providerId: string, apiKey: string): Pro
       }
 
       case 'deepseek': {
-        const response = await fetch('https://api.deepseek.com/models', {
+        const response = await fetch(`${DEEPSEEK_URL}/models`, {
           headers: { 'Authorization': `Bearer ${sanitizedApiKey}` },
         });
         return { valid: response.ok, error: response.ok ? undefined : 'Invalid DeepSeek API key' };

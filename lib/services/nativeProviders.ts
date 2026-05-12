@@ -1,4 +1,5 @@
 import { getSecureCredential } from './providerCredentialUtils';
+import { serverGetCredential } from './serverCredentials';
 import { logger } from '@/lib/utils/logger';
 
 export interface NativePublishResult {
@@ -6,6 +7,14 @@ export interface NativePublishResult {
   postId?: string;
   error?: string;
   url?: string;
+}
+
+async function getCredential(key: string): Promise<string> {
+  // Try server-compatible path first (env vars)
+  const serverVal = await serverGetCredential(key);
+  if (serverVal) return serverVal;
+  // Fall back to browser path (Puter KV + Web Crypto)
+  return getCredential(key);
 }
 
 function logError(context: string, error: unknown): string {
@@ -57,7 +66,7 @@ const utils = {
 export const nativeProviders = {
   async publishDiscord(content: string, imageUrl?: string): Promise<NativePublishResult> {
     try {
-      const webhookUrl = await getSecureCredential('discord_webhook_url');
+      const webhookUrl = await getCredential('discord_webhook_url');
       if (!webhookUrl) throw new Error('Discord Webhook URL not configured');
 
       const payload = {
@@ -81,8 +90,8 @@ export const nativeProviders = {
 
   async publishReddit(content: string, title: string, subreddit: string = 'marketing'): Promise<NativePublishResult> {
     try {
-      const token = await getSecureCredential('reddit_access_token');
-      const clientId = await getSecureCredential('reddit_client_id');
+      const token = await getCredential('reddit_access_token');
+      const clientId = await getCredential('reddit_client_id');
       
       if (!token || !clientId) throw new Error('Reddit credentials not configured');
 
@@ -112,8 +121,8 @@ export const nativeProviders = {
 
   async publishWhatsApp(content: string, recipient: string): Promise<NativePublishResult> {
     try {
-      const token = await getSecureCredential('whatsapp_token');
-      const phoneId = await getSecureCredential('whatsapp_phone_id');
+      const token = await getCredential('whatsapp_token');
+      const phoneId = await getCredential('whatsapp_phone_id');
 
       if (!token || !phoneId) throw new Error('WhatsApp credentials not configured');
 
@@ -142,10 +151,10 @@ export const nativeProviders = {
 
   async publishTelegram(content: string, chatId?: string): Promise<NativePublishResult> {
     try {
-      const botToken = await getSecureCredential('telegram_bot_token');
+      const botToken = await getCredential('telegram_bot_token');
       if (!botToken) throw new Error('Telegram bot token not configured');
 
-      const targetChatId = chatId || await getSecureCredential('telegram_chat_id');
+      const targetChatId = chatId || await getCredential('telegram_chat_id');
       if (!targetChatId) throw new Error('Telegram chat ID not configured');
 
       const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -170,7 +179,7 @@ export const nativeProviders = {
 
   async publishSnapchat(content: string, imageUrl?: string): Promise<NativePublishResult> {
     try {
-      const accessToken = await getSecureCredential('snapchat_access_token');
+      const accessToken = await getCredential('snapchat_access_token');
       if (!accessToken) throw new Error('Snapchat access token not configured');
 
       const response = await fetch('https://adsapi.snapchat.com/v1/ads', {
@@ -197,9 +206,9 @@ export const nativeProviders = {
 
   async publishWordPress(content: string, title: string, status: 'publish' | 'draft' = 'publish'): Promise<NativePublishResult> {
     try {
-      const apiUrl = await getSecureCredential('wordpress_api_url');
-      const username = await getSecureCredential('wordpress_username');
-      const appPassword = await getSecureCredential('wordpress_application_password');
+      const apiUrl = await getCredential('wordpress_api_url');
+      const username = await getCredential('wordpress_username');
+      const appPassword = await getCredential('wordpress_application_password');
       
       if (!apiUrl || !username || !appPassword) throw new Error('WordPress credentials not configured');
 
@@ -232,8 +241,8 @@ export const nativeProviders = {
 
   async publishMedium(content: string, title: string): Promise<NativePublishResult> {
     try {
-      const token = await getSecureCredential('medium_integration_token');
-      const userId = await getSecureCredential('medium_user_id');
+      const token = await getCredential('medium_integration_token');
+      const userId = await getCredential('medium_user_id');
       if (!token || !userId) throw new Error('Medium credentials not configured');
 
       const response = await fetch(`https://api.medium.com/v1/users/${userId}/posts`, {
@@ -262,9 +271,9 @@ export const nativeProviders = {
 
   async publishMailchimp(content: string, title: string): Promise<NativePublishResult> {
     try {
-      const apiKey = await getSecureCredential('mailchimp_api_key');
-      const listId = await getSecureCredential('mailchimp_list_id');
-      const serverPrefix = await getSecureCredential('mailchimp_server_prefix'); // e.g. 'us19'
+      const apiKey = await getCredential('mailchimp_api_key');
+      const listId = await getCredential('mailchimp_list_id');
+      const serverPrefix = await getCredential('mailchimp_server_prefix'); // e.g. 'us19'
 
       if (!apiKey || !listId || !serverPrefix) throw new Error('Mailchimp credentials not configured');
 
@@ -300,7 +309,7 @@ export const nativeProviders = {
 
   async publishKlaviyo(content: string, title: string): Promise<NativePublishResult> {
     try {
-      const apiKey = await getSecureCredential('klaviyo_api_key');
+      const apiKey = await getCredential('klaviyo_api_key');
       if (!apiKey) throw new Error('Klaviyo API key not configured');
 
       const response = await fetch('https://a.klaviyo.com/api/campaigns/', {
@@ -330,7 +339,7 @@ export const nativeProviders = {
 
   async publishConvertKit(content: string, title: string): Promise<NativePublishResult> {
     try {
-      const apiKey = await getSecureCredential('convertkit_api_key');
+      const apiKey = await getCredential('convertkit_api_key');
       if (!apiKey) throw new Error('ConvertKit API key not configured');
 
       const response = await fetch('https://api.convertkit.com/v3/broadcasts', {
@@ -354,6 +363,185 @@ export const nativeProviders = {
       return { success: true, postId: String(data.id) };
     } catch (error) {
       return { success: false, error: utils.maskError('ConvertKit', error) };
+    }
+  },
+
+  async publishGhost(content: string, title: string, status: 'published' | 'draft' = 'published'): Promise<NativePublishResult> {
+    try {
+      const apiUrl = await getCredential('ghost_api_url');
+      const adminApiKey = await getCredential('ghost_admin_api_key');
+      
+      if (!apiUrl || !adminApiKey) throw new Error('Ghost credentials not configured');
+
+      const [id, secret] = adminApiKey.split(':');
+      const authHeader = `Ghost ${utils.safeBase64Encode(`${id}:${secret}`)}`;
+
+      const response = await fetch(`${apiUrl}/ghost/api/admin/posts/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          posts: [{
+            title: title.substring(0, 200),
+            html: content,
+            status: status,
+          }],
+        }),
+      });
+
+      const data = await utils.safeJsonParse(response);
+      if (!response.ok) throw new Error(data.errors?.[0]?.message || `Ghost API error: ${response.statusText}`);
+
+      return { success: true, postId: String(data.posts[0].id), url: data.posts[0].url };
+    } catch (error) {
+      return { success: false, error: utils.maskError('Ghost', error) };
+    }
+  },
+
+  async publishSubstack(content: string, title: string): Promise<NativePublishResult> {
+    try {
+      const apiKey = await getCredential('substack_api_key');
+      const newsletterId = await getCredential('substack_newsletter_id');
+      
+      if (!apiKey || !newsletterId) throw new Error('Substack credentials not configured');
+
+      const response = await fetch('https://substackapi.com/v1/publish', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          newsletter_id: newsletterId,
+          title: title.substring(0, 200),
+          body: content,
+          is_public: true,
+        }),
+      });
+
+      const data = await utils.safeJsonParse(response);
+      if (!response.ok) throw new Error(data.error || `Substack API error: ${response.statusText}`);
+
+      return { success: true, postId: data.id, url: data.url };
+    } catch (error) {
+      return { success: false, error: utils.maskError('Substack', error) };
+    }
+  },
+
+  // ==================== E-COMMERCE INTEGRATIONS ====================
+
+  async publishShopify(content: string, title: string, productId?: string): Promise<NativePublishResult> {
+    try {
+      const storeUrl = await getCredential('shopify_store_url');
+      const accessToken = await getCredential('shopify_access_token');
+      
+      if (!storeUrl || !accessToken) throw new Error('Shopify credentials not configured');
+
+      const url = `${storeUrl.replace(/\/$/, '')}/admin/api/2024-01/graphql.json`;
+
+      const escapedTitle = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const escapedContent = content.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+      const mutation = productId
+        ? `mutation productUpdate($input: ProductInput!) { productUpdate(id: "${productId}", input: $input) { product { id title } } }`
+        : `mutation productCreate($input: ProductInput!) { productCreate(input: $input) { product { id title } } }`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: mutation,
+          variables: {
+            input: {
+              title: title,
+              descriptionHtml: content,
+              ...(productId ? {} : { status: 'DRAFT' }),
+            },
+          },
+        }),
+      });
+
+      const data = await utils.safeJsonParse(response);
+      if (!response.ok) throw new Error(data.errors?.[0]?.message || `Shopify API error: ${response.statusText}`);
+
+      return { success: true, postId: data.product?.id, url: data.product ? `https://${storeUrl}/products/${title.replace(/\s+/g, '-')}` : undefined };
+    } catch (error) {
+      return { success: false, error: utils.maskError('Shopify', error) };
+    }
+  },
+
+  async publishAmazon(content: string, title: string, category?: string): Promise<NativePublishResult> {
+    try {
+      const apiKey = await getCredential('amazon_api_key');
+      const sellerId = await getCredential('amazon_seller_id');
+      
+      if (!apiKey || !sellerId) throw new Error('Amazon credentials not configured');
+
+      const escapedTitle = title.replace(/"/g, '\\"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const escapedContent = content.replace(/"/g, '\\"').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      const response = await fetch('https://sellingpartnerapi.amazon.com/listings/2021-08-01/definitions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'x-amz-seller-id': sellerId,
+          'x-amz-date': new Date().toISOString(),
+        },
+        body: JSON.stringify({
+          productType: 'PRODUCT',
+          requirements: 'LISTING',
+          marketplaceIds: ['ATVPDKIKX0DER'],
+          attributes: {
+            title: [{ value: escapedTitle, language_tag: 'en_US' }],
+            description: [{ value: escapedContent, language_tag: 'en_US' }],
+            ...(category ? { item_type: [{ value: category }] } : {}),
+          },
+        }),
+      });
+
+      const data = await utils.safeJsonParse(response);
+      if (!response.ok) throw new Error(data.errors?.[0]?.message || `Amazon API error: ${response.statusText}`);
+
+      return { success: true, postId: data.sku, url: `https://www.amazon.com/dp/${data.sku || data.asin}` };
+    } catch (error) {
+      return { success: false, error: utils.maskError('Amazon', error) };
+    }
+  },
+
+  async publishEtsy(content: string, title: string, category?: string): Promise<NativePublishResult> {
+    try {
+      const apiKey = await getCredential('etsy_api_key');
+      const shopId = await getCredential('etsy_shop_id');
+      
+      if (!apiKey || !shopId) throw new Error('Etsy credentials not configured');
+
+      const response = await fetch(`https://openapi.etsy.com/v3/shop/${shopId}/listings`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: title,
+          description: content,
+          price: 0,
+          quantity: 1,
+          category: category || 'all/other',
+        }),
+      });
+
+      const data = await utils.safeJsonParse(response);
+      if (!response.ok) throw new Error(data.error || `Etsy API error: ${response.statusText}`);
+
+      return { success: true, postId: String(data.listing_id), url: `https://www.etsy.com/listing/${data.listing_id}` };
+    } catch (error) {
+      return { success: false, error: utils.maskError('Etsy', error) };
     }
   },
 };

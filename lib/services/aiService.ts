@@ -1,6 +1,7 @@
 // AI Service - Multi-model support with retry logic
 import type { AIMessage, AIMessageContent, AIModel, BrandKit } from '@/lib/types';
 import { buildSystemPrompt, IMAGE_QUALITY_PROMPT, IMAGE_NEGATIVE_PROMPT } from '@/lib/constants/prompts';
+import { GROQ_URL, OPENROUTER_URL, NVIDIA_URL, TOGETHER_URL, FIREWORKS_URL, DEEPSEEK_URL, OLLAMA_URL, GITHUB_MODELS_URL, BYTEZ_URL, POE_URL } from '@/lib/constants/api';
 import { kvGet } from './puterService';
 import { buildMemoryContext } from './agentMemoryService';
 import { waitForPuter } from './puterService';
@@ -669,7 +670,7 @@ export async function chatWithGroq(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'groq',
-      'https://api.groq.com/openai/v1/chat/completions',
+      `${GROQ_URL}/openai/v1/chat/completions`,
       apiKey,
       messageArray,
       model.replace('groq/', '')
@@ -686,7 +687,6 @@ export async function chatWithOpenRouter(
   
   const apiKey = await getProviderApiKey('openrouter');
   
-  // Get memory context if not provided
   const memory = memoryContext ?? await buildMemoryContext();
   
   const messageArray = buildMessageArray(messages, brandKit, memory);
@@ -694,7 +694,7 @@ export async function chatWithOpenRouter(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'openrouter',
-      'https://openrouter.ai/api/v1/chat/completions',
+      `${OPENROUTER_URL}/api/v1/chat/completions`,
       apiKey,
       messageArray,
       model.replace('openrouter/', ''),
@@ -717,7 +717,7 @@ export async function chatWithGitHubModels(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'githubmodels',
-      'https://models.github.ai/inference/chat/completions',
+      `${GITHUB_MODELS_URL}/inference/chat/completions`,
       apiKey,
       messageArray,
       model
@@ -737,7 +737,7 @@ export async function chatWithBytez(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'bytez',
-      'https://api.bytez.com/v1/chat/completions',
+      `${BYTEZ_URL}/v1/chat/completions`,
       apiKey,
       messageArray,
       model
@@ -757,7 +757,7 @@ export async function chatWithPoe(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'poe',
-      'https://api.poe.com/v1/chat/completions',
+      `${POE_URL}/v1/chat/completions`,
       apiKey,
       messageArray,
       model
@@ -782,7 +782,7 @@ export async function chatWithNvidia(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'nvidia',
-      'https://integrate.api.nvidia.com/v1/chat/completions',
+      `${NVIDIA_URL}/v1/chat/completions`,
       apiKey,
       messageArray,
       model.replace('nvidia/', '')
@@ -802,7 +802,7 @@ export async function chatWithTogether(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'together',
-      'https://api.together.xyz/v1/chat/completions',
+      `${TOGETHER_URL}/v1/chat/completions`,
       apiKey,
       messageArray,
       model
@@ -822,7 +822,7 @@ export async function chatWithFireworks(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'fireworks',
-      'https://api.fireworks.ai/inference/v1/chat/completions',
+      `${FIREWORKS_URL}/inference/v1/chat/completions`,
       apiKey,
       messageArray,
       model
@@ -837,7 +837,7 @@ export async function chatWithOllama(
 ): Promise<string> {
   const { model = 'llama3.2', brandKit = null, memoryContext } = options;
   
-  const baseUrl = await kvGet('ollama_url') || 'http://localhost:11434';
+  const baseUrl = await kvGet('ollama_url') || OLLAMA_URL;
   
   // Get memory context if not provided
   const memory = memoryContext ?? await buildMemoryContext();
@@ -883,7 +883,7 @@ export async function chatWithDeepSeek(
   return withRetry(async () => {
     return callOpenAICompatibleChat(
       'deepseek',
-      'https://api.deepseek.com/chat/completions',
+      `${DEEPSEEK_URL}/chat/completions`,
       apiKey,
       messageArray,
       model

@@ -12,6 +12,7 @@ import {
   type ApprovalRequest 
 } from '@/lib/services/publishSafetyService';
 import { useAuth } from '@/lib/context/AuthContext';
+import { toast } from 'sonner';
 import { 
   CheckCircle2, 
   XCircle, 
@@ -53,7 +54,10 @@ export default function ApprovalsPage() {
   };
 
   const handleApprove = async (requestId: string) => {
-    const result = await approveContent(requestId, user?.username || 'admin');
+    if (!user?.username) {
+      throw new Error('Unauthorized: no username found')
+    }
+    const result = await approveContent(requestId, user.username);
     if (result) {
       await loadData();
     }
@@ -61,10 +65,13 @@ export default function ApprovalsPage() {
 
   const handleReject = async (requestId: string) => {
     if (!rejectReason.trim()) {
-      alert('Please provide a reason for rejection');
+      toast.error('Please provide a reason for rejection');
       return;
     }
-    const result = await rejectContent(requestId, user?.username || 'admin', rejectReason);
+    if (!user?.username) {
+      throw new Error('Unauthorized: no username found')
+    }
+    const result = await rejectContent(requestId, user.username, rejectReason);
     if (result) {
       setRejectReason('');
       setExpandedId(null);

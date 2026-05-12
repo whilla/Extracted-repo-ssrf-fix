@@ -117,8 +117,10 @@ export function CommandPalette() {
   }, [filteredCommands]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // Open with Cmd+K or Ctrl+K
+    // Open with Cmd+K or Ctrl+K (skip if typing in an input)
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       e.preventDefault();
       setOpen(prev => !prev);
       return;

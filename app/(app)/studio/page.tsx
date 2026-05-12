@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { ContentCard } from '@/components/content/ContentCard';
 import { ApprovalGate } from '@/components/content/ApprovalGate';
 import { runContentPipeline, getContentSuggestions } from '@/lib/services/contentEngine';
+import { toast } from 'sonner';
 import { listDrafts, loadDraft } from '@/lib/services/memoryService';
 import { kvGet, kvSet } from '@/lib/services/puterService';
 import { useAuth } from '@/lib/context/AuthContext';
@@ -142,7 +143,7 @@ export default function ContentStudioPage() {
       mutateDrafts();
     } catch (error) {
       console.error('Generation error:', error);
-      alert(`Generation failed: ${(error as Error).message}`);
+      toast.error(`Generation failed: ${(error as Error).message}`);
     } finally {
       setIsGenerating(false);
       setGenerationProgress(null);

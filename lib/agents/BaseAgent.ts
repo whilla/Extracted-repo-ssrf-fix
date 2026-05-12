@@ -15,7 +15,7 @@ import type { ViralScore } from '../core/ViralScoringEngine';
 import type { Provider } from '../core/ProviderRouter';
 
 // Agent Types
-export type AgentRole = 'strategist' | 'writer' | 'hook' | 'critic' | 'optimizer' | 'hybrid' | 'custom';
+export type AgentRole = 'strategist' | 'writer' | 'hook' | 'critic' | 'optimizer' | 'hybrid' | 'custom' | 'videoEditor';
 
 export type AgentCapability = 
   | 'content_generation'
@@ -29,7 +29,8 @@ export type AgentCapability =
   | 'critical_validation'
   | 'visual_description'
   | 'synthesis'
-  | 'visual_critique';
+  | 'visual_critique'
+  | 'video_editing';
 
 export interface AgentConfig {
   name: string;
@@ -75,6 +76,7 @@ export interface AgentExecutionContext {
   blackboard?: import('../core/AgentBlackboard').AgentBlackboard;
   perceptionService?: import('../services/multiModalPerceptionService').MultiModalPerceptionService;
   cameraAngles?: string; // controls for visual assets
+  timelineState?: any;
 }
 
 export interface PerformanceRecord {
@@ -177,6 +179,19 @@ Deep Reasoning Mode:
 - Keep language natural and human; avoid corporate or robotic phrasing.
 - Do not reveal internal reasoning steps or chain-of-thought.
 - Return only the final deliverable content.`;
+  }
+
+  /**
+   * Generates an instruction override block for injection into agent prompts.
+   * This ensures user instructions ALWAYS take priority over agent defaults.
+   */
+  protected getInstructionOverride(context: AgentExecutionContext): string {
+    if (!context.customInstructions) return '';
+    return `\n\n🔴 CRITICAL - USER INSTRUCTION OVERRIDE:
+The following instructions MUST be followed exactly. They override all default behavior, style guidelines, and content rules above:
+${context.customInstructions}
+
+FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
   }
 
   // ==================== CORE METHODS ====================

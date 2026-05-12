@@ -92,6 +92,12 @@ export async function saveTemplate(template: ContentTemplate): Promise<void> {
   await saveFile('/NexusAI/templates/list.json', templates);
 }
 
+export async function deleteTemplate(templateId: string): Promise<void> {
+  const templates = await getTemplates();
+  const filtered = templates.filter(t => t.id !== templateId);
+  await saveFile('/NexusAI/templates/list.json', filtered);
+}
+
 export async function createTemplateFromContent(content: string, brandKit: BrandKit | null): Promise<ContentTemplate> {
   const prompt = `Analyze this social media post and create a reusable template from it.
   

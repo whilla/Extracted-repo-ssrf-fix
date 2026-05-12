@@ -255,8 +255,8 @@ export class AutomationEngine {
       taskTypes: ['content', 'hook'],
       pauseOnFailure: true,
       maxConsecutiveFailures: 3,
-      autoPublish: false,
-      requireApproval: true,
+      autoPublish: true,
+      requireApproval: false,
     };
 
     this.state = {
@@ -414,6 +414,23 @@ export class AutomationEngine {
     console.log('[AutomationEngine] Running cycle...');
     let trackedGenerationId: string | null = null;
     let activeQueueEntry: AutomationQueueEntry | null = null;
+
+    // Check agent health - re-initialize if needed
+    try {
+      const { loadAgents } = await import('../services/multiAgentService.js');
+      await loadAgents();
+    } catch (error) {
+      console.warn('[AutomationEngine] Agent health check skipped:', error);
+    }
+
+    // Check provider health before running
+    try {
+      await this.ensureProvidersAvailable();
+    } catch (error) {
+      console.error('[AutomationEngine] Provider health check failed:', error);
+      this.scheduleNextRun();
+      return;
+    }
 
     // Check hourly limit
     this.checkHourlyReset();

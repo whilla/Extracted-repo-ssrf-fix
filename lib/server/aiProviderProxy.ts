@@ -1,4 +1,5 @@
 import type { AIMessageContent } from '@/lib/types';
+import { OPENROUTER_URL, GITHUB_MODELS_URL, BYTEZ_URL, POE_URL, GROQ_URL, DEEPSEEK_URL, NVIDIA_URL, TOGETHER_URL, FIREWORKS_URL } from '@/lib/constants/api';
 
 export const SERVER_CHAT_PROVIDERS = [
   'openrouter',
@@ -29,27 +30,27 @@ interface ProviderProxyConfig {
 
 const PROVIDER_CONFIGS: Record<ServerChatProvider, ProviderProxyConfig> = {
   openrouter: {
-    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+    endpoint: `${OPENROUTER_URL}/api/v1/chat/completions`,
     envKeys: ['OPENROUTER_API_KEY', 'OPENROUTER_KEY'],
     kind: 'openai-compatible',
   },
   githubmodels: {
-    endpoint: 'https://models.github.ai/inference/chat/completions',
+    endpoint: `${GITHUB_MODELS_URL}/inference/chat/completions`,
     envKeys: ['GITHUB_MODELS_API_KEY', 'GITHUB_MODELS_TOKEN', 'GITHUB_TOKEN'],
     kind: 'openai-compatible',
   },
   bytez: {
-    endpoint: 'https://api.bytez.com/v1/chat/completions',
+    endpoint: `${BYTEZ_URL}/v1/chat/completions`,
     envKeys: ['BYTEZ_API_KEY'],
     kind: 'openai-compatible',
   },
   poe: {
-    endpoint: 'https://api.poe.com/v1/chat/completions',
+    endpoint: `${POE_URL}/v1/chat/completions`,
     envKeys: ['POE_API_KEY'],
     kind: 'openai-compatible',
   },
   groq: {
-    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    endpoint: `${GROQ_URL}/openai/v1/chat/completions`,
     envKeys: ['GROQ_API_KEY'],
     kind: 'openai-compatible',
   },
@@ -59,22 +60,22 @@ const PROVIDER_CONFIGS: Record<ServerChatProvider, ProviderProxyConfig> = {
     kind: 'gemini',
   },
   deepseek: {
-    endpoint: 'https://api.deepseek.com/chat/completions',
+    endpoint: `${DEEPSEEK_URL}/chat/completions`,
     envKeys: ['DEEPSEEK_API_KEY'],
     kind: 'openai-compatible',
   },
   nvidia: {
-    endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
+    endpoint: `${NVIDIA_URL}/v1/chat/completions`,
     envKeys: ['NVIDIA_API_KEY', 'NVIDIA_NIM_API_KEY'],
     kind: 'openai-compatible',
   },
   together: {
-    endpoint: 'https://api.together.xyz/v1/chat/completions',
+    endpoint: `${TOGETHER_URL}/v1/chat/completions`,
     envKeys: ['TOGETHER_API_KEY'],
     kind: 'openai-compatible',
   },
   fireworks: {
-    endpoint: 'https://api.fireworks.ai/inference/v1/chat/completions',
+    endpoint: `${FIREWORKS_URL}/inference/v1/chat/completions`,
     envKeys: ['FIREWORKS_API_KEY'],
     kind: 'openai-compatible',
   },

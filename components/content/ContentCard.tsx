@@ -6,8 +6,9 @@ import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { deleteDraft, saveDraft } from '@/lib/services/memoryService';
 import type { ContentDraft } from '@/lib/types';
-import { Calendar, Trash2, Edit2, Copy, MoreVertical, Image as ImageIcon } from 'lucide-react';
+import { Calendar, Trash2, Edit2, Copy, MoreVertical, Image as ImageIcon, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ContentPreview } from './ContentPreview';
 
 interface ContentCardProps {
   draft: ContentDraft;
@@ -21,6 +22,7 @@ interface ContentCardProps {
 export function ContentCard({ draft, currentVersion, onUpdate, onSchedule, onDelete, onDuplicate }: ContentCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   const latestVersion = currentVersion || draft.versions[draft.versions.length - 1];
   const statusMap: Record<string, 'success' | 'warning' | 'error' | 'info' | 'pending'> = {
@@ -66,6 +68,19 @@ export function ContentCard({ draft, currentVersion, onUpdate, onSchedule, onDel
 
   return (
     <GlassCard className="relative group">
+      {/* Preview modal */}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowPreview(false)}>
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <ContentPreview
+              content={latestVersion.text}
+              title={draft.title}
+              mediaUrls={draft.mediaUrls}
+              onClose={() => setShowPreview(false)}
+            />
+          </div>
+        </div>
+      )}
       {/* Status Badge */}
       <div className="flex items-center justify-between mb-3">
         <StatusBadge status={statusMap[draft.status]} label={draft.status} />
@@ -117,6 +132,13 @@ export function ContentCard({ draft, currentVersion, onUpdate, onSchedule, onDel
 
       {/* Actions */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => setShowPreview(true)}
+          className="p-2 rounded-lg hover:bg-muted/50 transition-colors"
+          aria-label="Preview content"
+        >
+          <Eye className="w-4 h-4 text-nexus-cyan" />
+        </button>
         {draft.status === 'draft' && onSchedule && (
           <NeonButton
             variant="secondary"
@@ -153,6 +175,16 @@ export function ContentCard({ draft, currentVersion, onUpdate, onSchedule, onDel
                 onClick={() => setShowMenu(false)}
               />
               <div className="absolute right-0 bottom-full mb-2 w-40 glass-card rounded-lg p-1 z-20">
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowPreview(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted/50 text-sm"
+                >
+                  <Eye className="w-4 h-4" />
+                  Preview
+                </button>
                 <button
                   onClick={() => {
                     setShowMenu(false);

@@ -23,10 +23,10 @@ jobs:
         run: npm ci
 
       - name: TypeScript check
-        run: npm run typecheck || true
+        run: npm run typecheck
 
       - name: Build Next.js
-        run: NEXT_IGNORE_TS_ERRORS=1 npm run build
+        run: npm run build
 
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v25

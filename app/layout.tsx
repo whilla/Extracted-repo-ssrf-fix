@@ -6,6 +6,11 @@ import { Providers } from './providers'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 import { Toaster } from 'sonner'
 import GlobalErrorBoundary from '@/components/GlobalErrorBoundary'
+import { initSentry } from '@/lib/utils/sentry'
+
+if (typeof window !== 'undefined') {
+  initSentry();
+}
 
 const runtimeBootstrap = `
 (() => {
@@ -48,6 +53,7 @@ export const metadata: Metadata = {
   description: 'Create, validate, and publish high-quality content across all major social platforms with AI assistance.',
   generator: 'v0.app',
   manifest: '/manifest.json',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://nexusai.app'),
   icons: {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
     apple: '/icon.svg',
@@ -56,6 +62,25 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'NexusAI',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: '/',
+    siteName: 'NexusAI',
+    title: 'NexusAI - AI-Powered Social Media Automation',
+    description: 'Create, validate, and publish high-quality content across all major social platforms with AI assistance.',
+    images: [{ url: '/og-image.svg', width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'NexusAI - AI-Powered Social Media Automation',
+    description: 'Create, validate, and publish high-quality content across all major social platforms with AI assistance.',
+    images: ['/og-image.svg'],
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 }
 
