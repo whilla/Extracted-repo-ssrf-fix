@@ -1,9 +1,3 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-
-const execPromise = promisify(exec);
-
 export interface TranscriptionResult {
   text: string;
   success?: boolean;
@@ -22,6 +16,11 @@ export const audioTranscriptionService = {
    */
   async transcribeFile(filePath: string): Promise<TranscriptionResult> {
     try {
+      // Dynamic import to avoid webpack bundling Node.js built-ins
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execPromise = promisify(exec);
+      
       // Execute the transcribe script from the skill location
       // The script expects the file path as the first argument
       const { stdout, stderr } = await execPromise(`node /root/.pi/agent/skills/transcribe/transcribe.js "${filePath}"`);
