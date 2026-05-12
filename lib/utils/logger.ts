@@ -96,33 +96,43 @@ class Logger {
     console.log(JSON.stringify({ type: 'log_batch', logs }));
   }
 
-  debug(category: string, message: string, context?: LogContext): void {
+  debug(category: string, messageOrContext: string | LogContext, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.DEBUG)) return;
-    const entry = (this as any).formatLog(LogLevel.DEBUG, category, message, context);
+    const message = typeof messageOrContext === 'string' ? messageOrContext : '';
+    const ctx = typeof messageOrContext === 'object' ? messageOrContext : context;
+    const entry = (this as any).formatLog(LogLevel.DEBUG, category, message, ctx);
     (this as any).output(entry);
   }
 
-  info(category: string, message: string, context?: LogContext): void {
+  info(category: string, messageOrContext: string | LogContext, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.INFO)) return;
-    const entry = (this as any).formatLog(LogLevel.INFO, category, message, context);
+    const message = typeof messageOrContext === 'string' ? messageOrContext : '';
+    const ctx = typeof messageOrContext === 'object' ? messageOrContext : context;
+    const entry = (this as any).formatLog(LogLevel.INFO, category, message, ctx);
     (this as any).output(entry);
   }
 
-  warn(category: string, message: string, context?: LogContext): void {
+  warn(category: string, messageOrContext: string | LogContext, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.WARN)) return;
-    const entry = (this as any).formatLog(LogLevel.WARN, category, message, context);
+    const message = typeof messageOrContext === 'string' ? messageOrContext : '';
+    const ctx = typeof messageOrContext === 'object' ? messageOrContext : context;
+    const entry = (this as any).formatLog(LogLevel.WARN, category, message, ctx);
     (this as any).output(entry);
   }
 
-  error(category: string, message: string, context?: LogContext): void {
+  error(category: string, messageOrContext: string | LogContext, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.ERROR)) return;
-    const entry = (this as any).formatLog(LogLevel.ERROR, category, message, context);
+    const message = typeof messageOrContext === 'string' ? messageOrContext : '';
+    const ctx = typeof messageOrContext === 'object' ? messageOrContext : context;
+    const entry = (this as any).formatLog(LogLevel.ERROR, category, message, ctx);
     (this as any).output(entry);
   }
 
-  fatal(category: string, message: string, context?: LogContext): void {
+  fatal(category: string, messageOrContext: string | LogContext, context?: LogContext): void {
     if (!this.shouldLog(LogLevel.FATAL)) return;
-    const entry = (this as any).formatLog(LogLevel.FATAL, category, message, context);
+    const message = typeof messageOrContext === 'string' ? messageOrContext : '';
+    const ctx = typeof messageOrContext === 'object' ? messageOrContext : context;
+    const entry = (this as any).formatLog(LogLevel.FATAL, category, message, ctx);
     (this as any).output(entry);
   }
 

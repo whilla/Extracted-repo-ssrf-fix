@@ -487,6 +487,13 @@ function getPlatformCharLimit(platform: Platform): number {
     whatsapp: 65536,
     telegram: 4096,
     snapchat: 1000,
+    wordpress: 50000,
+    medium: 100000,
+    ghost: 50000,
+    substack: 100000,
+    mailchimp: 10000,
+    klaviyo: 10000,
+    convertkit: 10000,
     general: 10000,
   };
   

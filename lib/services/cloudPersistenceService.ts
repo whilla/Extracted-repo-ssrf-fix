@@ -185,10 +185,12 @@ export async function loadCloudDraft(id: string): Promise<ContentDraft | null> {
     currentVersion: data.current_version || 1,
     status: data.status,
     platforms: data.platforms || [],
-    contentType: data.content_type || undefined,
+    contentType: (data.content_type as ContentDraft['contentType']) || undefined,
     scheduledAt: data.scheduled_at || undefined,
     publishedAt: data.published_at || undefined,
     publishResults: data.publish_results || undefined,
+    title: (data.versions && data.versions[data.versions.length - 1]?.text?.slice(0, 80)) || 'Draft',
+    content: (data.versions && data.versions[data.versions.length - 1]?.text) || '',
   };
 }
 
@@ -215,10 +217,12 @@ export async function listCloudDrafts(): Promise<ContentDraft[]> {
     currentVersion: row.current_version || 1,
     status: row.status,
     platforms: row.platforms || [],
-    contentType: row.content_type || undefined,
+    contentType: (row.content_type as ContentDraft['contentType']) || undefined,
     scheduledAt: row.scheduled_at || undefined,
     publishedAt: row.published_at || undefined,
     publishResults: row.publish_results || undefined,
+    title: (row.versions && row.versions[row.versions.length - 1]?.text?.slice(0, 80)) || 'Draft',
+    content: (row.versions && row.versions[row.versions.length - 1]?.text) || '',
   }));
 }
 

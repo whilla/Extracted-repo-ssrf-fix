@@ -28,4 +28,5 @@ export {
   HybridAgent,
   SynthesisAgent,
   VisualCriticAgent,
+  VideoEditorAgent,
 } from './SpecializedAgents';

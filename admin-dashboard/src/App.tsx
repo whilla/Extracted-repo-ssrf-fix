@@ -42,7 +42,7 @@ const PLATFORM_GROUPS = [
       { id: 'discord', name: 'Discord', keys: ['discord_webhook_url'] },
       { id: 'reddit', name: 'Reddit', keys: ['reddit_access_token', 'reddit_client_id'] },
       { id: 'whatsapp', name: 'WhatsApp', keys: ['whatsapp_token', 'whatsapp_phone_id', 'whatsapp_broadcast_list'] },
-      { id: 'telegram', name: 'Telegram', keys ['telegram_bot_token', 'telegram_chat_id'] },
+      { id: 'telegram', name: 'Telegram', keys: ['telegram_bot_token', 'telegram_chat_id'] },
       { id: 'snapchat', name: 'Snapchat', keys: ['snapchat_access_token'] },
     ]
   },

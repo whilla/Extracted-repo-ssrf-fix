@@ -38,7 +38,9 @@ class DraftsService {
       currentVersion: 1,
       status: 'draft',
       platforms: params.platforms,
-      contentType: params.contentType,
+      contentType: params.contentType as ContentDraft['contentType'],
+      title: version.text.slice(0, 80),
+      content: version.text,
     };
 
     // Save to memory

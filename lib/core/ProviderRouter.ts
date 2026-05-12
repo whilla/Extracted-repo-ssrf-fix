@@ -9,13 +9,13 @@
  * - Handle fallback provider switching
  */
 
-import { kvGet, kvSet } from '../services/puterService';
-import { universalChat } from '../services/aiService';
-import { generateImage as generateImageAsset } from '../services/imageGenerationService';
-import { generateVideo as generateVideoAsset } from '../services/videoGenerationService';
-import { generateMusic } from '../services/musicGenerationService';
-import { textToSpeech } from '../services/voiceService';
-import { tokenBudgetManager } from '../services/tokenBudgetManager';
+import { kvGet, kvSet } from '../services/puterService.ts';
+import { universalChat } from '../services/aiService.ts';
+import { generateImage as generateImageAsset } from '../services/imageGenerationService.ts';
+import { generateVideo as generateVideoAsset } from '../services/videoGenerationService.ts';
+import { generateMusic } from '../services/musicGenerationService.ts';
+import { textToSpeech } from '../services/voiceService.ts';
+import { tokenBudgetManager } from '../services/tokenBudgetManager.ts';
 
 // Provider Types
 export type ProviderType = 'llm' | 'image' | 'audio' | 'music' | 'video';

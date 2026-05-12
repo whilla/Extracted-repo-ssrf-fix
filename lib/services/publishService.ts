@@ -64,6 +64,13 @@ const PLATFORM_MAP: Record<Platform, string> = {
   whatsapp: 'whatsapp',
   telegram: 'telegram',
   snapchat: 'snapchat',
+  wordpress: 'wordpress',
+  medium: 'medium',
+  ghost: 'ghost',
+  substack: 'substack',
+  mailchimp: 'mailchimp',
+  klaviyo: 'klaviyo',
+  convertkit: 'convertkit',
   general: 'general',
 };
 
@@ -110,6 +117,13 @@ function createEmptyPlatformDetails(): Record<Platform, { connected: boolean; us
     whatsapp: { connected: false },
     telegram: { connected: false },
     snapchat: { connected: false },
+    wordpress: { connected: false },
+    medium: { connected: false },
+    ghost: { connected: false },
+    substack: { connected: false },
+    mailchimp: { connected: false },
+    klaviyo: { connected: false },
+    convertkit: { connected: false },
     general: { connected: false },
   };
 }

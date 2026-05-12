@@ -42,7 +42,8 @@ export const repurposingService = {
    * Repurposes master content for multiple platforms simultaneously.
    */
   async repurpose(request: RepurposeRequest): Promise<RepurposeResult> {
-    const { masterContent, platforms, toneAdjustment, competitiveGaps } = request;
+    const { platforms, toneAdjustment, competitiveGaps } = request;
+    let { masterContent } = request;
     
     // 1. Source Resolution: Convert any media source into a text master
     if (masterContent.includes('youtube.com/') || masterContent.includes('youtu.be/')) {

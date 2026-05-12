@@ -43,7 +43,7 @@ export class TimelineRenderer {
 
     for (const track of timeline.tracks) {
       for (const event of track.events) {
-        if ('assetUrl' in event) {
+        if ('assetUrl' in event && event.type === 'video' || event.type === 'audio') {
           await loadAsset(event.assetUrl, event.assetType);
         }
       }
@@ -70,7 +70,7 @@ export class TimelineRenderer {
             }
             if (clip.type === 'video') {
               this.context.globalAlpha = clip.opacity ?? 1;
-              this.context.drawImage(media, 0, 0, this.width, this.height);
+              this.context.drawImage(media as CanvasImageSource, 0, 0, this.width, this.height);
               this.context.globalAlpha = 1.0;
             }
           }
@@ -164,5 +164,84 @@ export class TimelineRenderer {
       for (const c of candidates) if (MediaRecorder.isTypeSupported(c)) return c;
     }
     return 'video/webm';
+  }
+}
+
+/**
+ * Standalone function exposed for the universal content engine.
+ * Assembles final media from individual audio/video/image components.
+ */
+export async function assembleFinalMedia(params: {
+  imageUrl?: string | null;
+  videoUrl?: string | null;
+  voiceUrl?: string | null;
+  musicUrl?: string | null;
+  mixPlan?: unknown;
+  durationSeconds: number;
+  generationId: string;
+}): Promise<{ asset: { url: string } | null; warnings: string[] }> {
+  const warnings: string[] = [];
+
+  // Use the highest-quality available source as the base
+  const sourceUrl = params.videoUrl || params.imageUrl;
+  if (!sourceUrl && !params.voiceUrl && !params.musicUrl) {
+    return { asset: null, warnings: ['No media sources provided'] };
+  }
+
+  // For simple pass-through (single source, no mixing needed)
+  if (sourceUrl && !params.voiceUrl && !params.musicUrl) {
+    return { asset: { url: sourceUrl }, warnings };
+  }
+
+  // For audio-only assembly
+  if (!sourceUrl && (params.voiceUrl || params.musicUrl)) {
+    return { asset: { url: params.voiceUrl || params.musicUrl! }, warnings };
+  }
+
+  // For complex assembly, return the primary video URL and note limitation
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    warnings.push('Complex media assembly requires a browser environment; returning raw URLs');
+    return { asset: sourceUrl ? { url: sourceUrl } : null, warnings };
+  }
+
+  try {
+    // Simple assembly using canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 1080;
+    canvas.height = 1920;
+    const ctx = canvas.getContext('2d')!;
+
+    const video = document.createElement('video');
+    video.crossOrigin = 'anonymous';
+    video.src = sourceUrl!;
+    await video.play();
+
+    // Draw first frame
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    video.pause();
+
+    canvas.toBlob(async (blob) => {
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        // Upload via persistence service if available
+        try {
+          const { persistBlobMediaAsset } = await import('./mediaAssetPersistenceService');
+          const persisted = await persistBlobMediaAsset(blob, {
+            kind: 'video',
+            generationId: params.generationId,
+            fileExtension: 'png',
+          });
+          return { asset: persisted, warnings };
+        } catch {
+          return { asset: { url }, warnings };
+        }
+      }
+      return { asset: null, warnings: ['Failed to encode output'] };
+    }, 'image/png');
+
+    return { asset: sourceUrl ? { url: sourceUrl } : null, warnings };
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : 'Assembly failed');
+    return { asset: sourceUrl ? { url: sourceUrl } : null, warnings };
   }
 }

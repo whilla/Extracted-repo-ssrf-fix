@@ -68,7 +68,7 @@ export class TimelineService {
     if (!track) throw new Error('Track not found');
     if (track.type !== event.type) throw new Error(`Track type mismatch: track is ${track.type}, event is ${event.type}`);
 
-    track.events.push(event);
+    track.events.push(event as any);
     await this.saveTimeline(timeline);
   }
 

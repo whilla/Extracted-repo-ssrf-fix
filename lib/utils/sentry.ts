@@ -29,7 +29,7 @@ export function initSentry() {
   const env = getEnvConfig();
   
   if (typeof window !== 'undefined' && window.Sentry) {
-    // @ts-expect-error - Sentry loaded via script tag
+    // Sentry loaded via script tag
     const Sentry = window.Sentry;
     
     if (typeof Sentry.init === 'function') {

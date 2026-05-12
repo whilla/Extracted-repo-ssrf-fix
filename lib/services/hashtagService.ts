@@ -52,6 +52,13 @@ const PLATFORM_HASHTAG_LIMITS: Record<Platform, number> = {
   whatsapp: 10,
   telegram: 10,
   snapchat: 5,
+  wordpress: 30,
+  medium: 30,
+  ghost: 30,
+  substack: 30,
+  mailchimp: 10,
+  klaviyo: 10,
+  convertkit: 10,
   general: 10,
 };
 

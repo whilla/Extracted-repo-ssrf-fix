@@ -126,6 +126,38 @@ const INDUSTRY_BEST_TIMES: Record<string, Record<Platform, TimeSlot[]>> = {
       { day: 1, hour: 10, score: 85, label: 'Monday 10 AM' },
       { day: 5, hour: 15, score: 82, label: 'Friday 3 PM' },
     ],
+    wordpress: [
+      { day: 2, hour: 9, score: 80, label: 'Tuesday 9 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+      { day: 1, hour: 10, score: 75, label: 'Monday 10 AM' },
+    ],
+    medium: [
+      { day: 2, hour: 9, score: 80, label: 'Tuesday 9 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+      { day: 1, hour: 10, score: 75, label: 'Monday 10 AM' },
+    ],
+    ghost: [
+      { day: 2, hour: 9, score: 80, label: 'Tuesday 9 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+      { day: 1, hour: 10, score: 75, label: 'Monday 10 AM' },
+    ],
+    substack: [
+      { day: 2, hour: 9, score: 80, label: 'Tuesday 9 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+      { day: 1, hour: 10, score: 75, label: 'Monday 10 AM' },
+    ],
+    mailchimp: [
+      { day: 2, hour: 10, score: 80, label: 'Tuesday 10 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+    ],
+    klaviyo: [
+      { day: 2, hour: 10, score: 80, label: 'Tuesday 10 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+    ],
+    convertkit: [
+      { day: 2, hour: 10, score: 80, label: 'Tuesday 10 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+    ],
   },
   'b2b': {
     linkedin: [
@@ -225,6 +257,38 @@ const INDUSTRY_BEST_TIMES: Record<string, Record<Platform, TimeSlot[]>> = {
       { day: 4, hour: 10, score: 85, label: 'Thursday 10 AM' },
       { day: 1, hour: 10, score: 82, label: 'Monday 10 AM' },
       { day: 5, hour: 14, score: 80, label: 'Friday 2 PM' },
+    ],
+    wordpress: [
+      { day: 2, hour: 9, score: 80, label: 'Tuesday 9 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+      { day: 1, hour: 10, score: 75, label: 'Monday 10 AM' },
+    ],
+    medium: [
+      { day: 2, hour: 9, score: 80, label: 'Tuesday 9 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+      { day: 1, hour: 10, score: 75, label: 'Monday 10 AM' },
+    ],
+    ghost: [
+      { day: 2, hour: 9, score: 80, label: 'Tuesday 9 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+      { day: 1, hour: 10, score: 75, label: 'Monday 10 AM' },
+    ],
+    substack: [
+      { day: 2, hour: 9, score: 80, label: 'Tuesday 9 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+      { day: 1, hour: 10, score: 75, label: 'Monday 10 AM' },
+    ],
+    mailchimp: [
+      { day: 2, hour: 10, score: 80, label: 'Tuesday 10 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+    ],
+    klaviyo: [
+      { day: 2, hour: 10, score: 80, label: 'Tuesday 10 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
+    ],
+    convertkit: [
+      { day: 2, hour: 10, score: 80, label: 'Tuesday 10 AM' },
+      { day: 4, hour: 10, score: 78, label: 'Thursday 10 AM' },
     ],
   },
 };

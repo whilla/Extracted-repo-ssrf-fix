@@ -417,7 +417,7 @@ export class AutomationEngine {
 
     // Check agent health - re-initialize if needed
     try {
-      const { loadAgents } = await import('../services/multiAgentService.js');
+      const { loadAgents } = await import('../services/multiAgentService');
       await loadAgents();
     } catch (error) {
       console.warn('[AutomationEngine] Agent health check skipped:', error);

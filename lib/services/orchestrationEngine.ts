@@ -255,7 +255,7 @@ export interface OrchestrationOptions {
 }
 
 const CRITIC_REJECT_PATTERN = /(?:^|\n)\s*(?:verdict|final verdict)\s*:\s*reject\b/i;
-const ROLE_CONTEXT_KEY: Record<AgentOutput['agentRole'], string> = {
+const ROLE_CONTEXT_KEY = {
   planner: 'executionPlan',
   identity: 'identity',
   rules: 'rules',
@@ -714,7 +714,7 @@ async function executeOrchestrationPlan(
         for (const depId of task.dependencies) {
           const depOutput = taskOutputs.get(depId);
           if (depOutput) {
-            const contextKey = ROLE_CONTEXT_KEY[depOutput.agentRole] ?? 'context';
+            const contextKey = (ROLE_CONTEXT_KEY as Record<string, string>)[depOutput.agentRole] ?? 'context';
             taskContext[contextKey] = depOutput.content;
           }
         }

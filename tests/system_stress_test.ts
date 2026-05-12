@@ -1,5 +1,5 @@
 import { youtubeTranscriptService } from '../lib/services/youtubeTranscriptService';
-import { competitiveIntelService } from '../lib/services/competitiveIntelService';
+import { CompetitiveIntelService as competitiveIntelService } from '../lib/services/competitiveIntelService';
 import { repurposingService } from '../lib/services/repurposingService';
 import { intelligenceTriggerService } from '../lib/services/intelligenceTriggerService';
 import { publishOrchestrator } from '../lib/services/publishOrchestrator';

@@ -145,6 +145,13 @@ const PLATFORM_MAP: Record<Platform, string> = {
   whatsapp: 'whatsapp',
   telegram: 'telegram',
   snapchat: 'snapchat',
+  wordpress: 'wordpress',
+  medium: 'medium',
+  ghost: 'ghost',
+  substack: 'substack',
+  mailchimp: 'mailchimp',
+  klaviyo: 'klaviyo',
+  convertkit: 'convertkit',
   general: 'general',
 };
 

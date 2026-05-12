@@ -90,7 +90,7 @@ export const ToolRegistry: Record<string, ToolDefinition<any>> = {
     description: 'Manipulate a video timeline by adding, moving, or resizing clips, text, and images.',
     parameters: {
       timelineId: 'string',
-      action: 'add_clip' | 'move_event' | 'resize_event' | 'remove_event',
+      action: 'add_clip | move_event | resize_event | remove_event',
       payload: 'object'
     },
     execute: async ({ timelineId, action, payload }: any) => {
@@ -153,7 +153,7 @@ export const ToolRegistry: Record<string, ToolDefinition<any>> = {
   get_ecommerce_products: {
     name: 'get_ecommerce_products',
     description: 'Retrieve product catalogs and search for specific items from e-commerce platforms like Shopify.',
-    parameters: { platform: 'shopify' | 'amazon' | 'etsy', query: 'string (optional)' },
+    parameters: { platform: 'shopify | amazon | etsy', query: 'string (optional)' },
     execute: async ({ platform, query }: CommerceParams) => {
       try {
         const result = await DirectCommerceService.getProducts(platform, query);

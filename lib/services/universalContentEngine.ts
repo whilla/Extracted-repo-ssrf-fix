@@ -320,7 +320,7 @@ export async function runUniversalContentPipeline(
       );
       imageUrl = await normalizeMediaAssetUrl(imageResult.media[0]?.url, {
         kind: 'image',
-        generationId: request.generationId,
+        generationId: request.generationId || '',
         label: 'Image',
         warnings,
       });
@@ -357,7 +357,7 @@ export async function runUniversalContentPipeline(
       );
       videoUrl = await normalizeMediaAssetUrl(videoResult.media[0]?.url, {
         kind: 'video',
-        generationId: request.generationId,
+        generationId: request.generationId || '',
         label: 'Video',
         warnings,
       });
@@ -393,7 +393,7 @@ export async function runUniversalContentPipeline(
       );
       voiceUrl = await normalizeMediaAssetUrl(typeof voice === 'string' ? voice : undefined, {
         kind: 'audio',
-        generationId: request.generationId,
+        generationId: request.generationId || '',
         mimeTypeHint: 'audio/mpeg',
         label: 'Voice',
         warnings,
@@ -437,7 +437,7 @@ export async function runUniversalContentPipeline(
           );
           const persisted = await persistBlobMediaAsset(blob, {
             kind: 'audio',
-            generationId: request.generationId,
+        generationId: request.generationId || '',
             fileExtension: 'webm',
           });
           musicUrl = persisted?.url;
@@ -452,7 +452,7 @@ export async function runUniversalContentPipeline(
       } else {
         musicUrl = await normalizeMediaAssetUrl(music?.url, {
           kind: 'audio',
-          generationId: request.generationId,
+          generationId: request.generationId || '',
           mimeTypeHint: 'audio/mpeg',
           label: 'Music',
           warnings,
@@ -485,7 +485,7 @@ export async function runUniversalContentPipeline(
         musicUrl,
         mixPlan,
         durationSeconds: beatPlan.durationSeconds,
-        generationId: request.generationId,
+        generationId: request.generationId || '',
       }),
       PIPELINE_MEDIA_TIMEOUT_MS.finalMix,
       'Final media assembly'
@@ -532,7 +532,7 @@ export async function runUniversalContentPipeline(
         text: `${pkg.text}\n\n${pkg.hashtags.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).join(' ')}`.trim(),
         platforms: [pkg.platform],
         mediaUrl: finalVideoUrl || videoUrl || imageUrl,
-        generationId: request.generationId,
+        generationId: request.generationId || '',
         pipelineRunId,
         niche: brandProfile.niche,
         hook: amplifiedHook.hook,

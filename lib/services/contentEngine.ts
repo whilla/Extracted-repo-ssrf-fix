@@ -273,6 +273,8 @@ export async function runContentPipeline(
       currentVersion: 1,
       status: 'draft',
       platforms: options.platforms,
+      title: version.text?.slice(0, 80) || 'Draft',
+      content: version.text || '',
     };
 
     await saveDraft(draft);

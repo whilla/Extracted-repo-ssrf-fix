@@ -81,18 +81,21 @@ export interface Timeline {
 }
 
 export interface ContentDraft {
-...
-...
   id: string;
-  created: string;
-  updated: string;
+  title: string;
+  content: string;
   versions: DraftVersion[];
   currentVersion: number;
   status: 'draft' | 'approved' | 'scheduled' | 'published' | 'failed';
   platforms: Platform[];
-  contentType?: string;
+  contentType?: 'text' | 'image' | 'video' | 'mixed';
   scheduledAt?: string;
   publishedAt?: string;
+  created: string;
+  updated: string;
+  tags?: string[];
+  mediaUrls?: string[];
+  brandKitId?: string;
   publishResults?: { platform: string; success: boolean; postId?: string }[];
 }
 
@@ -360,6 +363,19 @@ export interface UserState {
   onboardingComplete: boolean;
   brandKit: BrandKit | null;
   settings: AppSettings;
+}
+
+// Timeline Assembly Types
+export interface TimelineAssemblyInput {
+  timeline: Timeline;
+  generationId?: string;
+  outputFormat?: 'mp4' | 'webm' | 'gif';
+  quality?: 'low' | 'medium' | 'high';
+}
+
+export interface TimelineAssemblyResult {
+  asset: { url: string; path?: string; mimeType: string; persisted: boolean } | null;
+  warnings: string[];
 }
 
 // Puter Types (declarations for the global puter object)
