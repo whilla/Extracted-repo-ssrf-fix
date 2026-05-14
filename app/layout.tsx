@@ -8,6 +8,8 @@ import { Toaster } from 'sonner'
 import GlobalErrorBoundary from '@/components/GlobalErrorBoundary'
 import { initSentry } from '@/lib/utils/sentry'
 import { validateEnv } from '@/lib/utils/env'
+import { AppWrapper } from '@/components/nexus/AppWrapper'
+import { ApiLoadingProvider } from '@/context/ApiLoadingContext'
 
 if (typeof window !== 'undefined') {
   initSentry();
@@ -51,6 +53,12 @@ const runtimeBootstrap = `
   // Mark app as ready immediately - don't wait for external services
   document.documentElement.dataset.nexusAppReady = 'true';
   console.log('[NexusAI] App initialized successfully');
+  
+  // Remove any existing loading indicators
+  const existingLoader = document.getElementById('nexus-app-loader');
+  if (existingLoader) {
+    existingLoader.style.display = 'none';
+  }
 })();
 `;
 
@@ -128,7 +136,12 @@ export default function RootLayout({
         </noscript>
         <GlobalErrorBoundary>
           <Providers>
-            {children}
+            <ApiLoadingProvider>
+              <AppWrapper>
+                {children}
+              </AppWrapper>
+              <GlobalLoader />
+            </ApiLoadingProvider>
           </Providers>
         </GlobalErrorBoundary>
         <Toaster />
