@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, type RateLimitConfig } from './rateLimit';
+import { createAuthError, createRateLimitError, formatErrorResponse } from './errors';
+import { logger } from './logger';
 
 export interface ApiHandlerContext {
   userId?: string;
@@ -11,11 +13,15 @@ export interface AuthResult {
   error?: NextResponse;
 }
 
+/**
+ * Enhanced authentication with structured error handling
+ */
 export async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    logger.error('[Auth] Supabase not configured');
     return {};
   }
 
@@ -41,14 +47,27 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
 
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) {
-      return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+      const authError = createAuthError('Unauthorized');
+      logger.warn('[Auth] Authentication failed', {
+        error: error?.message,
+        path: request.nextUrl.pathname,
+      });
+      return { error: NextResponse.json(formatErrorResponse(authError), { status: authError.status }) };
     }
     return { userId: user.id };
-  } catch {
-    return { error: NextResponse.json({ error: 'Authentication service unavailable' }, { status: 503 }) };
+  } catch (error) {
+    const authError = createAuthError('Authentication service unavailable');
+    logger.error('[Auth] Authentication service error', {
+      error: error instanceof Error ? error.message : String(error),
+      path: request.nextUrl.pathname,
+    });
+    return { error: NextResponse.json(formatErrorResponse(authError), { status: 503 }) };
   }
 }
 
+/**
+ * Enhanced rate limiting with structured error handling
+ */
 export function checkRateLimit(request: NextRequest, config?: Partial<RateLimitConfig>): NextResponse | null {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   const key = `api:${forwarded}:${request.nextUrl.pathname}`;
@@ -60,34 +79,75 @@ export function checkRateLimit(request: NextRequest, config?: Partial<RateLimitC
   });
 
   if (!result.allowed) {
-    return NextResponse.json(
-      {
-        error: 'Rate limit exceeded',
-        message: `Too many requests. Try again in ${Math.ceil((result.resetAt - Date.now()) / 1000)}s`,
-        retryAfter: Math.ceil((result.resetAt - Date.now()) / 1000),
+    const retryAfter = Math.ceil((result.resetAt - Date.now()) / 1000);
+    const rateLimitError = createRateLimitError('Rate limit exceeded', retryAfter);
+    logger.warn('[RateLimit] Exceeded', {
+      key,
+      retryAfter,
+      path: request.nextUrl.pathname,
+    });
+    return NextResponse.json(formatErrorResponse(rateLimitError), {
+      status: rateLimitError.status,
+      headers: {
+        'Retry-After': String(retryAfter),
+        'X-RateLimit-Limit': String(config?.maxRequests ?? 60),
+        'X-RateLimit-Remaining': '0',
       },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(Math.ceil((result.resetAt - Date.now()) / 1000)),
-          'X-RateLimit-Limit': String(config?.maxRequests ?? 60),
-          'X-RateLimit-Remaining': '0',
-        },
-      }
+    });
+  }
+
+  return null;
+}
+
+/**
+ * CSRF protection middleware
+ */
+export function verifyCSRF(request: NextRequest): NextResponse | null {
+  const csrfToken = request.headers.get('x-csrf-token');
+  const expectedToken = request.cookies.get('csrf_token')?.value;
+
+  // Allow GET, HEAD, OPTIONS
+  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+    return null;
+  }
+
+  if (!csrfToken || !expectedToken || csrfToken !== expectedToken) {
+    logger.warn('[CSRF] Invalid CSRF token', {
+      method: request.method,
+      path: request.nextUrl.pathname,
+    });
+    return NextResponse.json(
+      { error: 'Invalid CSRF token' },
+      { status: 403 }
     );
   }
 
   return null;
 }
 
+/**
+ * Enhanced API middleware with error handling and CSRF protection
+ */
 export async function withApiMiddleware(
   request: NextRequest,
   handler: (context: ApiHandlerContext) => Promise<NextResponse>,
-  options?: { requireAuth?: boolean; rateLimitConfig?: Partial<RateLimitConfig> }
+  options?: { 
+    requireAuth?: boolean; 
+    rateLimitConfig?: Partial<RateLimitConfig>;
+    requireCSRF?: boolean;
+  }
 ): Promise<NextResponse> {
+  // CSRF protection
+  if (options?.requireCSRF !== false) {
+    const csrfResponse = verifyCSRF(request);
+    if (csrfResponse) return csrfResponse;
+  }
+
+  // Rate limiting
   const rateLimitResponse = checkRateLimit(request, options?.rateLimitConfig);
   if (rateLimitResponse) return rateLimitResponse;
 
+  // Authentication
   if (options?.requireAuth !== false) {
     const auth = await authenticateRequest(request);
     if (auth.error) return auth.error;
@@ -95,4 +155,35 @@ export async function withApiMiddleware(
   }
 
   return handler({ isAuthenticated: false });
+}
+
+/**
+ * Error handling middleware wrapper
+ */
+export function withErrorHandling(
+  handler: (request: NextRequest) => Promise<NextResponse>
+): (request: NextRequest) => Promise<NextResponse> {
+  return async (request: NextRequest): Promise<NextResponse> => {
+    try {
+      return await handler(request);
+    } catch (error) {
+      logger.error('[API] Handler error', {
+        error: error instanceof Error ? error.message : String(error),
+        path: request.nextUrl.pathname,
+        method: request.method,
+      });
+      
+      if (error instanceof Error) {
+        return NextResponse.json(
+          formatErrorResponse(error),
+          { status: error instanceof Error ? 500 : 400 }
+        );
+      }
+      
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+  };
 }

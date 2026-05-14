@@ -32,11 +32,39 @@ function installAbortSignalTimeoutPolyfill(): void {
 
 function probeLocalStorage(): boolean {
   try {
-    const key = `nexus:runtime:${Date.now()}`;
-    window.localStorage.setItem(key, '1');
-    window.localStorage.removeItem(key);
+    // Test if localStorage is available and not blocked
+    if (typeof window.localStorage === 'undefined') {
+      console.warn('[RuntimeReadinessGate] localStorage is not available');
+      return false;
+    }
+    
+    // Test with a simple write/read/remove
+    const testKey = `nexus:runtime:${Date.now()}`;
+    const testValue = 'test';
+    
+    // Check if localStorage is full or quota exceeded
+    const initialLength = window.localStorage.length;
+    
+    window.localStorage.setItem(testKey, testValue);
+    const storedValue = window.localStorage.getItem(testKey);
+    window.localStorage.removeItem(testKey);
+    
+    // Verify the value was actually stored and retrieved
+    if (storedValue !== testValue) {
+      console.warn('[RuntimeReadinessGate] localStorage write/read failed');
+      return false;
+    }
+    
+    // Check if storage length changed as expected
+    if (window.localStorage.length !== initialLength) {
+      console.warn('[RuntimeReadinessGate] localStorage length mismatch, possible quota issue');
+      return false;
+    }
+    
+    console.log('[RuntimeReadinessGate] localStorage probe successful');
     return true;
-  } catch {
+  } catch (error) {
+    console.error('[RuntimeReadinessGate] localStorage probe failed', error);
     return false;
   }
 }
@@ -111,15 +139,64 @@ export default function RuntimeReadinessGate({ children }: { children: ReactNode
     ready: false,
     issues: [],
   });
+  
+  // Add a global timeout to prevent infinite loading
+  useEffect(() => {
+    const globalTimeout = setTimeout(() => {
+      console.error('[RuntimeReadinessGate] Global timeout reached - forcing ready state');
+      if (!runtimeState.ready) {
+        setRuntimeState(prev => ({
+          ...prev,
+          ready: true,
+          issues: [...prev.issues, {
+            code: 'global-timeout',
+            severity: 'fatal',
+            message: 'Runtime readiness check timed out. App may have limited functionality.'
+          }]
+        }));
+      }
+    }, 10000); // 10 second global timeout
+    
+    return () => clearTimeout(globalTimeout);
+  }, [runtimeState.ready]);
 
   useEffect(() => {
-    const issues = assessRuntime();
-    document.documentElement.dataset.nexusAppReady = 'true';
-    setRuntimeState({ ready: true, issues });
+    console.log('[RuntimeReadinessGate] Starting runtime assessment...');
+    
+    const timeoutId = setTimeout(() => {
+      console.error('[RuntimeReadinessGate] Runtime assessment timed out after 5 seconds');
+      setRuntimeState({ 
+        ready: true, 
+        issues: [{
+          code: 'assessment-timeout',
+          severity: 'fatal',
+          message: 'Runtime assessment timed out. The app may not function properly.'
+        }]
+      });
+    }, 5000);
+    
+    try {
+      const issues = assessRuntime();
+      console.log('[RuntimeReadinessGate] Runtime assessment completed', { issueCount: issues.length });
+      clearTimeout(timeoutId);
+      document.documentElement.dataset.nexusAppReady = 'true';
+      setRuntimeState({ ready: true, issues });
 
-    const warnings = issues.filter((issue) => issue.severity === 'warning');
-    if (warnings.length > 0) {
-      console.warn('[RuntimeReadinessGate] Non-fatal runtime limitations:', warnings);
+      const warnings = issues.filter((issue) => issue.severity === 'warning');
+      if (warnings.length > 0) {
+        console.warn('[RuntimeReadinessGate] Non-fatal runtime limitations:', warnings);
+      }
+    } catch (error) {
+      console.error('[RuntimeReadinessGate] Runtime assessment failed', error);
+      clearTimeout(timeoutId);
+      setRuntimeState({ 
+        ready: true, 
+        issues: [{
+          code: 'assessment-failed',
+          severity: 'fatal',
+          message: `Runtime assessment failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }]
+      });
     }
   }, []);
 
