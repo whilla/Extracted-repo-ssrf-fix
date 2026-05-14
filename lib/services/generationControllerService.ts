@@ -1,4 +1,4 @@
-'use client';
+
 
 import { getRecommendedModel, loadProviderCapabilities } from './providerCapabilityService';
 import { hasConfiguredOpenLtxEndpoint, type VideoProvider } from './videoGenerationService';

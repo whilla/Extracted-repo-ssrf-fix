@@ -1,4 +1,4 @@
-'use client';
+
 
 export function isPublicPublisherMediaUrl(url?: string): boolean {
   if (!url) return true;

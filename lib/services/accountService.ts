@@ -1,4 +1,4 @@
-'use client';
+
 
 import { kvGet, kvSet, kvDelete } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';

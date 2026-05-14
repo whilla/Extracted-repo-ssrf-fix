@@ -1,4 +1,4 @@
-'use client';
+
 
 import type { SceneEmotion } from './emotionMappingEngine';
 import type { BeatTimingPlan } from './beatTimingEngine';

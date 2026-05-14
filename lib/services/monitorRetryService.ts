@@ -1,4 +1,4 @@
-'use client';
+
 
 import { loadQueuedPostJobs, updateQueuedPostJob } from './postQueueService';
 import { runUploadWorker, type UploadWorkerReport } from './uploadWorkerService';

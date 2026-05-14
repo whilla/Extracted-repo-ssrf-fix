@@ -1,4 +1,4 @@
-'use client';
+
 
 export interface CharacterIdentity {
   name: string;

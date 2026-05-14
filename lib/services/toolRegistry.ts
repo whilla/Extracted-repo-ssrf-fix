@@ -1,4 +1,4 @@
-'use client';
+
 
 import { getSecureCredential } from './providerCredentialUtils';
 import { searchTrends } from './serpStackService';

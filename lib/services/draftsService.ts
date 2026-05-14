@@ -1,4 +1,4 @@
-'use client';
+
 
 import { saveDraft, loadDraft, deleteDraft } from './memoryService';
 import type { ContentDraft, DraftVersion, Platform } from '../types';

@@ -1,4 +1,4 @@
-'use client';
+
 
 import { validateContent } from './governorService';
 import { isEphemeralMediaReference } from './mediaAssetPrimitives.mjs';

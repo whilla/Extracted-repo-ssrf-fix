@@ -1,4 +1,4 @@
-'use client';
+
 
 import { createClient } from '@supabase/supabase-js';
 import { RealtimeChannel } from '@supabase/supabase-js';

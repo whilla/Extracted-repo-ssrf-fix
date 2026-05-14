@@ -1,4 +1,4 @@
-'use client';
+
 
 import { persistBlobMediaAsset, type PersistedMediaAsset } from './mediaAssetPersistenceService';
 import { Timeline, TimelineAssemblyInput, TimelineAssemblyResult, MediaClipEvent, TextOverlayEvent, ImageOverlayEvent } from '@/lib/types';

@@ -1,4 +1,4 @@
-'use client';
+
 
 import { aiService } from './aiService';
 import { kvGet } from './puterService';

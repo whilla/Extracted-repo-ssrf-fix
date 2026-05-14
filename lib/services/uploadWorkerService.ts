@@ -1,4 +1,4 @@
-'use client';
+
 
 import { publishPost, schedulePost } from './publishService';
 import { loadQueuedPostJobs, updateQueuedPostJob, type QueuedPostJob } from './postQueueService';

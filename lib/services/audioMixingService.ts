@@ -1,4 +1,4 @@
-'use client';
+
 
 import type { SoundDesignPlan } from './soundDesignService';
 

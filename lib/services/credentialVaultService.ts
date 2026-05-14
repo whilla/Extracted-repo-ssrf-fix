@@ -1,4 +1,4 @@
-'use client';
+
 
 import { kvGet, kvSet } from './puterService';
 import { encryptSensitiveData, decryptSensitiveData, markAsEncrypted, isEncrypted, extractCiphertext } from '../utils/crypto';

@@ -1,4 +1,4 @@
-'use client';
+
 
 export type SceneEmotion =
   | 'tension'

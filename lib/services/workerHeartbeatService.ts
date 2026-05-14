@@ -1,4 +1,4 @@
-'use client';
+
 
 import { PATHS, readFile, writeFile } from './puterService';
 import {

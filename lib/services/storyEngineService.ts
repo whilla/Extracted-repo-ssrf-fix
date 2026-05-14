@@ -1,4 +1,4 @@
-'use client';
+
 
 import { universalChat } from './aiService';
 import type { BrandProfile } from './nicheAnalyzerService';

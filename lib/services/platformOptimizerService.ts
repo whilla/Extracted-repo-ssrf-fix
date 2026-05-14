@@ -1,4 +1,4 @@
-'use client';
+
 
 import type { Platform } from '@/lib/types';
 import { adaptContentForPlatform, type PlatformAdaptedContent } from './platformAdapterService';

@@ -1,4 +1,4 @@
-'use client';
+
 
 import { kvGet, waitForPuter } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';

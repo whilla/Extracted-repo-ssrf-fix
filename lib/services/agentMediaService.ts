@@ -1,4 +1,4 @@
-'use client';
+
 
 import type { BrandKit, ChatMediaAsset } from '@/lib/types';
 import { universalChat } from './aiService';

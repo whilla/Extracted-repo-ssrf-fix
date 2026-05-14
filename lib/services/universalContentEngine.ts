@@ -1,4 +1,4 @@
-'use client';
+
 
 import type { Platform } from '@/lib/types';
 import { generateContent } from './contentEngine';

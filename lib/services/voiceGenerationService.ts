@@ -1,4 +1,4 @@
-'use client';
+
 
 import { createConfigError } from './configError';
 import { kvGet, kvSet } from './puterService';

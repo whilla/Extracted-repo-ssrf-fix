@@ -1,4 +1,4 @@
-'use client';
+
 
 import { sentimentService, SentimentReport } from './sentimentService';
 import { repurposingService } from './repurposingService';

@@ -1,4 +1,4 @@
-'use client';
+
 
 import { kvGet, kvSet } from './puterService';
 import { Timeline, Track, TrackType, TimelineEvent, MediaClipEvent, TextOverlayEvent, ImageOverlayEvent, TransitionEvent } from '@/lib/types';

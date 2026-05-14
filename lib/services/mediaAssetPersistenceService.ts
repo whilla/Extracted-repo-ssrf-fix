@@ -1,4 +1,4 @@
-'use client';
+
 
 import { getFileReadUrl, PATHS, writeBinaryFile } from './puterService';
 import {
