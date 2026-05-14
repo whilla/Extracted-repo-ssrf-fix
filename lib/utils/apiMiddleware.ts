@@ -20,10 +20,10 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    logger.error('[Auth] Supabase not configured');
-    return {};
-  }
+    if (!supabaseUrl || !supabaseAnonKey) {
+      logger.error('Auth', '[Auth] Supabase not configured');
+      return {};
+    }
 
   try {
     const { createServerClient } = await import('@supabase/ssr');
@@ -48,7 +48,7 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) {
       const authError = createAuthError('Unauthorized');
-      logger.warn('[Auth] Authentication failed', {
+      logger.warn('Auth', '[Auth] Authentication failed', {
         error: error?.message,
         path: request.nextUrl.pathname,
       });
@@ -57,10 +57,10 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
     return { userId: user.id };
   } catch (error) {
     const authError = createAuthError('Authentication service unavailable');
-    logger.error('[Auth] Authentication service error', {
-      error: error instanceof Error ? error.message : String(error),
-      path: request.nextUrl.pathname,
-    });
+      logger.error('Auth', '[Auth] Authentication service error', {
+        error: error instanceof Error ? error.message : String(error),
+        path: request.nextUrl.pathname,
+      });
     return { error: NextResponse.json(formatErrorResponse(authError), { status: 503 }) };
   }
 }
@@ -81,7 +81,7 @@ export function checkRateLimit(request: NextRequest, config?: Partial<RateLimitC
   if (!result.allowed) {
     const retryAfter = Math.ceil((result.resetAt - Date.now()) / 1000);
     const rateLimitError = createRateLimitError('Rate limit exceeded', retryAfter);
-    logger.warn('[RateLimit] Exceeded', {
+    logger.warn('RateLimit', '[RateLimit] Exceeded', {
       key,
       retryAfter,
       path: request.nextUrl.pathname,
