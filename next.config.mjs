@@ -9,6 +9,12 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  experimental: {
+    turbo: {
+      enabled: false,
+    },
+  },
+
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.vercel.app' },
