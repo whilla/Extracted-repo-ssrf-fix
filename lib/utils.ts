@@ -1,5 +1,4 @@
 import { clsx, type ClassValue } from 'clsx'
-// @ts-expect-error - tailwind-merge types
 import { twMerge } from 'tailwind-merge'
 
 export function cn(...inputs: ClassValue[]) {
