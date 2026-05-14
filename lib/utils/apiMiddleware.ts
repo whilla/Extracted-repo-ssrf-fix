@@ -112,10 +112,10 @@ export function verifyCSRF(request: NextRequest): NextResponse | null {
   }
 
   if (!csrfToken || !expectedToken || csrfToken !== expectedToken) {
-    logger.warn('[CSRF] Invalid CSRF token', {
-      method: request.method,
-      path: request.nextUrl.pathname,
-    });
+      logger.warn('CSRF', '[CSRF] Invalid CSRF token', {
+        method: request.method,
+        path: request.nextUrl.pathname,
+      });
     return NextResponse.json(
       { error: 'Invalid CSRF token' },
       { status: 403 }
@@ -167,7 +167,7 @@ export function withErrorHandling(
     try {
       return await handler(request);
     } catch (error) {
-      logger.error('[API] Handler error', {
+      logger.error('API', '[API] Handler error', {
         error: error instanceof Error ? error.message : String(error),
         path: request.nextUrl.pathname,
         method: request.method,
