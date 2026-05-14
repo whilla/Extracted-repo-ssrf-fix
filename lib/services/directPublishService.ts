@@ -209,13 +209,15 @@ export class DirectPublishService {
   }
 
   /**
-   * Publish directly to Substack
-   * (Note: Substack doesn't have a public API, so this is a stub for future integration)
+   * Publish directly to Substack via native providers (N8N bridge, email, or third-party API)
    */
   static async publishToSubstack(content: string, title: string): Promise<DirectPublishResult> {
+    const response = await nativeProviders.publishSubstack(content, title);
     return {
-      success: false,
-      error: 'Substack direct publishing is not yet supported via API. Please use N8N bridge.',
+      success: response.success,
+      postId: response.postId,
+      error: response.error,
+      platformUrl: response.url,
     };
   }
 
@@ -314,6 +316,13 @@ export class DirectPublishService {
           ...(mediaUrls.length > 0 && { media: { media_ids: [] } }),
         }),
       });
+
+      if (response.status === 401 || response.status === 403) {
+        return {
+          success: false,
+          error: 'Twitter/X API requires OAuth 1.0a User Context or OAuth 2.0 PKCE. A Bearer token alone cannot post tweets. Use the N8N bridge or configure OAuth 2.0 PKCE with the required scopes (tweet.read, tweet.write, users.read, offline.access).',
+        };
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -508,9 +517,12 @@ export class DirectPublishService {
     }
 
     try {
-      // Note: Actual video upload requires OAuth2 with proper scopes
-      // This is a simplified version that creates a video metadata entry
-      const response = await fetch('https://www.googleapis.com/youtube/v3/videos', {
+      // YouTube Data API v3 video upload requires OAuth 2.0 with https://www.googleapis.com/auth/youtube.upload scope.
+      // An API key alone cannot upload videos. The key must be used as a query parameter (?key=), not as a Bearer token.
+      // For video uploads, use the resumable upload protocol:
+      //   POST https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status&key={API_KEY}
+      //   Authorization: Bearer {OAUTH2_ACCESS_TOKEN}
+      const response = await fetch('https://www.googleapis.com/youtube/v3/videos?part=snippet,status&key=' + encodeURIComponent(apiKey), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -529,6 +541,13 @@ export class DirectPublishService {
           },
         }),
       });
+
+      if (response.status === 401 || response.status === 403) {
+        return {
+          success: false,
+          error: 'YouTube upload requires OAuth 2.0 with the youtube.upload scope. The API key must be passed as a query parameter (?key=), while the Authorization header must contain an OAuth 2.0 access token. Configure OAuth 2.0 via Google Cloud Console or use the N8N bridge.',
+        };
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -560,18 +579,52 @@ export class DirectPublishService {
     }
 
     try {
-      // TikTok Video Kit API
-      const response = await fetch('https://open.tiktokapis.com/v2/video/list/', {
+      // TikTok Content Posting API requires a two-step process:
+      // 1. POST /v2/video/upload/ to get a publish ID
+      // 2. POST /v2/video/publish/ to complete the publish
+      // The old code used /v2/video/list/ (read-only endpoint) - wrong for uploading
+      //
+      // Proper upload flow:
+      //   POST https://open.tiktokapis.com/v2/video/upload/
+      //   Authorization: Bearer {access_token}
+      //   Body: source_info->source_type (FILE_PATH or PULL_FROM_URL), video_size, etc.
+      //
+      // For text-only posts (no video), TikTok doesn't support them via API.
+      // Use TikTok Photos API instead.
+      if (mediaUrls.length === 0) {
+        return {
+          success: false,
+          error: 'TikTok posting requires at least one video or image URL. Text-only posts are not supported via the TikTok API.',
+        };
+      }
+
+      const response = await fetch('https://open.tiktokapis.com/v2/video/upload/', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          caption: text.substring(0, 2200),
-          ...(mediaUrls.length > 0 && { video_url: mediaUrls[0] }),
+          source_info: {
+            source_type: 'PULL_FROM_URL',
+            video_url: mediaUrls[0],
+          },
+          post_info: {
+            title: text.substring(0, 2200),
+            privacy_level: 'PUBLIC_TO_EVERYONE',
+            disable_duet: false,
+            disable_comment: false,
+            disable_stitch: false,
+          },
         }),
       });
+
+      if (response.status === 401 || response.status === 403) {
+        return {
+          success: false,
+          error: 'TikTok requires OAuth 2.0 with the video.publish scope. Configure OAuth 2.0 via TikTok Developer Portal or use the N8N bridge.',
+        };
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -579,10 +632,11 @@ export class DirectPublishService {
       }
 
       const data = await response.json();
+      const uploadId = data.data?.upload_id || data.data?.publish_id;
       return {
-        success: true,
-        postId: data.aweme_id || data.video_id,
-        platformUrl: `https://tiktok.com/@user/video/${data.aweme_id || data.video_id}`,
+        success: !!uploadId,
+        postId: uploadId,
+        error: uploadId ? undefined : 'TikTok upload did not return an upload ID',
       };
     } catch (error) {
       return {
@@ -688,9 +742,42 @@ export class DirectPublishService {
     }
 
     try {
+      // Twitch does not have a "post to feed" API.
+      // The closest option is the EventSub API for channel announcements
+      // or IRC chat integration for sending messages in chat.
+      // Posting a channel announcement via Helix API:
+      //   POST https://api.twitch.tv/helix/chat/announcements?broadcaster_id={channelId}&moderator_id={channelId}
+      //   Headers: Authorization: Bearer {token}, Client-Id: {clientId}
+      const clientId = await kvGet('twitch_client_id');
       const channelId = await kvGet('twitch_channel_id');
-      // Twitch doesn't have a simple posting API like other platforms
-      // This would require using their chat API or event API
+      if (!channelId || !clientId) {
+        return {
+          success: false,
+          error: 'Twitch requires both twitch_client_id and twitch_channel_id to be configured.',
+        };
+      }
+
+      const response = await fetch(`https://api.twitch.tv/helix/chat/announcements?broadcaster_id=${channelId}&moderator_id=${channelId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Client-Id': clientId,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: text }),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        return {
+          success: false,
+          error: 'Twitch requires OAuth with moderator:manage:announcements scope. Configure via Twitch Developer Portal or use the N8N bridge.',
+        };
+      }
+
+      if (!response.ok) {
+        throw new Error(`Twitch API error: ${response.statusText}`);
+      }
+
       return {
         success: true,
         postId: `twitch_${Date.now()}`,

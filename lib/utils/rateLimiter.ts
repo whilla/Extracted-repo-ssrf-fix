@@ -62,8 +62,9 @@ export function createRateLimiter(config: Partial<RateLimitConfig> = {}) {
   const finalConfig: RateLimitConfig = { ...defaultConfig, ...config };
 
   return function rateLimitMiddleware(request: NextRequest) {
-    // Skip rate limiting in development (optional, remove for production)
-    if (!isProduction() && process.env.SKIP_RATE_LIMIT !== 'true') {
+    // Skip rate limiting only in non-production when SKIP_RATE_LIMIT is set
+    // Production always enforces limits regardless of SKIP_RATE_LIMIT
+    if (!isProduction() && process.env.SKIP_RATE_LIMIT === 'true') {
       return null;
     }
 

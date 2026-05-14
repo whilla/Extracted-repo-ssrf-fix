@@ -1,9 +1,9 @@
 'use client';
 
-import { kvGet, kvSet } from './puterService.ts';
-import { sanitizeApiKey } from './providerCredentialUtils.ts';
-import { mediaAssetManager, type MediaAsset } from './mediaAssetManager.ts';
-import { enhanceVideoPrompt } from './promptEnhancer.ts';
+import { kvGet, kvSet } from './puterService';
+import { sanitizeApiKey } from './providerCredentialUtils';
+import { mediaAssetManager, type MediaAsset } from './mediaAssetManager';
+import { enhanceVideoPrompt } from './promptEnhancer';
 
 export type VideoProvider = 'ltx23' | 'ltx23-open' | 'runway' | 'pika' | 'stablevideo';
 

@@ -29,4 +29,6 @@ export {
   SynthesisAgent,
   VisualCriticAgent,
   VideoEditorAgent,
+  AudioAgent,
+  MusicAgent,
 } from './SpecializedAgents';

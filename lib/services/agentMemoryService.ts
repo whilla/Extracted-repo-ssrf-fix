@@ -474,7 +474,27 @@ export async function buildMemoryContext(agentId: string = 'default'): Promise<s
     console.error('[buildMemoryContext] Performance context error:', e);
   }
 
-  // 3. Inject Active Automation Plan (The Strategy)
+  // 3. Inject Audience Targeting Context
+  let audienceTargetingContext = '';
+  try {
+    const { audienceTargetingService } = await import('./audienceTargetingService');
+    const { instructions, regions, warnings } = await audienceTargetingService.getContentAdaptationInstructions();
+    const safeRegions = Array.isArray(regions) ? regions : [];
+    const safeWarnings = Array.isArray(warnings) ? warnings : [];
+    if (instructions) {
+      audienceTargetingContext = `\n\nAUDIENCE TARGETING:\n${instructions}`;
+      if (safeRegions.length > 0) {
+        audienceTargetingContext += `\nTarget regions: ${safeRegions.join(', ').toUpperCase()}`;
+      }
+      if (safeWarnings.length > 0) {
+        audienceTargetingContext += `\nRegional compliance notes:\n${safeWarnings.map(w => `- ${w}`).join('\n')}`;
+      }
+    }
+  } catch (e) {
+    console.warn('[buildMemoryContext] Audience targeting error:', e);
+  }
+
+  // 4. Inject Active Automation Plan (The Strategy)
   let planContext = '';
   try {
     const { planService } = await import('./planService');
@@ -512,6 +532,9 @@ export async function buildMemoryContext(agentId: string = 'default'): Promise<s
   if (memory.targetPlatforms.length > 0) {
     lockedProfile.push(`Target platforms: ${memory.targetPlatforms.join(', ')}`);
     sections.push(`TARGET PLATFORMS: ${memory.targetPlatforms.join(', ')}`);
+  }
+  if (audienceTargetingContext) {
+    sections.push(audienceTargetingContext);
   }
   const lockedCharacterName = memory.userFacts.find(fact => fact.key === 'locked_character_name')?.value;
   const lockedCharacterProfile = memory.userFacts.find(fact => fact.key === 'locked_character_profile')?.value;

@@ -119,8 +119,11 @@ export class PredictiveViralService {
       const viralProbability: 'low' | 'medium' | 'high' | 'viral' =
         score >= 90 ? 'viral' : score >= 70 ? 'high' : score >= 50 ? 'medium' : 'low';
 
-      const potentialReach = Math.floor(score * 1000 * (Math.random() * 5 + 1));
-      const engagementPrediction = Math.floor(potentialReach * (score / 100) * 0.1);
+      const baseReach = score * 1000;
+      const platformMultiplier = platform.toLowerCase() === 'tiktok' ? 3 : platform.toLowerCase() === 'instagram' ? 2 : 1;
+      const reachMultiplier = score >= 90 ? 5 : score >= 70 ? 3 : score >= 50 ? 1.5 : 0.5;
+      const potentialReach = Math.floor(baseReach * platformMultiplier * reachMultiplier);
+      const engagementPrediction = Math.floor(potentialReach * (score / 100) * 0.08);
 
       const recommendations: string[] = [];
       if (!content.hasCTA) recommendations.push('Add a clear call-to-action');

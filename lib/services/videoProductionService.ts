@@ -267,7 +267,7 @@ export async function renderTimeline(timelineId: string): Promise<RenderJob> {
   const job: RenderJob = {
     id: generateId(),
     timelineId,
-    status: 'rendering',
+    status: 'queued',
     progress: 0,
     startedAt: new Date().toISOString(),
   };
@@ -277,47 +277,292 @@ export async function renderTimeline(timelineId: string): Promise<RenderJob> {
   jobs.unshift(job);
   await kvSet(RENDER_JOBS_KEY, JSON.stringify(jobs.slice(0, 50)));
 
-  simulateRenderProgress(job.id);
+  // Attempt real FFmpeg rendering, fall back to cloud/Remotion
+  renderWithRealBackend(job.id, timelines[index]).catch(err => {
+    console.error('[VideoProduction] Render backend failed:', err);
+  });
 
   return job;
 }
 
-async function simulateRenderProgress(jobId: string) {
-  let progress = 0;
-  
-  const interval = setInterval(async () => {
-    progress += Math.random() * 15;
-    if (progress > 100) progress = 100;
+async function renderWithRealBackend(jobId: string, timeline: VideoTimeline): Promise<void> {
+  const renderMode = await kvGet('video_render_mode') || 'auto';
 
-    const jobsData = await kvGet(RENDER_JOBS_KEY);
-    const jobs: RenderJob[] = jobsData ? JSON.parse(jobsData) : [];
-    const jobIndex = jobs.findIndex(j => j.id === jobId);
-    
-    if (jobIndex !== -1) {
-      jobs[jobIndex].progress = Math.round(progress);
-      
-      if (progress >= 100) {
-        jobs[jobIndex].status = 'completed';
-        jobs[jobIndex].completedAt = new Date().toISOString();
-        jobs[jobIndex].outputUrl = `https://example.com/rendered/${jobId}.mp4`;
-        
-        const timelineId = jobs[jobIndex].timelineId;
-        const timelines = await loadTimelines();
-        const tIndex = timelines.findIndex(t => t.id === timelineId);
-        if (tIndex !== -1) {
-          timelines[tIndex].status = 'completed';
-          timelines[tIndex].renderedUrl = jobs[jobIndex].outputUrl;
-          await saveTimelines(timelines);
-        }
+  // Strategy: try FFmpeg WASM in-browser, then Remotion/cloud, then Puter cloud
+  try {
+    if (renderMode === 'ffmpeg' || renderMode === 'auto') {
+      await renderWithFFmpegWasm(jobId, timeline);
+      return;
+    }
+  } catch (ffmpegErr) {
+    console.warn('[VideoProduction] FFmpeg WASM failed, trying fallback:', ffmpegErr);
+  }
+
+  try {
+    if (renderMode === 'remotion' || renderMode === 'auto') {
+      await renderWithRemotionLambda(jobId, timeline);
+      return;
+    }
+  } catch (remotionErr) {
+    console.warn('[VideoProduction] Remotion failed, trying fallback:', remotionErr);
+  }
+
+  // Final fallback: upload clips to Puter cloud for backend processing
+  await renderWithPuterCloud(jobId, timeline);
+}
+
+async function renderWithFFmpegWasm(jobId: string, timeline: VideoTimeline): Promise<void> {
+  try {
+    const FFmpeg = (await import('@ffmpeg/ffmpeg')).FFmpeg;
+    const fetchFile = (await import('@ffmpeg/util')).fetchFile;
+    const ffmpeg = new FFmpeg();
+
+    await updateJobProgressCli(jobId, 10, 'Loading FFmpeg');
+    await ffmpeg.load();
+
+    await updateJobProgressCli(jobId, 20, 'Processing clips');
+
+    // Download each clip source and concatenate
+    const clipPaths: string[] = [];
+    for (let i = 0; i < timeline.clips.length; i++) {
+      const clip = timeline.clips[i];
+      if (clip.sourceUrl) {
+        const inputName = `input_${i}.mp4`;
+        const clipData = await fetchFile(clip.sourceUrl);
+        await ffmpeg.writeFile(inputName, clipData);
+        clipPaths.push(`file ${inputName}`);
       }
-      
-      await kvSet(RENDER_JOBS_KEY, JSON.stringify(jobs));
     }
 
-    if (progress >= 100) {
-      clearInterval(interval);
+    if (clipPaths.length === 0) {
+      // Generate a blank video with text overlay
+      const resolution = timeline.resolution === '4k' ? '3840:2160' : timeline.resolution === '720p' ? '1280:720' : '1920:1080';
+      const textClips = timeline.clips.filter(c => c.textOverlay);
+      if (textClips.length > 0) {
+        const text = textClips[0].textOverlay?.text || '';
+        await ffmpeg.exec([
+          '-f', 'lavfi', '-i', `color=c=black:s=${resolution}:d=${timeline.duration}`,
+          '-vf', `drawtext=text='${text.replace(/'/g, "\\'")}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2`,
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output.mp4',
+        ]);
+      } else {
+        await ffmpeg.exec([
+          '-f', 'lavfi', '-i', `color=c=black:s=${resolution}:d=${timeline.duration}`,
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output.mp4',
+        ]);
+      }
+    } else {
+      // Write concat list and merge
+      const listContent = clipPaths.join('\n');
+      await ffmpeg.writeFile('clips.txt', listContent);
+      await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'clips.txt', '-c', 'copy', 'output.mp4']);
     }
-  }, 2000);
+
+    await updateJobProgressCli(jobId, 80, 'Finalizing');
+
+    // Read output and upload to storage
+    const outputData = await ffmpeg.readFile('output.mp4');
+    const outputBlob = new Blob([outputData], { type: 'video/mp4' });
+
+    // Upload to Puter storage
+    const { writeFile } = await import('./puterService');
+    const outputPath = `rendered/${jobId}.mp4`;
+    const arrayBuf = await outputBlob.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuf);
+    const base64 = btoa(String.fromCharCode(...uint8));
+    await writeFile(outputPath, base64);
+
+    await completeJob(jobId, outputPath);
+  } catch (err) {
+    throw new Error(`FFmpeg WASM render failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  }
+}
+
+async function renderWithRemotionLambda(jobId: string, timeline: VideoTimeline): Promise<void> {
+  const remotionApiKey = await kvGet('remotion_api_key');
+  if (!remotionApiKey) throw new Error('Remotion API key not configured for cloud rendering');
+
+  await updateJobProgressCli(jobId, 10, 'Connecting to Remotion');
+
+  const compositionData = {
+    id: `nexus-${jobId}`,
+    durationInFrames: Math.round(timeline.duration * timeline.fps),
+    fps: timeline.fps,
+    width: timeline.resolution === '4k' ? 3840 : timeline.resolution === '720p' ? 1280 : 1920,
+    height: timeline.resolution === '4k' ? 2160 : timeline.resolution === '720p' ? 720 : 1080,
+    clips: timeline.clips.map(c => ({
+      type: c.type,
+      sourceUrl: c.sourceUrl,
+      startTime: c.startTime,
+      duration: c.duration,
+      textOverlay: c.textOverlay,
+      effects: c.effects,
+    })),
+    audioTracks: timeline.audioTracks.map(t => ({
+      type: t.type,
+      sourceUrl: t.sourceUrl,
+      volume: t.volume,
+      startTime: t.startTime,
+      duration: t.duration,
+    })),
+  };
+
+  const response = await fetch('https://api.remotion.dev/v1/render', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${remotionApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      composition: compositionData.id,
+      inputProps: compositionData,
+      serveUrl: 'https://nexus-remotion.vercel.app/',
+    }),
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.message || `Remotion API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  const renderId = data.renderId;
+  const bucketName = data.bucketName;
+
+  // Poll for completion
+  let attempts = 0;
+  const maxAttempts = 60;
+  while (attempts < maxAttempts) {
+    await new Promise(r => setTimeout(r, 5000));
+    attempts++;
+    const statusRes = await fetch(`https://api.remotion.dev/v1/render/${bucketName}/${renderId}`, {
+      headers: { 'Authorization': `Bearer ${remotionApiKey}` },
+    });
+    const statusData = await statusRes.json();
+
+    if (statusData.status === 'done') {
+      await updateJobProgressCli(jobId, 90, 'Downloading from Remotion');
+      const outputUrl = statusData.outputUrl;
+
+      // Stream to Puter storage
+      const mediaRes = await fetch(outputUrl);
+      const mediaBlob = await mediaRes.blob();
+      const { writeFile } = await import('./puterService');
+      const arrayBuf = await mediaBlob.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuf);
+      const base64 = btoa(String.fromCharCode(...uint8));
+      const outputPath = `rendered/${jobId}.mp4`;
+      await writeFile(outputPath, base64);
+
+      await completeJob(jobId, outputPath);
+      return;
+    } else if (statusData.status === 'error') {
+      throw new Error(statusData.error || 'Remotion render failed');
+    }
+
+    await updateJobProgressCli(jobId, 30 + Math.round((attempts / maxAttempts) * 50));
+  }
+
+  throw new Error('Remotion render timed out');
+}
+
+async function renderWithPuterCloud(jobId: string, timeline: VideoTimeline): Promise<void> {
+  await updateJobProgressCli(jobId, 10, 'Submitting to Puter cloud render');
+
+  // Store render job for Puter cloud worker to process
+  const { writeFile } = await import('./puterService');
+  await writeFile(`render_jobs/${jobId}.json`, JSON.stringify({
+    timelineId: timeline.id,
+    resolution: timeline.resolution,
+    aspectRatio: timeline.aspectRatio,
+    fps: timeline.fps,
+    duration: timeline.duration,
+    clips: timeline.clips,
+    audioTracks: timeline.audioTracks,
+    createdAt: new Date().toISOString(),
+  }));
+
+  // Register with monitor service for polling
+  const monitorKey = `render_monitor_${jobId}`;
+  await kvSet(monitorKey, JSON.stringify({
+    status: 'queued',
+    progress: 0,
+    checkedAt: new Date().toISOString(),
+  }));
+
+  // Start polling for completion
+  pollCloudRenderJob(jobId, monitorKey).catch(err => {
+    console.error('[VideoProduction] Cloud render polling failed:', err);
+  });
+}
+
+async function pollCloudRenderJob(jobId: string, monitorKey: string): Promise<void> {
+  let attempts = 0;
+  const maxAttempts = 120;
+  while (attempts < maxAttempts) {
+    await new Promise(r => setTimeout(r, 5000));
+    attempts++;
+
+    try {
+      const data = await kvGet(monitorKey);
+      if (!data) {
+        await updateJobProgressCli(jobId, 50);
+        continue;
+      }
+      const state = JSON.parse(data);
+
+      if (state.status === 'completed' && state.outputUrl) {
+        await completeJob(jobId, state.outputUrl);
+        return;
+      } else if (state.status === 'failed') {
+        throw new Error(state.error || 'Cloud render failed');
+      }
+
+      await updateJobProgressCli(jobId, 20 + Math.round((attempts / maxAttempts) * 60));
+    } catch (err) {
+      if (attempts >= maxAttempts) {
+        throw new Error(`Cloud render timed out: ${err instanceof Error ? err.message : 'Unknown'}`);
+      }
+    }
+  }
+  throw new Error('Cloud render timed out');
+}
+
+async function updateJobProgressCli(jobId: string, progress: number, statusText?: string): Promise<void> {
+  const jobsData = await kvGet(RENDER_JOBS_KEY);
+  const jobs: RenderJob[] = jobsData ? JSON.parse(jobsData) : [];
+  const jobIndex = jobs.findIndex(j => j.id === jobId);
+  if (jobIndex !== -1) {
+    jobs[jobIndex].progress = Math.min(100, progress);
+    if (progress >= 100) {
+      jobs[jobIndex].status = 'completed';
+      jobs[jobIndex].completedAt = new Date().toISOString();
+    }
+    await kvSet(RENDER_JOBS_KEY, JSON.stringify(jobs.slice(0, 50)));
+  }
+}
+
+async function completeJob(jobId: string, outputPath: string): Promise<void> {
+  const jobsData = await kvGet(RENDER_JOBS_KEY);
+  const jobs: RenderJob[] = jobsData ? JSON.parse(jobsData) : [];
+  const jobIndex = jobs.findIndex(j => j.id === jobId);
+
+  if (jobIndex !== -1) {
+    jobs[jobIndex].status = 'completed';
+    jobs[jobIndex].progress = 100;
+    jobs[jobIndex].completedAt = new Date().toISOString();
+    jobs[jobIndex].outputUrl = outputPath;
+    await kvSet(RENDER_JOBS_KEY, JSON.stringify(jobs.slice(0, 50)));
+
+    const timelineId = jobs[jobIndex].timelineId;
+    const timelines = await loadTimelines();
+    const tIndex = timelines.findIndex(t => t.id === timelineId);
+    if (tIndex !== -1) {
+      timelines[tIndex].status = 'completed';
+      timelines[tIndex].renderedUrl = outputPath;
+      await saveTimelines(timelines);
+    }
+  }
 }
 
 export async function getRenderJob(jobId: string): Promise<RenderJob | null> {

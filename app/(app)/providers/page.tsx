@@ -202,7 +202,7 @@ export default function ProvidersPage() {
             </p>
           </div>
           <StatusBadge
-            status={disablePuterRouting ? 'warning' : 'info'}
+            status={(disablePuterRouting ? 'warning' : 'info') as any}
             size="sm"
           >
             {disablePuterRouting ? 'Puter Fallback Off' : 'Puter Fallback Available'}
@@ -291,7 +291,7 @@ export default function ProvidersPage() {
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-foreground">{status.provider.name}</h3>
                   <StatusBadge 
-                    status={status.isConnected ? 'success' : status.hasKey ? 'warning' : 'default'}
+                    status={(status.isConnected ? 'success' : status.hasKey ? 'warning' : 'default') as any}
                     size="sm"
                   >
                     {status.isConnected ? 'Connected' : status.hasKey ? 'Configured' : 'Not Configured'}
@@ -526,7 +526,7 @@ function MusicAPIKeyCard({
           <h3 className="font-semibold text-foreground">{name}</h3>
           <p className="text-sm text-foreground/60">{description}</p>
         </div>
-        <StatusBadge status={hasKey ? 'success' : 'default'} size="sm">
+        <StatusBadge status={(hasKey ? 'success' : 'default') as any} size="sm">
           {hasKey ? 'Configured' : 'Not Set'}
         </StatusBadge>
       </div>

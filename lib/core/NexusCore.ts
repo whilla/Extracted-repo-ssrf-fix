@@ -5,14 +5,14 @@
  * This is the unified core engine replacing the fragmented la-la orchestration services.
  */
 
-import { ProviderRouter } from './ProviderRouter.ts';
-import { ViralScoringEngine, type ViralScore } from './ViralScoringEngine.ts';
-import { LearningSystem } from './LearningSystem.ts';
-import { MemoryManager, type MemoryContext } from './MemoryManager.ts';
-import { AgentBlackboard } from './AgentBlackboard.ts';
-import { tokenBudgetManager } from '../services/tokenBudgetManager.ts';
-import { perceptionService } from '../services/multiModalPerceptionService.ts';
-import { trendScoutService } from '../services/trendScoutService.ts';
+import { ProviderRouter } from './ProviderRouter';
+import { ViralScoringEngine, type ViralScore } from './ViralScoringEngine';
+import { LearningSystem } from './LearningSystem';
+import { MemoryManager, type MemoryContext } from './MemoryManager';
+import { AgentBlackboard } from './AgentBlackboard';
+import { tokenBudgetManager } from '../services/tokenBudgetManager';
+import { perceptionService } from '../services/multiModalPerceptionService';
+import { trendScoutService } from '../services/trendScoutService';
 import { 
   BaseAgent, 
   StrategistAgent, 
@@ -23,24 +23,27 @@ import {
   HybridAgent,
   SynthesisAgent,
   VisualCriticAgent,
+  VideoEditorAgent,
+  AudioAgent,
+  MusicAgent,
   type AgentOutput,
   type AgentExecutionContext,
   type AgentRole
-} from '../agents/index.ts';
-import { GovernorSystem, type GovernorValidation } from './GovernorSystem.ts';
+} from '../agents/index';
+import { GovernorSystem, type GovernorValidation } from './GovernorSystem';
 import { 
   getAgentByRole, 
   createOrchestrationPlan,
   selectBestOutput,
   type AgentOutput as MultiAgentOutput
-} from '../services/multiAgentService.ts';
-import { stateCache } from '../services/stateCache.ts';
-import { addToApprovalQueue } from '../services/approvalQueueService.ts';
+} from '../services/multiAgentService';
+import { stateCache } from '../services/stateCache';
+import { addToApprovalQueue } from '../services/approvalQueueService';
 import {
   loadGovernorState,
   makeGovernorDecision
-} from '../services/governorService.ts';
-import { loadBrandKit } from '../services/memoryService.ts';
+} from '../services/governorService';
+import { loadBrandKit } from '../services/memoryService';
 
 export interface ProductionAsset {
   type: 'image' | 'video' | 'audio' | 'music' | 'document';
@@ -191,6 +194,9 @@ export class NexusCore {
       new HybridAgent(),
       new SynthesisAgent(),
       new VisualCriticAgent(),
+      new VideoEditorAgent(),
+      new AudioAgent(),
+      new MusicAgent(),
     ];
     agents.forEach(agent => this.state.activeAgents.set(agent.getId(), agent));
   }
@@ -229,8 +235,8 @@ export class NexusCore {
         throw new Error('System is in failsafe mode');
       }
 
-      const plannerAgent = this.state.activeAgents.get('planner_planner') || new HybridAgent();
-      const plan = await createOrchestrationPlan(request.userInput, request.taskType as any, plannerAgent);
+      const plannerAgent = Array.from(this.state.activeAgents.values()).find(a => a.getRole() === 'strategist') || new HybridAgent();
+      let plan = await createOrchestrationPlan(request.userInput, request.taskType as any, plannerAgent);
       let regenerations = 0;
       let finalResult: { content: string; outputs: AgentOutput[]; validation: GovernorValidation; assets: ProductionAsset[] } | null = null;
 
@@ -241,13 +247,14 @@ export class NexusCore {
         const decision = await makeGovernorDecision(validation, { regenerationCount: regenerations });
 
         if (decision.approved) {
+          this.state.totalSuccesses++;
           finalResult = { content: execution.combinedContent, outputs: execution.outputs as unknown as AgentOutput[], validation, assets: execution.assets };
           break;
         }
 
         if (decision.action === 'regenerate') {
           regenerations++;
-          plan.subtasks.forEach(t => { if(t.status === 'completed') t.status = 'pending'; });
+          plan = await createOrchestrationPlan(request.userInput, request.taskType as any, plannerAgent, decision.reason);
           continue;
         }
         break;
@@ -317,6 +324,20 @@ export class NexusCore {
       const groupTasks = plan.subtasks.filter((t: any) => group.includes(t.id));
 
       const groupResults = await Promise.all(groupTasks.map(async (task: any) => {
+        // Budget check per task
+        const budgetCheck = await tokenBudgetManager.checkBudgetAvailability();
+        if (!budgetCheck.allowed) {
+          return {
+            agentId: 'system',
+            agentRole: 'hybrid' as AgentRole,
+            content: '',
+            success: false,
+            error: `Budget Blocked: ${budgetCheck.reason}`,
+            reasoning: 'Budget exceeded',
+            metadata: {},
+          };
+        }
+
         let attempt = 0;
         const maxSurgicalRetries = 2;
 
@@ -379,15 +400,58 @@ export class NexusCore {
     return {
       combinedContent: selectBestOutput(outputs as unknown as MultiAgentOutput[])?.content || '',
       outputs: outputs as unknown as MultiAgentOutput[],
-      assets: Array.from(taskOutputs.values())
-        .filter(o => (o.agentRole as string) === 'visual' && o.success)
-        .map(o => ({
-          type: 'image' as const,
-          url: o.content,
-          provider: o.metadata?.provider as string || 'unknown',
-          metadata: o.metadata ?? {},
-          status: 'completed' as const,
-        })),
+      assets: await Promise.all(
+        Array.from(taskOutputs.values())
+          .filter(o => o.success)
+          .map(async o => {
+            let type: ProductionAsset['type'] = 'document';
+            if (o.agentRole === 'visual' || o.metadata?.type === 'image') type = 'image';
+            else if (o.agentRole === 'videoEditor' || o.metadata?.type === 'video') type = 'video';
+            else if (o.agentRole === 'audio' || o.metadata?.type === 'audio') type = 'audio';
+            else if (o.agentRole === 'music' || o.metadata?.type === 'music') type = 'music';
+
+            // Route audio and music agent outputs through actual generation services
+            let assetUrl = o.content;
+            let assetProvider = o.metadata?.provider as string || 'unknown';
+            let assetStatus: ProductionAsset['status'] = 'completed';
+
+            if (type === 'audio') {
+              try {
+                const provider = await this.state.providerRouter.selectProvider({ taskType: 'audio' });
+                const result = await this.state.providerRouter.executeWithRetry(provider, o.content, { taskType: 'audio' });
+                if (result.success) {
+                  const parsed = JSON.parse(result.content);
+                  assetUrl = parsed.url || assetUrl;
+                  assetProvider = parsed.voiceProvider || provider.id;
+                }
+              } catch (audioGenErr) {
+                assetUrl = o.content;
+                assetStatus = 'failed';
+              }
+            } else if (type === 'music') {
+              try {
+                const provider = await this.state.providerRouter.selectProvider({ taskType: 'music' });
+                const result = await this.state.providerRouter.executeWithRetry(provider, o.content, { taskType: 'music' });
+                if (result.success) {
+                  const parsed = JSON.parse(result.content);
+                  assetUrl = parsed.url || assetUrl;
+                  assetProvider = provider.id;
+                }
+              } catch (musicGenErr) {
+                assetUrl = o.content;
+                assetStatus = 'failed';
+              }
+            }
+
+            return {
+              type,
+              url: assetUrl,
+              provider: assetProvider,
+              metadata: o.metadata ?? {},
+              status: assetStatus,
+            };
+          })
+      ),
     };
   }
 

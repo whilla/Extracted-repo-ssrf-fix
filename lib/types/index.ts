@@ -381,6 +381,7 @@ export interface TimelineAssemblyResult {
 // Puter Types (declarations for the global puter object)
 declare global {
   interface Window {
+    __puterAvailable?: boolean;
     puter: {
       ui?: {
         authenticateWithPuter?: () => Promise<void>;

@@ -47,7 +47,7 @@ export function useConnectionStatus(): UseConnectionStatusReturn {
   }, []);
 
   useEffect(() => {
-    checkConnection();
+    const timer = setTimeout(checkConnection, 0);
     
     const interval = setInterval(checkConnection, CONNECTION_CHECK_INTERVAL);
     
@@ -65,6 +65,7 @@ export function useConnectionStatus(): UseConnectionStatusReturn {
     window.addEventListener('offline', handleOffline);
     
     return () => {
+      clearTimeout(timer);
       clearInterval(interval);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);

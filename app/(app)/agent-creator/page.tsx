@@ -361,7 +361,7 @@ export default function AgentCreatorPage() {
                       </div>
                       <p className="text-muted-foreground mt-1">{selectedAgent.blueprint.description}</p>
                       <div className="flex items-center gap-4 mt-3">
-                        <StatusBadge status="info" label={selectedAgent.role} />
+                        <StatusBadge status={"info" as any} label={selectedAgent.role} />
                         <span className="text-sm text-muted-foreground">
                           v{selectedAgent.version}
                         </span>

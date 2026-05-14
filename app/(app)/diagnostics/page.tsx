@@ -41,7 +41,7 @@ export default function DiagnosticsPage() {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  async function loadData() {
     setLoading(true);
     try {
       const [diagData, providerData, budgetData] = await Promise.all([

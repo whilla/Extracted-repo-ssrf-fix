@@ -164,7 +164,7 @@ export default function CalendarPage() {
                       </h3>
                       <div className="flex items-center gap-4 flex-wrap mb-4">
                         {post.platforms?.map((platform) => (
-                          <StatusBadge key={platform} status="scheduled" platform={platform} />
+                          <StatusBadge key={platform} status={"scheduled" as any} label={platform} />
                         ))}
                       </div>
                       <p className="text-sm text-gray-400">

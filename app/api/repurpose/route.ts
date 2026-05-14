@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { repurposingService } from '@/lib/services/repurposingService';
+import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 
 const RepurposeRequestSchema = z.object({
   masterContent: z.string().min(1, 'Master content is required'),
@@ -10,7 +11,7 @@ const RepurposeRequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  try {
+  return withApiMiddleware(request, async () => {
     const body = await request.json();
     const result = RepurposeRequestSchema.safeParse(body);
     
@@ -22,7 +23,6 @@ export async function POST(request: NextRequest) {
 
     const { masterContent, platforms, toneAdjustment } = result.data;
 
-    // Use the repurposing service to generate the campaign
     const campaign = await repurposingService.repurpose({
       masterContent,
       platforms: platforms as any,
@@ -33,13 +33,7 @@ export async function POST(request: NextRequest) {
       status: 'success',
       campaign,
     });
-
-  } catch (error) {
-    console.error('[api/repurpose] Error:', error);
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Repurposing failed.' 
-    }, { status: 500 });
-  }
+  });
 }
 
 export async function GET() {

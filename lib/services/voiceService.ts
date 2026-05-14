@@ -1,4 +1,5 @@
 // Voice Service - ElevenLabs + Web Speech API fallback
+// @deprecated Consider using voiceGenerationService.ts (7 providers) for new integrations
 import { kvGet } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
 

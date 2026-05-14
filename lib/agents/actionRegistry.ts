@@ -85,4 +85,27 @@ export const ACTION_REGISTRY: Record<string, AgentAction> = {
     },
     requiresApproval: false,
   },
+  'generate_audio': {
+    id: 'gen_audio',
+    name: 'Generate Audio',
+    description: 'Generates voiceover/narration audio from text using TTS.',
+    workflowId: 'internal-audio-generation',
+    parameters: {
+      text: { type: 'string', description: 'The text to convert to speech' },
+      voice: { type: 'string', description: 'Voice style: alloy, echo, fable, nova, shimmer' },
+    },
+    requiresApproval: false,
+  },
+  'generate_music': {
+    id: 'gen_music',
+    name: 'Generate Music',
+    description: 'Generates background music based on mood, genre, and content description.',
+    workflowId: 'internal-music-generation',
+    parameters: {
+      prompt: { type: 'string', description: 'Description of the desired music mood/style' },
+      genre: { type: 'string', description: 'Genre: cinematic, pop, ambient, orchestral, electronic' },
+      duration: { type: 'number', description: 'Duration in seconds' },
+    },
+    requiresApproval: false,
+  },
 };

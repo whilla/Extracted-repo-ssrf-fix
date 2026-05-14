@@ -47,11 +47,22 @@ async function getMasterKey(): Promise<CryptoKey> {
 
 export function sanitizeApiKey(value: string | null | undefined): string {
   if (!value) return '';
-  let cleaned = value.replace(EDGE_QUOTE_PATTERN, '').trim();
-  if (cleaned.startsWith('sk_live_')) {
-    cleaned = 'sk_live_********************';
-  }
-  return cleaned;
+  return value.replace(EDGE_QUOTE_PATTERN, '').trim();
+}
+
+/**
+ * Mask an API key for display/logging.
+ * Returns empty string for null/undefined/empty.
+ * Strips surrounding quotes and trims whitespace.
+ * Returns '****' if cleaned length <= 8.
+ * Otherwise shows first 8 and last 4 chars with '****' in between.
+ * Does NOT modify the original value.
+ */
+export function maskApiKey(value: string | null | undefined): string {
+  if (!value) return '';
+  const cleaned = value.replace(EDGE_QUOTE_PATTERN, '').trim();
+  if (cleaned.length <= 8) return '****';
+  return cleaned.slice(0, 8) + '****' + cleaned.slice(-4);
 }
 
 export function hasConfiguredSecret(value: string | null | undefined): boolean {

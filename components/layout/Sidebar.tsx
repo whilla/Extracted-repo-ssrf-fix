@@ -32,6 +32,10 @@ import {
   Radio,
   Database,
   Power,
+  FlaskConical,
+  Repeat,
+  Gauge,
+  Shield,
 } from 'lucide-react';
 
 const navItems = [
@@ -56,7 +60,11 @@ const navItems = [
   { href: '/diagnostics', label: 'Diagnostics', icon: Activity },
   { href: '/history', label: 'Run History', icon: History },
   { href: '/brand', label: 'Brand Kit', icon: Palette },
+  { href: '/realtime', label: 'Live Analytics', icon: Gauge },
+  { href: '/fine-tuning', label: 'Model Tuning', icon: FlaskConical },
+  { href: '/repurpose', label: 'Repurpose', icon: Repeat },
   { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/admin', label: 'Admin', icon: Shield },
 ];
 
 export function Sidebar() {

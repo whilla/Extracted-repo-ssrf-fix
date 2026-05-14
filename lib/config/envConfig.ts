@@ -9,12 +9,13 @@ const envSchema = z.object({
   // Supabase (Required)
   NEXT_PUBLIC_SUPABASE_URL: z.string().url('Invalid Supabase URL'),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1, 'Supabase anon key required'),
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1, 'Supabase publishable key required'),
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
 
   // Application
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
+  NEXT_PUBLIC_SITE_URL: z.string().url().default('http://localhost:3000'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
 
   // Puter
@@ -90,10 +91,11 @@ export function getEnvConfig(): EnvConfig {
     return {
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
       NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
       NODE_ENV: (process.env.NODE_ENV as EnvConfig["NODE_ENV"]) || "development",
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+      NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
       LOG_LEVEL: (process.env.LOG_LEVEL as EnvConfig["LOG_LEVEL"]) || "info",
       NEXT_PUBLIC_PUTER_DOMAIN: process.env.NEXT_PUBLIC_PUTER_DOMAIN,
       NEXT_PUBLIC_PUTER_APP_ID: process.env.NEXT_PUBLIC_PUTER_APP_ID,

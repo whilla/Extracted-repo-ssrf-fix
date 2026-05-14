@@ -10,7 +10,7 @@
  * - Output storage and history
  */
 
-import { kvGet, kvSet } from '../services/puterService';
+import { automationPersistenceService } from '../services/automationPersistenceService';
 import { publishPost } from '../services/publishService';
 import { nexusCore, type NexusRequest, type NexusResult } from './NexusCore';
 import { memoryManager } from './MemoryManager';
@@ -100,15 +100,6 @@ interface AutomationQueueEntry {
   nextAttemptAt: string | null;
   lastError?: string;
 }
-
-// Storage keys
-const KEYS = {
-  config: 'nexus_automation_config',
-  state: 'nexus_automation_state',
-  outputs: 'nexus_automation_outputs',
-  queue: 'nexus_automation_queue',
-  deadLetters: 'nexus_automation_dead_letters',
-};
 
 /**
  * AutomationEngine Class
@@ -996,134 +987,77 @@ export class AutomationEngine {
   // ==================== PERSISTENCE ====================
 
   private async loadConfig(): Promise<AutomationConfig | null> {
-    try {
-      const data = await kvGet(KEYS.config);
-      return data ? JSON.parse(data) : null;
-    } catch {
-      return null;
-    }
+    return automationPersistenceService.getConfig<AutomationConfig>();
   }
 
   private async saveConfig(): Promise<void> {
-    try {
-      await kvSet(KEYS.config, JSON.stringify(this.config));
-    } catch {
-      console.error('[AutomationEngine] Failed to save config');
-    }
+    await automationPersistenceService.saveConfig(this.config);
   }
 
   private async loadState(): Promise<AutomationState | null> {
-    try {
-      const data = await kvGet(KEYS.state);
-      return data ? JSON.parse(data) : null;
-    } catch {
-      return null;
-    }
+    return automationPersistenceService.getState<AutomationState>();
   }
 
   private async saveState(): Promise<void> {
-    try {
-      await kvSet(KEYS.state, JSON.stringify(this.state));
-    } catch {
-      console.error('[AutomationEngine] Failed to save state');
-    }
+    await automationPersistenceService.saveState(this.state);
   }
 
   private async loadOutputs(): Promise<void> {
-    try {
-      const data = await kvGet(KEYS.outputs);
-      this.outputs = data ? JSON.parse(data) : [];
-    } catch {
-      this.outputs = [];
-    }
+    this.outputs = await automationPersistenceService.getOutputs<AutomationOutput>();
   }
 
   private async saveOutputs(): Promise<void> {
-    try {
-      await kvSet(KEYS.outputs, JSON.stringify(this.outputs));
-    } catch {
-      console.error('[AutomationEngine] Failed to save outputs');
-    }
+    await automationPersistenceService.saveOutputs(this.outputs);
   }
 
   private async loadQueue(): Promise<void> {
-    try {
-      const data = await kvGet(KEYS.queue);
-      if (!data) {
-        this.queue = [];
-        return;
-      }
+    const parsed = await automationPersistenceService.getQueue<Partial<AutomationQueueEntry>>();
+    this.queue = parsed
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const candidate = item as Partial<AutomationQueueEntry> & { request?: NexusRequest; userInput?: string };
 
-      const parsed = JSON.parse(data) as unknown;
-      if (!Array.isArray(parsed)) {
-        this.queue = [];
-        return;
-      }
+        if (candidate.request && typeof candidate.request === 'object' && candidate.request.userInput) {
+          const normalized: AutomationQueueEntry = {
+            id: typeof candidate.id === 'string' ? candidate.id : `queue_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+            idempotencyKey:
+              typeof candidate.idempotencyKey === 'string' && candidate.idempotencyKey
+                ? candidate.idempotencyKey
+                : this.buildIdempotencyKey(candidate.request),
+            request: candidate.request,
+            attempts: Number.isFinite(candidate.attempts) ? Math.max(0, Number(candidate.attempts)) : 0,
+            maxAttempts: Number.isFinite(candidate.maxAttempts) ? Math.max(1, Number(candidate.maxAttempts)) : 3,
+            createdAt: typeof candidate.createdAt === 'string' ? candidate.createdAt : new Date().toISOString(),
+            updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : new Date().toISOString(),
+            nextAttemptAt: typeof candidate.nextAttemptAt === 'string' ? candidate.nextAttemptAt : null,
+            lastError: typeof candidate.lastError === 'string' ? candidate.lastError : undefined,
+          };
+          return normalized;
+        }
 
-      this.queue = parsed
-        .map((item) => {
-          if (!item || typeof item !== 'object') return null;
-          const candidate = item as Partial<AutomationQueueEntry> & { request?: NexusRequest; userInput?: string };
-
-          if (candidate.request && typeof candidate.request === 'object' && candidate.request.userInput) {
-            const normalized: AutomationQueueEntry = {
-              id: typeof candidate.id === 'string' ? candidate.id : `queue_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-              idempotencyKey:
-                typeof candidate.idempotencyKey === 'string' && candidate.idempotencyKey
-                  ? candidate.idempotencyKey
-                  : this.buildIdempotencyKey(candidate.request),
-              request: candidate.request,
-              attempts: Number.isFinite(candidate.attempts) ? Math.max(0, Number(candidate.attempts)) : 0,
-              maxAttempts: Number.isFinite(candidate.maxAttempts) ? Math.max(1, Number(candidate.maxAttempts)) : 3,
-              createdAt: typeof candidate.createdAt === 'string' ? candidate.createdAt : new Date().toISOString(),
-              updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : new Date().toISOString(),
-              nextAttemptAt: typeof candidate.nextAttemptAt === 'string' ? candidate.nextAttemptAt : null,
-              lastError: typeof candidate.lastError === 'string' ? candidate.lastError : undefined,
-            };
-            return normalized;
+        if (typeof candidate.userInput === 'string') {
+          const legacyRequest = candidate as unknown as NexusRequest;
+          if (!legacyRequest.userInput || !legacyRequest.taskType) {
+            return null;
           }
+          return this.createQueueEntry(legacyRequest);
+        }
 
-          if (typeof candidate.userInput === 'string') {
-            const legacyRequest = candidate as unknown as NexusRequest;
-            return this.createQueueEntry(legacyRequest);
-          }
-
-          return null;
-        })
-        .filter((entry): entry is AutomationQueueEntry => Boolean(entry));
-    } catch {
-      this.queue = [];
-    }
+        return null;
+      })
+      .filter((entry): entry is AutomationQueueEntry => Boolean(entry));
   }
 
   private async saveQueue(): Promise<void> {
-    try {
-      await kvSet(KEYS.queue, JSON.stringify(this.queue));
-    } catch {
-      console.error('[AutomationEngine] Failed to save queue');
-    }
+    await automationPersistenceService.saveQueue(this.queue);
   }
 
   private async loadDeadLetters(): Promise<void> {
-    try {
-      const data = await kvGet(KEYS.deadLetters);
-      if (!data) {
-        this.deadLetters = [];
-        return;
-      }
-      const parsed = JSON.parse(data);
-      this.deadLetters = Array.isArray(parsed) ? parsed : [];
-    } catch {
-      this.deadLetters = [];
-    }
+    this.deadLetters = await automationPersistenceService.getDeadLetters<AutomationQueueEntry>();
   }
 
   private async saveDeadLetters(): Promise<void> {
-    try {
-      await kvSet(KEYS.deadLetters, JSON.stringify(this.deadLetters.slice(-200)));
-    } catch {
-      console.error('[AutomationEngine] Failed to save dead letters');
-    }
+    await automationPersistenceService.saveDeadLetters(this.deadLetters.slice(-200));
   }
 
   private async findMatchingIdea(customInstructions?: string): Promise<ContentIdea | null> {

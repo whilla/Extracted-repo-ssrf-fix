@@ -6,11 +6,11 @@ import { encryptSensitiveData, decryptSensitiveData, markAsEncrypted, isEncrypte
 const PUTER_READY_TIMEOUT = 8000;
 const PUTER_AUTH_TIMEOUT = 45000;
 const PUTER_AUTH_POLL_INTERVAL = 500;
-// SECURITY FIX: Use SRI hash for Puter script to prevent tampering
-// Generate with: curl https://js.puter.com/v2/ 2>/dev/null | openssl dgst -sha384 -binary | openssl enc -base64 -A
-// Updated: 2024-05-02
+// Puter.js is loaded from CDN without SRI since the hash changes frequently.
+// Regenerate SRI with: curl https://js.puter.com/v2/ 2>/dev/null | openssl dgst -sha384 -binary | openssl enc -base64 -A
+// Set PUTER_SCRIPT_SRI env var to enable SRI validation, or leave empty to skip.
 const PUTER_SCRIPT_URL = 'https://js.puter.com/v2';
-const PUTER_SCRIPT_SRI = 'sha384-5Qe3pHfFhPPfF5xHEQHFx7JvJNZKj7v2KZvJzK7v2vKZvJzKj7v2KZvJzKj7v2Kzv'; // Always validate with CDN
+const PUTER_SCRIPT_SRI = process.env.PUTER_SCRIPT_SRI || '';
 const LOCAL_KV_PREFIX = 'nexus:kv:';
 const LOCAL_SECRET_PREFIX = 'nexus:secret:';
 const LOCAL_FILE_PREFIX = 'nexus:file:';

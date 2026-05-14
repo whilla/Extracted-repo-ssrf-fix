@@ -3,10 +3,12 @@
 
 import { kvGet, kvSet } from './puterService';
 import { generateId } from './memoryService';
+import { logger } from '@/lib/utils/logger';
 import { combineStructuredOutputs } from './orchestrationPrimitives';
 import { stateCache } from './stateCache';
 import { dynamicGenerationService } from './dynamicGenerationService';
 import { swarmTraceService } from './swarmTraceService';
+import { processToolCalls } from './toolExecutorService';
 import { 
   StrategistAgent, 
   WriterAgent, 
@@ -15,7 +17,10 @@ import {
   OptimizerAgent, 
   HybridAgent, 
   SynthesisAgent,
-  VideoEditorAgent
+  VisualCriticAgent,
+  VideoEditorAgent,
+  AudioAgent,
+  MusicAgent
 } from '../agents';
 
 // Cache configuration
@@ -88,7 +93,8 @@ export type AgentCapability =
   | 'visual_description'
   | 'hashtag_research'
   | 'engagement_prediction'
-  | 'multi_task';
+  | 'multi_task'
+  | 'tool_use';
 
 export interface AgentConfig {
   id: string;
@@ -158,6 +164,7 @@ export interface SubTask {
   status: 'pending' | 'running' | 'completed' | 'failed';
   output?: AgentOutput;
   dependencies?: string[];
+  requiresApproval?: boolean;
 }
 
 export interface OrchestrationPlan {
@@ -169,6 +176,10 @@ export interface OrchestrationPlan {
   status: 'planning' | 'executing' | 'paused' | 'aggregating' | 'completed' | 'failed';
   finalOutput?: string;
   createdAt: string;
+  estimatedCost?: {
+    tokens: number;
+    credits: number;
+  };
 }
 
 // Default Agent Templates
@@ -300,7 +311,7 @@ Return production-ready core content only.`,
   {
     name: 'DistributionAgent',
     role: 'distribution',
-    capabilities: ['distribution_formatting', 'hashtag_research'],
+    capabilities: ['distribution_formatting', 'hashtag_research', 'tool_use'],
     promptTemplate: `You are the Caption & Distribution Agent.
 
 Role:
@@ -549,14 +560,16 @@ Provide detailed predictions with confidence levels.`,
   {
     name: 'VideoEditorAgent',
     role: 'videoEditor',
-    capabilities: ['multi_task'],
+    capabilities: ['multi_task', 'tool_use'],
     promptTemplate: `You are the Video Editor Agent. Your job is to manipulate the video timeline to create a polished, professional video.
 
-You have access to the \`update_video_timeline\` tool to:
-- \`add_clip\`: Add a video, audio, text, or image asset.
-- \`move_event\`: Change the start time of an element.
-- \`resize_event\`: Change the duration of an element.
-- \`remove_event\`: Delete an element.
+You can invoke tools using this format: [[tool:action_name(param1: value1, param2: value2)]]
+
+Available tools:
+- [[tool:generate_video(script: "...", aspect_ratio: "9:16", duration: "30")]]
+- [[tool:generate_social_copy(video_summary: "...", platform: "tiktok", target_audience: "...")]]
+- [[tool:post_to_social(video_url: "...", caption: "...", platform: "tiktok")]]
+- [[tool:schedule_post(video_url: "...", caption: "...", platform: "instagram", scheduled_time: "2026-01-01T12:00:00Z")]]
 
 Your mission:
 1. Sequence clips to tell a coherent story.
@@ -570,7 +583,7 @@ Current Timeline:
 User Instruction: {{input}}
 Brand Context: {{brandContext}}
 
-Return the sequence of tool calls needed to perform the requested edits.`,
+Return your edit plan and invoke the necessary tools inline using the [[tool:...]] format when you need to execute an action.`,
     scoringWeights: { creativity: 0.1, relevance: 0.4, engagement: 0.2, brandAlignment: 0.3 },
     performanceScore: 80,
     evolutionState: 'active',
@@ -606,6 +619,7 @@ const VALID_AGENT_CAPABILITIES: ReadonlySet<AgentCapability> = new Set([
   'hashtag_research',
   'engagement_prediction',
   'multi_task',
+  'tool_use',
 ]);
 const VALID_AGENT_ROLES: ReadonlySet<AgentRole> = new Set([
   'planner',
@@ -848,6 +862,8 @@ export async function getAgentByRole(role: AgentRole): Promise<any | null> {
     optimizer: OptimizerAgent,
     hybrid: HybridAgent,
     videoEditor: VideoEditorAgent,
+    audio: AudioAgent,
+    music: MusicAgent,
   };
 
   const AgentClass = agentMap[role]; 
@@ -908,7 +924,8 @@ export async function recordAgentTask(
 export async function createOrchestrationPlan(
   userRequest: string,
   requestType: 'content' | 'strategy' | 'full',
-  dynamicPlanner?: any
+  dynamicPlanner?: any,
+  feedback?: string
 ): Promise<OrchestrationPlan> {
   // If dynamic planner is provided, let it design the graph
   if (dynamicPlanner) {
@@ -917,6 +934,7 @@ export async function createOrchestrationPlan(
       
       Request: "${userRequest}"
       Type: ${requestType}
+      ${feedback ? `\nCRITICAL: Previous attempt failed with the following feedback: "${feedback}". Adjust the plan to address these issues.` : ''}
       
       Available Agents:
       - planner: High-level execution planning
@@ -1119,6 +1137,10 @@ export async function createOrchestrationPlan(
     aggregationStrategy: requestType === 'strategy' ? 'best_score' : 'combine',
     status: 'planning',
     createdAt: new Date().toISOString(),
+    estimatedCost: {
+      tokens: subtasks.length * 1500, // Base estimation
+      credits: subtasks.length * 0.5,
+    },
   };
 
   return plan;
@@ -1190,14 +1212,44 @@ export async function executeAgentTask(
   }
 
   const prompt = fillPromptTemplate(agent.promptTemplate, input, context);
-  const reasoningPrompt = `${prompt}\n\n${DEEP_REASONING_DIRECTIVE}`;
+  const agentCanUseTools = agent.capabilities?.includes('tool_use' as any) || agent.role === 'strategist' || agent.role === 'hybrid';
+  const toolDirective = agentCanUseTools
+    ? '\n\nYou can invoke tools using the format: [[tool:action_name(param1: value1, param2: value2)]]\nAvailable tools: generate_video, generate_social_copy, post_to_social, schedule_post, create_automation_plan, update_plan_progress'
+    : '';
+  const reasoningPrompt = `${prompt}\n\n${DEEP_REASONING_DIRECTIVE}${toolDirective}`;
   
   try {
-    const content = await aiProvider(reasoningPrompt);
+    let currentPrompt = reasoningPrompt;
+    let content = '';
+    let toolCallsDetected = true;
+    let iterations = 0;
+    const maxIterations = 5;
+
+    while (toolCallsDetected && iterations < maxIterations) {
+      iterations++;
+      content = await aiProvider(currentPrompt);
+
+      if (agentCanUseTools) {
+        const { cleanedOutput, toolResults } = await processToolCalls(content);
+        if (toolResults.length > 0) {
+          content = cleanedOutput;
+          currentPrompt = content; // Use observations as next prompt for ReAct loop
+          if (iterations === 1) {
+             logger.info('[MultiAgentService]', `[Agent ${agent.id}] Detected ${toolResults.length} tool call(s). Starting ReAct loop (Iteration 1/${maxIterations})`);
+          } else {
+             logger.info('[MultiAgentService]', `[Agent ${agent.id}] Continuing ReAct loop (Iteration ${iterations}/${maxIterations})`);
+          }
+        } else {
+          toolCallsDetected = false;
+        }
+      } else {
+        toolCallsDetected = false;
+      }
+    }
+
     const duration = Date.now() - startTime;
-    
     const score = await calculateOutputScore(content, agent.scoringWeights, agent.id);
-    const finalScore = await score;
+    const finalScore = score;
 
     await recordAgentTask(agent.id, {
       taskType: agent.role,
@@ -1212,9 +1264,9 @@ export async function executeAgentTask(
       agentRole: agent.role,
       content,
       score: finalScore,
-      reasoning: `Generated by ${agent.name} (v${agent.version}) with deep reasoning`,
+      reasoning: `Generated by ${agent.name} (v${agent.version}) with ${iterations > 1 ? 'ReAct loop (' + iterations + ' iterations)' : 'deep reasoning'} in ${duration}ms`,
       fullPrompt: reasoningPrompt,
-      metadata: { duration, promptLength: reasoningPrompt.length, reasoningMode: 'deep' },
+      metadata: { duration, promptLength: reasoningPrompt.length, outputLength: content.length, iterations, reasoningMode: iterations > 1 ? 'react' : 'deep' },
     };
 
     if (traceId) {
@@ -1265,14 +1317,9 @@ async function calculateOutputScore(
   weights: AgentConfig['scoringWeights'],
   agentId: string
 ): Promise<number> {
-  // Use LLM-powered scoring to replace basic heuristics
+  let score = 0;
+  const sentences = content.split(/[.!?]+/).filter(Boolean);
   try {
-    // simulate LLM score
-    const simulatedLlmScore = Math.random() * 30 + 70; 
-    return Math.round(simulatedLlmScore);
-  } catch (e) {
-    let score = 0;
-    const sentences = content.split(/[.!?]+/).filter(Boolean);
     const avgSentenceLength = sentences.reduce((sum, s) => sum + s.length, 0) / (sentences.length || 1);
     const creativityScore = Math.min(100, avgSentenceLength > 50 && avgSentenceLength < 150 ? 80 : 60);
     score += creativityScore * weights.creativity;
@@ -1286,6 +1333,8 @@ async function calculateOutputScore(
     const brandScore = 75;
     score += brandScore * weights.brandAlignment;
     return Math.round(score);
+  } catch {
+    return 0;
   }
 }
 

@@ -690,3 +690,110 @@ export {
   OPTIMIZER_PROMPT,
   HYBRID_PROMPT,
 };
+
+// ==================== AUDIO AGENT ====================
+
+/**
+ * AudioAgent - Creates high-quality voiceovers and spoken content
+ */
+export class AudioAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: 'Audio Specialist',
+      role: 'audio',
+      capabilities: ['voice_generation', 'audio_optimization'],
+      promptTemplate: AUDIO_PROMPT,
+      scoringWeights: {
+        creativity: 0.2,
+        relevance: 0.4,
+        engagement: 0.3,
+        brandAlignment: 0.1,
+      },
+      optimizationRules: [
+        { condition: 'low_score', action: 'enhance_prompt', threshold: 70 },
+      ],
+    });
+  }
+
+  protected buildPrompt(context: AgentExecutionContext): string {
+    let prompt = this.config.promptTemplate;
+    prompt = prompt.replace('{{input}}', context.userInput);
+    prompt = prompt.replace('{{tone}}', context.memoryContext.brandMemory?.brandKit?.tone || 'engaging');
+    
+    if (context.customInstructions) {
+      prompt += this.getInstructionOverride(context);
+    }
+
+    return prompt;
+  }
+}
+
+// ==================== MUSIC AGENT ====================
+
+/**
+ * MusicAgent - Creates background tracks and musical themes
+ */
+export class MusicAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: 'Music Maestro',
+      role: 'music',
+      capabilities: ['music_generation', 'rhythmic_alignment'],
+      promptTemplate: MUSIC_PROMPT,
+      scoringWeights: {
+        creativity: 0.4,
+        relevance: 0.3,
+        engagement: 0.2,
+        brandAlignment: 0.1,
+      },
+      optimizationRules: [
+        { condition: 'low_score', action: 'increase_creativity', threshold: 60 },
+      ],
+    });
+  }
+
+  protected buildPrompt(context: AgentExecutionContext): string {
+    let prompt = this.config.promptTemplate;
+    prompt = prompt.replace('{{input}}', context.userInput);
+    prompt = prompt.replace('{{mood}}', context.memoryContext.brandMemory?.brandKit?.tone || 'energetic');
+    
+    if (context.customInstructions) {
+      prompt += this.getInstructionOverride(context);
+    }
+
+    return prompt;
+  }
+}
+
+const AUDIO_PROMPT = `You are an expert voiceover director and audio engineer.
+
+Your mission: Transform the provided text into a professional, high-impact audio script and direction.
+
+Text to perform:
+{{input}}
+
+Voice Tone/Mood:
+{{tone}}
+
+Provide:
+1. The final spoken script (optimized for natural breathing and pacing).
+2. Vocal direction notes (e.g., [warm and inviting], [urgent and fast-paced], [whispered]).
+3. Audio environment instructions (e.g., [studio dry], [subtle room reverb], [outdoor ambiance]).
+
+Write like a professional voice actor preparing for a recording session.`;
+
+const MUSIC_PROMPT = `You are an elite music producer and composer.
+
+Your mission: Create a unique musical theme or background track that perfectly complements the content.
+
+Context/Mood:
+{{mood}}
+
+User Request: {{input}}
+
+Provide:
+1. A detailed musical prompt for an AI music generator (e.g., Suno, Udio).
+2. Composition details: Tempo (BPM), Key, Instruments, Energy Level (1-10), and Emotional Arc.
+3. Rhythmic patterns and stylistic influences.
+
+Focus on creating music that enhances the emotional impact without overpowering the primary message.`;

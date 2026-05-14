@@ -9,13 +9,13 @@
  * - Handle fallback provider switching
  */
 
-import { kvGet, kvSet } from '../services/puterService.ts';
-import { universalChat } from '../services/aiService.ts';
-import { generateImage as generateImageAsset } from '../services/imageGenerationService.ts';
-import { generateVideo as generateVideoAsset } from '../services/videoGenerationService.ts';
-import { generateMusic } from '../services/musicGenerationService.ts';
-import { textToSpeech } from '../services/voiceService.ts';
-import { tokenBudgetManager } from '../services/tokenBudgetManager.ts';
+import { kvGet, kvSet } from '../services/puterService';
+import { universalChat } from '../services/aiService';
+import { generateImage as generateImageAsset } from '../services/imageGenerationService';
+import { generateVideo as generateVideoAsset } from '../services/videoGenerationService';
+import { generateMusic } from '../services/musicGenerationService';
+import { textToSpeech } from '../services/voiceService';
+import { tokenBudgetManager } from '../services/tokenBudgetManager';
 
 // Provider Types
 export type ProviderType = 'llm' | 'image' | 'audio' | 'music' | 'video';
@@ -172,16 +172,97 @@ const PROVIDER_CONFIGS: Omit<Provider, 'status' | 'lastSuccess' | 'lastFailure'>
     ],
   },
   {
-    id: 'browser-audio',
-    name: 'Voice Synthesis',
+    id: 'elevenlabs-tts',
+    name: 'ElevenLabs TTS',
     type: 'audio',
-    models: ['speech-synthesis'],
+    models: ['eleven_monolingual_v1', 'eleven_multilingual_v2'],
     latency: 0,
     failureRate: 0,
     priority: 1,
     capabilities: [
-      { name: 'audio_generation', supported: true, quality: 80 },
-      { name: 'voice', supported: true, quality: 75 },
+      { name: 'audio_generation', supported: true, quality: 95 },
+      { name: 'voice', supported: true, quality: 94 },
+      { name: 'multi_language', supported: true, quality: 90 },
+    ],
+  },
+  {
+    id: 'openai-tts',
+    name: 'OpenAI TTS',
+    type: 'audio',
+    models: ['tts-1', 'tts-1-hd'],
+    latency: 0,
+    failureRate: 0,
+    priority: 2,
+    capabilities: [
+      { name: 'audio_generation', supported: true, quality: 88 },
+      { name: 'voice', supported: true, quality: 85 },
+      { name: 'multi_language', supported: true, quality: 82 },
+    ],
+  },
+  {
+    id: 'browser-audio',
+    name: 'Web Speech API',
+    type: 'audio',
+    models: ['speech-synthesis'],
+    latency: 0,
+    failureRate: 0,
+    priority: 3,
+    capabilities: [
+      { name: 'audio_generation', supported: true, quality: 70 },
+      { name: 'voice', supported: true, quality: 65 },
+    ],
+  },
+  {
+    id: 'suno-music',
+    name: 'Suno AI Music',
+    type: 'music',
+    models: ['suno-v3', 'suno-v4'],
+    latency: 0,
+    failureRate: 0,
+    priority: 1,
+    capabilities: [
+      { name: 'music_generation', supported: true, quality: 92 },
+      { name: 'lyrics', supported: true, quality: 85 },
+      { name: 'multi_genre', supported: true, quality: 88 },
+    ],
+  },
+  {
+    id: 'beatoven-music',
+    name: 'Beatoven AI',
+    type: 'music',
+    models: ['beatoven-v1'],
+    latency: 0,
+    failureRate: 0,
+    priority: 2,
+    capabilities: [
+      { name: 'music_generation', supported: true, quality: 80 },
+      { name: 'cinematic', supported: true, quality: 82 },
+    ],
+  },
+  {
+    id: 'aiva-music',
+    name: 'AIVA Music',
+    type: 'music',
+    models: ['aiva-v1'],
+    latency: 0,
+    failureRate: 0,
+    priority: 3,
+    capabilities: [
+      { name: 'music_generation', supported: true, quality: 78 },
+      { name: 'orchestral', supported: true, quality: 85 },
+    ],
+  },
+  {
+    id: 'browser-music',
+    name: 'Browser MusicGen',
+    type: 'music',
+    models: ['browser-synthesis'],
+    latency: 0,
+    failureRate: 0,
+    priority: 4,
+    capabilities: [
+      { name: 'music_generation', supported: true, quality: 55 },
+      { name: 'ambient', supported: true, quality: 60 },
     ],
   },
   {
@@ -283,6 +364,7 @@ export class ProviderRouter {
     if (criteria.requiresImage) requiredType = 'image';
     if (criteria.taskType === 'image') requiredType = 'image';
     if (criteria.taskType === 'audio') requiredType = 'audio';
+    if (criteria.taskType === 'music') requiredType = 'music';
     if (criteria.taskType === 'video') requiredType = 'video';
 
     // Filter healthy providers of required type
@@ -443,25 +525,104 @@ export class ProviderRouter {
         return image.url;
       
       case 'audio':
-        const { blob } = await textToSpeech(prompt);
-        const audioUrl = URL.createObjectURL(blob);
-        return JSON.stringify({
-          type: 'audio',
-          url: audioUrl,
-          duration: Math.max(3, Math.ceil(prompt.trim().split(/\s+/).length / 2.5)),
-          provider: provider.id,
-        });
+        try {
+          const { blob, provider: voiceProv } = await textToSpeech(prompt);
+          const audioUrl = URL.createObjectURL(blob);
+          return JSON.stringify({
+            type: 'audio',
+            url: audioUrl,
+            duration: Math.max(3, Math.ceil(prompt.trim().split(/\s+/).length / 2.5)),
+            provider: provider.id,
+            voiceProvider: voiceProv || 'web-speech',
+          });
+        } catch (audioErr) {
+          // Fallback to voiceService.ts synthesizeVoice if textToSpeech fails
+          const { synthesizeVoice } = await import('../services/voiceService');
+          const fallbackUrl = await synthesizeVoice(prompt, { voiceId: 'alloy' });
+          if (fallbackUrl) {
+            return JSON.stringify({
+              type: 'audio',
+              url: fallbackUrl,
+              duration: Math.max(3, Math.ceil(prompt.trim().split(/\s+/).length / 2.5)),
+              provider: provider.id,
+              voiceProvider: 'fallback',
+            });
+          }
+          throw audioErr;
+        }
 
       case 'music':
-        // Production Implementation: Use specialized music synthesis
-        const musicUrl = await generateMusic({ prompt });
-        return JSON.stringify({
-          type: 'music',
-          url: musicUrl,
-          provider: provider.id,
-          quality: 'studio',
-          loopable: true,
-        });
+        try {
+          const { generateMusic } = await import('../services/musicGenerationService');
+          const { analyzeMusicMood, generateBackgroundMusic } = await import('../services/musicEngine');
+          const { mapEmotionFromScene } = await import('../services/emotionMappingEngine');
+          const { buildBeatTimingPlan } = await import('../services/beatTimingEngine');
+          const { buildSoundDesignPlan } = await import('../services/soundDesignService');
+          const { buildAudioMixPlan } = await import('../services/audioMixingService');
+          const mood = await analyzeMusicMood(prompt);
+          const emotionMap = mapEmotionFromScene(prompt);
+          const beatPlan = buildBeatTimingPlan(30, emotionMap.emotion);
+          const soundPlan = buildSoundDesignPlan(emotionMap.emotion, beatPlan);
+          const mixPlan = buildAudioMixPlan(soundPlan);
+          // Try generateBackgroundMusic with automatic fallback chain
+          const bgMusic = await generateBackgroundMusic(prompt, { duration: 30 });
+          if (bgMusic && bgMusic.url !== 'browser-generated') {
+            return JSON.stringify({
+              type: 'music',
+              url: bgMusic.url,
+              provider: provider.id,
+              quality: 'studio',
+              mood: bgMusic.mood.primary,
+              tempo: bgMusic.mood.tempo,
+              duration: bgMusic.duration,
+              loopable: true,
+              emotion: emotionMap.emotion,
+              soundDesign: soundPlan.ambience,
+              audioMix: { voice: mixPlan.settings.voiceVolume, music: mixPlan.settings.musicVolume, ducking: mixPlan.settings.duckingEnabled },
+              beatTiming: beatPlan.markers.map(m => ({ at: m.second, type: m.type })),
+            });
+          }
+          // Fallback to musicGenerationService
+          const musicTrackId = await generateMusic({ prompt, duration: 30 });
+          return JSON.stringify({
+            type: 'music',
+            url: musicTrackId,
+            provider: provider.id,
+            quality: 'studio',
+            loopable: true,
+            emotion: emotionMap.emotion,
+            soundDesign: soundPlan.ambience,
+            audioMix: { voice: mixPlan.settings.voiceVolume, music: mixPlan.settings.musicVolume },
+          });
+        } catch (musicErr) {
+          // Final fallback: browser-based synthesis
+          const { getBrowserMusicGenerator } = await import('../services/musicEngine');
+          const { analyzeMusicMood } = await import('../services/musicEngine');
+          const { mapEmotionFromScene } = await import('../services/emotionMappingEngine');
+          const { buildBeatTimingPlan } = await import('../services/beatTimingEngine');
+          const { buildSoundDesignPlan } = await import('../services/soundDesignService');
+          const { buildAudioMixPlan } = await import('../services/audioMixingService');
+          const mood = await analyzeMusicMood(prompt);
+          const emotionMap = mapEmotionFromScene(prompt);
+          const beatPlan = buildBeatTimingPlan(30, emotionMap.emotion);
+          const soundPlan = buildSoundDesignPlan(emotionMap.emotion, beatPlan);
+          const mixPlan = buildAudioMixPlan(soundPlan);
+          const generator = getBrowserMusicGenerator();
+          const blob = await generator.generateMusic(mood, 30);
+          const url = URL.createObjectURL(blob);
+          return JSON.stringify({
+            type: 'music',
+            url,
+            provider: provider.id,
+            quality: 'ambient',
+            mood: mood.primary,
+            loopable: true,
+            emotion: emotionMap.emotion,
+            soundDesign: soundPlan.ambience,
+            audioMix: { voice: mixPlan.settings.voiceVolume, music: mixPlan.settings.musicVolume },
+            beatTiming: beatPlan.markers.map(m => ({ at: m.second, type: m.type })),
+          });
+        }
       
       case 'video':
         const video = await generateVideoAsset({ prompt, provider: 'ltx23' });
@@ -561,9 +722,12 @@ export class ProviderRouter {
         provider.status.healthy = true;
       } else if (provider.type === 'audio') {
         provider.status.healthy = typeof window !== 'undefined'
-          && ('speechSynthesis' in window);
-      }
-      if (provider.type !== 'audio') {
+          && ('speechSynthesis' in window)
+          || !!(await import('../services/puterService').then(m => m.kvGet('elevenlabs_key')))
+          || !!process.env.ELEVENLABS_API_KEY;
+      } else if (provider.type === 'music') {
+        provider.status.healthy = true;
+      } else {
         provider.status.healthy = true;
       }
       provider.status.consecutiveFailures = 0;

@@ -58,6 +58,7 @@ export class VideoEditingService {
     this.timeline.transitions.set(`${trackId1}-${trackId2}`, transition);
   }
 
+  /** @deprecated Not implemented — returns failure. */
   static async renderTimeline(
     onProgress?: (progress: number) => void
   ): Promise<VideoEditResult> {
@@ -66,27 +67,32 @@ export class VideoEditingService {
         return { success: false, error: 'No timeline created' };
       }
 
-      const renderRequest = {
-        timeline: {
-          tracks: this.timeline.tracks.map(t => ({
-            ...t,
-            transitions: undefined,
-          })),
-          duration: this.timeline.duration,
-          resolution: this.timeline.resolution,
-        },
-        transitions: Array.from(this.timeline.transitions.entries()),
-      };
-
-      logger.info('[VideoEditingService] Rendering timeline', renderRequest);
-
-      for (let i = 0; i <= 100; i += 10) {
-        await new Promise(r => setTimeout(r, 100));
-        onProgress?.(i);
+      if (this.timeline.tracks.length === 0) {
+        return { success: false, error: 'Timeline has no tracks to render' };
       }
 
-      const outputUrl = `https://storage.nexusai.io/renders/${Date.now()}.mp4`;
-      return { success: true, outputUrl };
+      logger.info('[VideoEditingService] Render requested (requires backend)', {
+        tracks: this.timeline.tracks.length,
+        duration: this.timeline.duration,
+        resolution: this.timeline.resolution,
+      });
+
+      // Real video rendering requires a cloud video processing service
+      // such as FFmpeg (via fluent-ffmpeg on Node.js), Remotion, or a cloud API.
+      // In-memory timeline editing is supported, but actual frame-by-frame
+      // rendering and encoding needs a backend processing pipeline.
+      //
+      // To implement real rendering:
+      // 1. Install fluent-ffmpeg and ffmpeg-static
+      // 2. Export timeline to FFmpeg filter complex
+      // 3. Pipe output to Puter.js or Supabase Storage
+      // 4. Report progress via onProgress callback
+      //
+      // For now, return a clear error:
+      return {
+        success: false,
+        error: 'Video rendering requires a backend processing pipeline. Install fluent-ffmpeg and configure FFMPEG_PATH, or use a cloud video processing API like Remotion or Shotstack.',
+      };
     } catch (error) {
       logger.error('[VideoEditingService] Render error', error as any);
       return {

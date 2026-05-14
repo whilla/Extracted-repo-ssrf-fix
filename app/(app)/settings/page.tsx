@@ -26,6 +26,10 @@ import {
   ShoppingCart,
   Shield,
   Users,
+  Gamepad2,
+  BarChart3,
+  Cuboid,
+  TrendingUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -244,7 +248,10 @@ export default function SettingsPage() {
     shopifyStoreUrl: '',
     shopifyAccessToken: '',
     amazonApiKey: '',
+    amazonSecretKey: '',
     amazonSellerId: '',
+    amazonAssociateTag: '',
+    amazonRegion: 'us-east-1',
     etsyApiKey: '',
     etsyShopId: '',
     // Compliance
@@ -255,7 +262,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [providerValidation, setProviderValidation] = useState<Record<string, { status: 'idle' | 'checking' | 'valid' | 'invalid'; message?: string }>>({});
-  const [activeTab, setActiveTab] = useState<'ai' | 'publishing' | 'audio' | 'image' | 'discovery' | 'secrets' | 'ecommerce' | 'compliance' | 'crm'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'publishing' | 'audio' | 'image' | 'discovery' | 'secrets' | 'ecommerce' | 'compliance' | 'crm' | 'interactive' | 'dataviz' | 'spatial' | 'predictive'>('ai');
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -298,7 +305,10 @@ export default function SettingsPage() {
           shopifyStoreUrl,
           shopifyAccessToken,
           amazonApiKey,
+          amazonSecretKey,
           amazonSellerId,
+          amazonAssociateTag,
+          amazonRegion,
           etsyApiKey,
           etsyShopId,
           complianceRegions,
@@ -342,7 +352,10 @@ export default function SettingsPage() {
           kvGet('shopify_store_url'),
           kvGet('shopify_access_token'),
           kvGet('amazon_api_key'),
+          kvGet('amazon_secret_key'),
           kvGet('amazon_seller_id'),
+          kvGet('amazon_associate_tag'),
+          kvGet('amazon_region'),
           kvGet('etsy_api_key'),
           kvGet('etsy_shop_id'),
           kvGet('compliance_regions'),
@@ -388,7 +401,10 @@ export default function SettingsPage() {
           shopifyStoreUrl: shopifyStoreUrl || '',
           shopifyAccessToken: shopifyAccessToken || '',
           amazonApiKey: amazonApiKey || '',
+          amazonSecretKey: amazonSecretKey || '',
           amazonSellerId: amazonSellerId || '',
+          amazonAssociateTag: amazonAssociateTag || '',
+          amazonRegion: amazonRegion || 'us-east-1',
           etsyApiKey: etsyApiKey || '',
           etsyShopId: etsyShopId || '',
           complianceRegions: parseArraySetting(complianceRegions),
@@ -406,12 +422,13 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const syncStoredValue = (key: string, value: string) => {
-        const trimmed = sanitizeStoredValueForKey(key, value);
+      const syncStoredValue = (key: string, value: string | string[]) => {
+        const stringValue = Array.isArray(value) ? value.join(',') : value;
+        const trimmed = sanitizeStoredValueForKey(key, stringValue);
         return trimmed ? kvSet(key, trimmed) : kvDelete(key);
       };
 
-      const storedSettings: Array<[string, string]> = [
+      const storedSettings: Array<[string, string | string[] | undefined]> = [
         ['elevenlabs_key', settings.elevenLabsKey],
         ['speechify_key', settings.speechifyKey],
         ['playht_key', settings.playhtKey],
@@ -443,13 +460,25 @@ export default function SettingsPage() {
         ['userstack_key', settings.userStackKey],
         ['ipstack_key', settings.ipStackKey],
         ['numverify_key', settings.numVerifyKey],
+        ['shopify_store_url', settings.shopifyStoreUrl],
+        ['shopify_access_token', settings.shopifyAccessToken],
+        ['amazon_api_key', settings.amazonApiKey],
+        ['amazon_secret_key', settings.amazonSecretKey],
+        ['amazon_seller_id', settings.amazonSellerId],
+        ['amazon_associate_tag', settings.amazonAssociateTag],
+        ['amazon_region', settings.amazonRegion],
+        ['etsy_api_key', settings.etsyApiKey],
+        ['etsy_shop_id', settings.etsyShopId],
+        ['compliance_regions', settings.complianceRegions],
+        ['blocked_topics', settings.blockedTopics],
+        ['blocked_words', settings.blockedWords],
       ];
 
       const savePromises = [
         setActiveChatModel(settings.aiModel),
         kvSet('image_provider', settings.imageProvider),
         kvSet('video_provider', settings.videoProvider),
-        ...storedSettings.map(([key, value]) => syncStoredValue(key, value)),
+        ...storedSettings.map(([key, value]) => value !== undefined ? syncStoredValue(key, value) : Promise.resolve()),
       ];
       
       await Promise.all(savePromises);
@@ -582,6 +611,10 @@ export default function SettingsPage() {
           { id: 'audio', label: 'Audio & Music', icon: Music },
           { id: 'image', label: 'Image & Video', icon: Sparkles },
           { id: 'discovery', label: 'Nexus Discovery', icon: Zap },
+          { id: 'interactive', label: 'Interactive', icon: Gamepad2 },
+          { id: 'dataviz', label: 'Data Viz', icon: BarChart3 },
+          { id: 'spatial', label: 'Spatial', icon: Cuboid },
+          { id: 'predictive', label: 'Predictive', icon: TrendingUp },
           { id: 'ecommerce', label: 'E-Commerce', icon: ShoppingCart },
           { id: 'compliance', label: 'Compliance', icon: Shield },
           { id: 'crm', label: 'CRM', icon: Users },
@@ -1257,6 +1290,113 @@ export default function SettingsPage() {
         </GlassCard>
       )}
 
+      {/* Interactive Content Tab */}
+      {activeTab === 'interactive' && (
+        <div className="space-y-4">
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Gamepad2 className="w-5 h-5 text-nexus-cyan" />
+              <h3 className="text-lg font-semibold text-foreground">Interactive Content Builder</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Generate interactive content like infographics, quizzes, calculators, and polls for audience engagement.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {['infographic', 'mini_game', 'calculator', 'quiz', 'poll'].map(type => (
+                <GlassCard key={type} className="p-3 text-center hover:bg-secondary/20 transition-colors cursor-pointer">
+                  <p className="text-sm font-medium text-foreground capitalize">{type.replace('_', ' ')}</p>
+                </GlassCard>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              Use the Interactive API (<code className="text-nexus-cyan">/api/interactive</code>) with type: infographic, mini_game, calculator, quiz, or poll
+            </p>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Data Visualization Tab */}
+      {activeTab === 'dataviz' && (
+        <div className="space-y-4">
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <BarChart3 className="w-5 h-5 text-nexus-cyan" />
+              <h3 className="text-lg font-semibold text-foreground">Data Visualization</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Create charts and visualizations from CSV data for presentations and reports.
+            </p>
+            <div className="grid grid-cols-3 md:grid-cols-7 gap-2">
+              {['bar', 'line', 'pie', 'area', 'scatter', 'donut', 'radar'].map(type => (
+                <GlassCard key={type} className="p-2 text-center hover:bg-secondary/20 transition-colors cursor-pointer">
+                  <p className="text-xs font-medium text-foreground capitalize">{type}</p>
+                </GlassCard>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              Use the Data Viz API (<code className="text-nexus-cyan">/api/data/visualization</code>) with csvData and chartType parameters
+            </p>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Spatial Content Tab */}
+      {activeTab === 'spatial' && (
+        <div className="space-y-4">
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Cuboid className="w-5 h-5 text-nexus-cyan" />
+              <h3 className="text-lg font-semibold text-foreground">Spatial Content Creator</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Generate 3D models, VR environments, and AR filters for immersive experiences.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <GlassCard className="p-4">
+                <h4 className="text-sm font-semibold text-foreground mb-2">3D Models</h4>
+                <p className="text-xs text-muted-foreground">Generate 3D models from text prompts</p>
+                <p className="text-xs text-nexus-cyan mt-2">POST /api/spatial/models</p>
+              </GlassCard>
+              <GlassCard className="p-4">
+                <h4 className="text-sm font-semibold text-foreground mb-2">VR Environments</h4>
+                <p className="text-xs text-muted-foreground">Create immersive VR spaces</p>
+                <p className="text-xs text-nexus-cyan mt-2">POST /api/spatial/vr-environments</p>
+              </GlassCard>
+              <GlassCard className="p-4">
+                <h4 className="text-sm font-semibold text-foreground mb-2">AR Filters</h4>
+                <p className="text-xs text-muted-foreground">Build AR camera filters</p>
+                <p className="text-xs text-nexus-cyan mt-2">POST /api/spatial/ar-filters</p>
+              </GlassCard>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Predictive Analytics Tab */}
+      {activeTab === 'predictive' && (
+        <div className="space-y-4">
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <TrendingUp className="w-5 h-5 text-nexus-cyan" />
+              <h3 className="text-lg font-semibold text-foreground">Predictive Analytics</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Predict content performance before publishing and get optimal posting times.
+            </p>
+            <div className="space-y-3">
+              <div className="p-4 rounded-lg bg-secondary/10 border border-border/50">
+                <h4 className="text-sm font-semibold text-foreground mb-2">Viral Potential Prediction</h4>
+                <p className="text-xs text-muted-foreground mb-2">Analyze content for engagement and reach prediction</p>
+                <p className="text-xs text-nexus-cyan">POST /api/predictive</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Provide content, platform, and hashtags to get engagement score, confidence level, and best posting times.
+              </p>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
       {/* E-Commerce Tab */}
       {activeTab === 'ecommerce' && (
         <div className="space-y-4">
@@ -1306,14 +1446,14 @@ export default function SettingsPage() {
 
             {/* Amazon */}
             <div className="mb-6 p-4 rounded-lg bg-secondary/10 border border-border/50">
-              <h4 className="text-sm font-semibold text-foreground mb-3">Amazon Selling Partner</h4>
+              <h4 className="text-sm font-semibold text-foreground mb-3">Amazon PA-API (Product Advertising)</h4>
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">API Key</label>
                   <div className="relative">
                     <input
                       type={showKeys.amazon ? 'text' : 'password'}
-                      placeholder="amzn-..."
+                      placeholder="AKIA..."
                       value={settings.amazonApiKey || ''}
                       onChange={e => setSettings(s => ({ ...s, amazonApiKey: e.target.value }))}
                       className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50 pr-10"
@@ -1327,14 +1467,39 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Seller ID</label>
+                  <label className="block text-xs text-muted-foreground mb-1">Secret Key</label>
+                  <div className="relative">
+                    <input
+                      type={showKeys.amazon ? 'text' : 'password'}
+                      placeholder="..."
+                      value={settings.amazonSecretKey || ''}
+                      onChange={e => setSettings(s => ({ ...s, amazonSecretKey: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50 pr-10"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Associate Tag</label>
                   <input
                     type="text"
-                    placeholder="ATVPDKIKX0DER"
-                    value={settings.amazonSellerId || ''}
-                    onChange={e => setSettings(s => ({ ...s, amazonSellerId: e.target.value }))}
+                    placeholder="yourtag-20"
+                    value={settings.amazonAssociateTag || ''}
+                    onChange={e => setSettings(s => ({ ...s, amazonAssociateTag: e.target.value }))}
                     className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Region</label>
+                  <select
+                    value={settings.amazonRegion || 'us-east-1'}
+                    onChange={e => setSettings(s => ({ ...s, amazonRegion: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-nexus-cyan/50"
+                  >
+                    <option value="us-east-1">US East (N. Virginia)</option>
+                    <option value="us-west-2">US West (Oregon)</option>
+                    <option value="eu-west-1">EU (Ireland)</option>
+                    <option value="eu-west-2">EU (London)</option>
+                  </select>
                 </div>
               </div>
             </div>

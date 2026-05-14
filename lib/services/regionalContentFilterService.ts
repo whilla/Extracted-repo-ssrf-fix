@@ -34,44 +34,97 @@ export class RegionalContentFilterService {
     ['us', {
       region: 'us',
       restrictions: {
-        blockedTopics: [],
-        blockedWords: ['injunction', 'litigation'],
-        requiredWarnings: [],
+        blockedTopics: ['illegal drugs', 'weapons trafficking', 'terrorism'],
+        blockedWords: [],
+        requiredWarnings: ['FTC disclosure may be required for sponsored content'],
         ageRestrictions: false,
       },
     }],
     ['eu', {
       region: 'eu',
       restrictions: {
+        blockedTopics: ['hate speech', 'misinformation'],
+        blockedWords: [],
+        requiredWarnings: ['GDPR Notice: Content may be subject to data protection regulations'],
+        ageRestrictions: true,
+      },
+    }],
+    ['uk', {
+      region: 'uk',
+      restrictions: {
+        blockedTopics: ['gambling promotion', 'financial misrepresentation'],
+        blockedWords: [],
+        requiredWarnings: ['ASA compliance may apply to advertising content'],
+        ageRestrictions: true,
+      },
+    }],
+    ['ca', {
+      region: 'ca',
+      restrictions: {
         blockedTopics: [],
         blockedWords: [],
-        requiredWarnings: ['GDPR Notice'],
-        ageRestrictions: true,
+        requiredWarnings: ['Bill C-18 compliance: Content must comply with Online News Act'],
+        ageRestrictions: false,
+      },
+    }],
+    ['au', {
+      region: 'au',
+      restrictions: {
+        blockedTopics: ['misleading health claims'],
+        blockedWords: [],
+        requiredWarnings: ['Therapeutic goods may require TGA approval'],
+        ageRestrictions: false,
       },
     }],
     ['de', {
       region: 'de',
       restrictions: {
-        blockedTopics: ['extremism'],
-        blockedWords: ['Nazi', 'Holocaust references'],
+        blockedTopics: ['extremism', 'hate speech'],
+        blockedWords: [],
+        requiredWarnings: ['NetzDG compliance: Content must comply with German speech laws'],
+      },
+    }],
+    ['fr', {
+      region: 'fr',
+      restrictions: {
+        blockedTopics: ['hate speech', 'revisionism'],
+        blockedWords: [],
+        requiredWarnings: ['French language requirement may apply to commercial content'],
+      },
+    }],
+    ['jp', {
+      region: 'jp',
+      restrictions: {
+        blockedTopics: [],
+        blockedWords: [],
         requiredWarnings: [],
+        ageRestrictions: false,
       },
     }],
     ['cn', {
       region: 'cn',
       restrictions: {
-        blockedTopics: ['political dissent', 'Tiananmen', 'Falun Gong'],
-        blockedWords: ['democracy', 'protest'],
-        requiredWarnings: [],
+        blockedTopics: ['political dissent'],
+        blockedWords: [],
+        requiredWarnings: ['Content must comply with Chinese internet regulations'],
         maxContentLength: 1000,
       },
     }],
     ['in', {
       region: 'in',
       restrictions: {
-        blockedTopics: ['religious tension'],
+        blockedTopics: ['religious incitement'],
         blockedWords: [],
-        requiredWarnings: [],
+        requiredWarnings: ['IT Act 2000 compliance recommended'],
+      },
+    }],
+    ['br', {
+      region: 'br',
+      restrictions: {
+        blockedTopics: [],
+        blockedWords: [],
+        requiredWarnings: ['LGPD compliance: Content must comply with Brazilian data protection laws'],
+        ageRestrictions: false,
       },
     }],
   ]);

@@ -82,6 +82,8 @@ import {
   type ChatModelDetail,
 } from '@/lib/services/providerControl';
 import { draftsService } from '@/lib/services/draftsService';
+import { audienceTargetingService } from '@/lib/services/audienceTargetingService';
+import { type Region } from '@/lib/services/regionalContentFilterService';
 import { loadQueuedPostJobs, removeQueuedPostJob } from '@/lib/services/postQueueService';
 import { persistBlobMediaAsset, persistMediaReference } from '@/lib/services/mediaAssetPersistenceService';
 import { schedulePost } from '@/lib/services/publishService';
@@ -93,6 +95,11 @@ const IMAGE_ENGINE_OPTIONS = [
   { model: 'leonardo', name: 'Leonardo' },
   { model: 'ideogram', name: 'Ideogram' },
 ] as const;
+
+const VALID_REGIONS: readonly Region[] = ['us', 'eu', 'uk', 'ca', 'au', 'jp', 'cn', 'in', 'br', 'de', 'fr', 'es'] as const;
+function isValidRegion(value: string): value is Region {
+  return VALID_REGIONS.includes(value as Region);
+}
 
 const VIDEO_ENGINE_OPTIONS = [
   { model: 'ltx23', name: 'LTX 2.3 Cloud' },
@@ -876,6 +883,7 @@ type AgentCommand =
   | { type: 'lock_niche'; value: string }
   | { type: 'queue_idea'; value: string }
   | { type: 'set_platforms'; platforms: Platform[] }
+  | { type: 'set_audience'; scope: 'global' | 'local' | 'regional'; region?: string }
   | { type: 'start'; payload?: string }
   | { type: 'pause' }
   | { type: 'status' }
@@ -910,6 +918,13 @@ function parseAgentCommand(input: string): AgentCommand | null {
   if (command === 'reject' && args) return { type: 'reject', outputId: args };
   if (command === 'run-now') return { type: 'run_now' };
   if (command === 'sync-engagement') return { type: 'sync_engagement' };
+  if (command === 'audience' && args) {
+    const parts = args.split(/\s+/);
+    const scope = parts[0] as 'global' | 'local' | 'regional';
+    if (scope === 'global' || scope === 'local' || scope === 'regional') {
+      return { type: 'set_audience', scope, region: parts[1] || undefined };
+    }
+  }
 
   return null;
 }
@@ -2299,6 +2314,7 @@ Rules:
               '- /lock-niche <niche>',
               '- /queue-idea <idea>',
               '- /platforms instagram,tiktok,linkedin',
+              '- /audience global|local|regional [region]',
               '- /start [optional idea text]',
               '- /run-now',
               '- /pause',
@@ -2333,6 +2349,26 @@ Rules:
             await addTargetPlatform(platform);
           }
           await postCommandResponse(`Target platforms updated: ${command.platforms.join(', ')}`);
+          return;
+        }
+
+        if (command.type === 'set_audience') {
+          const region = command.region && isValidRegion(command.region)
+            ? command.region
+            : undefined;
+          await audienceTargetingService.setScope(command.scope);
+          if (region) {
+            await audienceTargetingService.setPrimaryRegion(region);
+          }
+          const config = await audienceTargetingService.getConfig();
+          const scopeLabels = { global: 'Global', local: 'Local', regional: 'Regional' };
+          await postCommandResponse(
+            [
+              `Audience scope set to: ${scopeLabels[config.scope]}`,
+              region ? `Primary region: ${region.toUpperCase()}` : null,
+              'Use /audience global, /audience local, or /audience regional <region> to change.',
+            ].filter(Boolean).join('\n')
+          );
           return;
         }
 

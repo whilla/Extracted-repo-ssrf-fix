@@ -102,15 +102,14 @@ React context providing:
 | `musicEngine.ts` | Music mood analysis and generation |
 | `audioMixingService.ts` | Audio post-production and mixing |
 
-### 5. Platform Adapters (`lib/services/platformAdapters/`)
+### 5. Platform Adapters (`lib/services/nativeProviders.ts` + `lib/services/directPublishService.ts`)
 
-Handles publishing to:
-- YouTube
-- TikTok
-- Instagram
-- LinkedIn
-- Facebook
-- X (Twitter)
+Handles publishing to social, blogging, and e-commerce platforms:
+- YouTube, TikTok, Instagram, LinkedIn, Facebook, X (Twitter), Threads, Pinterest, Twitch
+- WordPress, Medium, Ghost, Substack
+- Discord, Reddit, WhatsApp, Telegram, Snapchat
+- Shopify, Etsy, Amazon
+- Mailchimp, Klaviyo, ConvertKit
 
 ## Data Flow
 

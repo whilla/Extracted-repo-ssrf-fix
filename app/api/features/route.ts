@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
         name: 'Data Visualization',
         description: 'Generate charts and graphs from CSV data',
         apiPath: '/api/data/visualization',
-        status: 'implemented',
+        status: 'partial',
+        note: 'CSV parsing works, generates Chart.js HTML (requires consumer to load Chart.js). No server-side rendering.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'
@@ -36,7 +37,8 @@ export async function GET(request: NextRequest) {
         name: '3D Spatial Content',
         description: 'Generate 3D models, AR filters, and VR environments',
         apiPath: '/api/spatial',
-        status: 'implemented',
+        status: 'partial',
+        note: 'Generates procedural Three.js scenes/HTML. For AI-generated 3D models, configure Replicate API key.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'low'
@@ -47,6 +49,7 @@ export async function GET(request: NextRequest) {
         description: 'Generate quizzes, polls, calculators, and infographics',
         apiPath: '/api/interactive',
         status: 'implemented',
+        note: 'Generates self-contained HTML with embedded JS. Calculators, quizzes, polls, and mini-games are functional.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'
@@ -56,7 +59,8 @@ export async function GET(request: NextRequest) {
         name: 'Content Compliance',
         description: 'Filter content for regional compliance and legal requirements',
         apiPath: '/api/compliance',
-        status: 'implemented',
+        status: 'partial',
+        note: 'Rule-based checking works (blocked words, topics, region rules). No real copyright database or trademark API integration.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'
@@ -66,7 +70,8 @@ export async function GET(request: NextRequest) {
         name: 'Audience Behavior',
         description: 'Analyze audience segments and predict engagement',
         apiPath: '/api/audience',
-        status: 'implemented',
+        status: 'partial',
+        note: 'Basic heuristic scoring works. No ML model. Data derived from published content only.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'
@@ -76,7 +81,8 @@ export async function GET(request: NextRequest) {
         name: 'Predictive Performance',
         description: 'Predict content performance before publishing',
         apiPath: '/api/predictive',
-        status: 'implemented',
+        status: 'partial',
+        note: 'Heuristic-based scoring with deterministic reach calculation. No ML model. Uses content features analysis.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'
@@ -98,6 +104,7 @@ export async function GET(request: NextRequest) {
         description: 'Analyze competitors and identify content gaps',
         apiPath: '/api/intel/competitive',
         status: 'implemented',
+        note: 'Uses AI (Claude) for competitor analysis with sensible defaults as fallback. No real competitive data API.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'medium'
@@ -117,7 +124,8 @@ export async function GET(request: NextRequest) {
         name: 'Amazon Integration',
         description: 'Publish content to Amazon product listings',
         apiPath: '/api/ecommerce/amazon',
-        status: 'implemented',
+        status: 'not_implemented',
+        note: 'Amazon SP-API requires AWS Signature V4 auth. Returns clear error guiding implementation. Use n8n bridge as alternative.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'
@@ -131,6 +139,28 @@ export async function GET(request: NextRequest) {
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'
+      },
+      {
+        id: 'model-fine-tuning',
+        name: 'Model Fine-Tuning (LoRA)',
+        description: 'Fine-tune AI models on brand voice and visuals',
+        apiPath: '/api/training',
+        status: 'partial',
+        note: 'Job queuing and management works. Requires Replicate API key or HuggingFace token for actual GPU training.',
+        auth: 'enabled',
+        rateLimiting: 'enabled',
+        priority: 'low'
+      },
+      {
+        id: 'video-editing',
+        name: 'Video Editing (NLE)',
+        description: 'Timeline-based video editing with transitions',
+        apiPath: '/api/video/edit',
+        status: 'partial',
+        note: 'Timeline data model and track management works. Actual rendering requires FFmpeg or cloud video processing backend.',
+        auth: 'enabled',
+        rateLimiting: 'enabled',
+        priority: 'medium'
       }
     ];
 

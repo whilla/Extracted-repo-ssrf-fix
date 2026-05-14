@@ -76,7 +76,7 @@ export class LegalComplianceService {
       });
 
       const score = Math.max(0, 100 - issues.length * 15);
-      const isCompliant = issues.filter(i => i.severity === 'high').length === 0;
+      const isCompliant = issues.length === 0;
 
       return {
         success: true,
@@ -100,33 +100,44 @@ export class LegalComplianceService {
       logger.info('[LegalComplianceService] Checking for copyright violations', {});
 
       const matches: CopyrightMatch[] = [];
+      const issues: ComplianceResult['issues'] = [];
 
-      const knownContent = [
-        { source: 'Public Domain Quote', similarity: 0, risk: 'low' as const },
-        { source: 'Common Phrase', similarity: 0, risk: 'low' as const },
-      ];
+      // Copyright detection without a real API is limited to:
+      // - Detecting © symbols and copyright declarations
+      // - Flagging very long verbatim quotes
+      // - Checking for common copyrighted phrases
+      const contentLower = content.toLowerCase();
 
-      const contentLength = content.split(' ').length;
-      if (contentLength > 50) {
-        matches.push({
-          source: 'Simulated Database',
-          url: 'https://example.com/match',
-          similarity: 85,
-          matchedText: content.substring(0, 50) + '...',
-          risk: 'high',
+      if (contentLower.includes('©') || contentLower.includes('copyright')) {
+        issues.push({
+          type: 'copyright',
+          severity: 'medium',
+          description: 'Content contains copyright symbols or declarations',
+          recommendation: 'Verify you own or have licensed this content',
         });
       }
 
-      const issues: ComplianceResult['issues'] = matches.map(m => ({
-        type: 'copyright' as const,
-        severity: m.risk,
-        description: `Potential copyright match: ${m.source}`,
-        matchedContent: m.matchedText,
-        recommendation: ' Obtain permission or transform the content',
-      }));
+      const quotePattern = /["\u201C\u201D][^"\u201C\u201D]{50,}["\u201C\u201D]/g;
+      const quotes = content.match(quotePattern);
+      if (quotes) {
+        quotes.forEach(quote => {
+          matches.push({
+            source: 'Unknown source (long verbatim quote)',
+            similarity: Math.min(100, Math.round((quote.length / content.length) * 100)),
+            matchedText: quote.substring(0, 80) + '...',
+            risk: 'low',
+          });
+        });
+        issues.push({
+          type: 'copyright',
+          severity: 'low',
+          description: 'Long verbatim quotes detected — ensure proper attribution',
+          recommendation: 'Add proper citation or paraphrase where possible',
+        });
+      }
 
-      const score = matches.length > 0 ? 50 : 100;
-      const isCompliant = matches.filter(m => m.risk === 'high').length === 0;
+      const score = matches.length > 0 ? 70 : 100;
+      const isCompliant = issues.length === 0;
 
       return {
         success: true,

@@ -1,6 +1,4 @@
-// Orchestration Engine
-// Coordinates multi-agent task execution with governor oversight
-
+import { createClient } from '@/lib/supabase/server';
 import { 
   initializeAgents,
   loadAgents,
@@ -35,9 +33,11 @@ import {
 import { loadBrandKit } from './memoryService';
 import { buildMemoryContext } from './agentMemoryService';
 import { universalChat } from './aiService';
-import { BrandKit } from '@/lib/validators';
+import type { BrandKit } from '@/lib/validators';
 import { parseCriticVerdict } from './orchestrationPrimitives';
 import type { CriticVerdict as PrimitiveCriticVerdict } from './orchestrationPrimitives';
+import { jobQueueService } from './jobQueueService';
+import { updateJobProgress, getJobStatus } from './executeWithQueueService';
 
 interface GovernorDecision {
   approved: boolean;
@@ -910,3 +910,95 @@ export async function getOrchestrationStatus(): Promise<{
     evolutionPending: 0,
   };
 }
+
+/**
+ * Queue-based orchestration that returns immediately with a job ID.
+ * The caller can poll /api/jobs/[id] for progress and result.
+ */
+export async function orchestrateViaQueue(
+  userRequest: string,
+  userId: string,
+  workspaceId?: string,
+  options: OrchestrationOptions = { requestType: 'content' }
+): Promise<{ jobId: string }> {
+  if (!userRequest || typeof userRequest !== 'string' || !userRequest.trim()) {
+    throw new Error('userRequest must be a non-empty string');
+  }
+  if (!userId || typeof userId !== 'string' || !userId.trim()) {
+    throw new Error('userId must be a non-empty string');
+  }
+  const jobId = await jobQueueService.enqueueJob(
+    'orchestration',
+    { userRequest, options },
+    userId,
+    workspaceId,
+    { priority: 2, maxAttempts: 2 }
+  );
+  return { jobId };
+}
+
+/**
+ * Execute an orchestration job (for use with the background worker).
+ * This wraps the synchronous orchestrate() call with job progress tracking.
+ */
+interface OrchestrationJobPayload {
+  id: string;
+  payload?: { userRequest?: string; options?: OrchestrationOptions };
+}
+
+export async function executeOrchestrationJob(job: OrchestrationJobPayload, supabase: ReturnType<typeof createClient>): Promise<{
+  success: boolean;
+  result?: OrchestrationResult;
+  error?: string;
+}> {
+  const jobId = job.id;
+  const { userRequest, options } = job.payload || {};
+
+  if (!userRequest) {
+    return { success: false, error: 'Missing userRequest in job payload' };
+  }
+
+  try {
+    await updateJobProgress(jobId, { percent: 10, message: 'Initializing orchestration system...' });
+    await updateJobProgress(jobId, { percent: 20, message: 'Loading agents and context...' });
+
+    const result = await orchestrate(userRequest, options);
+
+    const { error: updateError } = await (supabase.from('system_jobs') as any)
+      .update({
+        progress: { percent: 100, message: 'Orchestration complete' },
+        result: {
+          success: result.success,
+          finalContent: result.finalContent,
+          metadata: result.metadata,
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', jobId);
+
+    if (updateError) {
+      console.error('[orchestrationEngine] Failed to update job result:', updateError);
+    }
+
+    return { success: true, result };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Orchestration failed';
+    try {
+      await (supabase.from('system_jobs') as any)
+        .update({
+          status: 'failed',
+          error: errorMessage,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', jobId);
+    } catch (persistError) {
+      console.error('[orchestrationEngine] Failed to persist job failure:', persistError);
+    }
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
+
+export { getJobStatus, updateJobProgress };

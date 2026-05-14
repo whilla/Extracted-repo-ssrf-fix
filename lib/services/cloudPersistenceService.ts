@@ -3,7 +3,7 @@ import { getUser, kvGet, kvSet } from './puterService';
 
 async function getSupabase() {
   const { getSupabaseBrowserClient } = await import('@/lib/supabase/client');
-  return await getSupabase();
+  return getSupabaseBrowserClient();
 }
 
 const DEFAULT_WORKSPACE_NAME = 'Personal Workspace';
@@ -36,7 +36,7 @@ interface DraftRow {
   publish_results: ContentDraft['publishResults'] | null;
 }
 
-export function isCloudPersistenceEnabled(): boolean {
+export async function isCloudPersistenceEnabled(): Promise<boolean> {
   return Boolean(await getSupabase());
 }
 

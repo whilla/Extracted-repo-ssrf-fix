@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const nextConfig = {
   output: 'standalone',
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   images: {
     remotePatterns: [
@@ -31,7 +31,7 @@ const nextConfig = {
               "font-src 'self' data: https://fonts.gstatic.com",
               "img-src 'self' data: blob: https:",
               "media-src 'self' data: https:",
-              "connect-src 'self' https: wss: ws:",
+               "connect-src 'self' https://*.puter.com https://*.supabase.co https://*.ayrshare.com https://*.googleapis.com https://api.groq.com https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com wss://*.puter.com wss://*.supabase.co",
               "frame-src 'self' https://puter.com https://*.puter.com",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",

@@ -19,10 +19,12 @@ export class SupabaseStateStore {
   }
 
   async initialize(): Promise<void> {
+    // Initialization is implicit via lazy getClient()
+  }
 
   // --- Orchestration Plans ---
   async savePlan(plan: OrchestrationPlan): Promise<void> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const { data, error } = await client
       .from('orchestration_plans')
       .upsert({
@@ -40,7 +42,7 @@ export class SupabaseStateStore {
   }
 
   async getPlan(id: string): Promise<OrchestrationPlan | null> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const { data, error } = await client
       .from('orchestration_plans')
       .select('*')
@@ -62,7 +64,7 @@ export class SupabaseStateStore {
 
   // --- Agent Evolution ---
   async saveEvolutionProposal(proposal: EvolutionProposal): Promise<void> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const { error } = await client
       .from('evolution_proposals')
       .upsert({
@@ -82,14 +84,14 @@ export class SupabaseStateStore {
   }
 
   async loadEvolutionProposals(): Promise<EvolutionProposal[]> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const { data, error } = await client
       .from('evolution_proposals')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) return [];
-    return (data || []).map(row => ({
+    return (data || []).map((row: any) => ({
       id: row.id,
       agentId: row.agent_id,
       proposalType: row.proposal_type as any,
@@ -105,7 +107,7 @@ export class SupabaseStateStore {
   }
 
   async saveAgentVersion(version: AgentVersion): Promise<void> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const { error } = await client
       .from('agent_versions')
       .insert({
@@ -121,7 +123,7 @@ export class SupabaseStateStore {
   }
 
   async loadAgentVersions(agentId: string): Promise<AgentVersion[]> {
-    const client = this.getClient();
+    const client = await this.getClient();
     const { data, error } = await client
       .from('agent_versions')
       .select('*')
@@ -130,7 +132,7 @@ export class SupabaseStateStore {
       .limit(20);
 
     if (error) return [];
-    return (data || []).map(row => ({
+    return (data || []).map((row: any) => ({
       version: row.version,
       agentId: row.agent_id,
       promptTemplate: row.prompt_template,

@@ -3,7 +3,7 @@ import { generateId } from './memoryService';
 
 async function getSupabase() {
   const { getSupabaseBrowserClient } = await import('@/lib/supabase/client');
-  return await getSupabase();
+  return await getSupabaseBrowserClient();
 }
 
 export interface QueuedPostJob {

@@ -15,22 +15,60 @@ import type { ViralScore } from '../core/ViralScoringEngine';
 import type { Provider } from '../core/ProviderRouter';
 
 // Agent Types
-export type AgentRole = 'strategist' | 'writer' | 'hook' | 'critic' | 'optimizer' | 'hybrid' | 'custom' | 'videoEditor';
+export type AgentRole = 
+  | 'planner'
+  | 'identity'
+  | 'rules'
+  | 'structure'
+  | 'generator'
+  | 'distribution'
+  | 'memory'
+  | 'trend'
+  | 'writer'
+  | 'hook'
+  | 'strategist'
+  | 'optimizer'
+  | 'critic'
+  | 'visual'
+  | 'hashtag'
+  | 'engagement'
+  | 'hybrid'
+  | 'mediaDirector'
+  | 'videoEditor'
+  | 'audio'
+  | 'music'
+  | 'custom';
 
 export type AgentCapability = 
-  | 'content_generation'
+  | 'execution_planning'
+  | 'identity_modeling'
+  | 'rule_generation'
+  | 'structure_design'
+  | 'distribution_formatting'
+  | 'memory_management'
+  | 'trend_optimization'
+  | 'critical_validation'
+  | 'text_generation'
   | 'hook_creation'
   | 'strategy_planning'
-  | 'content_critique'
-  | 'optimization'
+  | 'content_optimization'
+  | 'quality_critique'
+  | 'visual_description'
+  | 'hashtag_research'
+  | 'engagement_prediction'
+  | 'multi_task'
+  | 'tool_use'
+  | 'voice_generation'
+  | 'audio_optimization'
+  | 'music_generation'
+  | 'rhythmic_alignment'
+  | 'visual_critique'
+  | 'video_editing'
   | 'engagement_analysis'
   | 'brand_alignment'
-  | 'multi_task'
-  | 'critical_validation'
-  | 'visual_description'
-  | 'synthesis'
-  | 'visual_critique'
-  | 'video_editing';
+  | 'content_generation'
+  | 'content_critique'
+  | 'optimization';
 
 export interface AgentConfig {
   name: string;

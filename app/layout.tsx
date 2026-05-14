@@ -106,11 +106,24 @@ export default function RootLayout({
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: runtimeBootstrap }}
         />
-        {/* Puter.js CDN */}
+        {/* Puter.js CDN - non-critical, graceful degradation if unavailable */}
         <Script
           src="https://js.puter.com/v2/"
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
+          crossOrigin="anonymous"
+          onError={() => {
+            if (typeof window !== 'undefined') {
+              console.warn('[Puter] CDN failed to load. Core features will work without Puter.');
+              window.__puterAvailable = false;
+            }
+          }}
+          onLoad={() => {
+            if (typeof window !== 'undefined') {
+              window.__puterAvailable = true;
+            }
+          }}
         />
+
       </head>
       <body className="font-sans antialiased">
         <noscript>

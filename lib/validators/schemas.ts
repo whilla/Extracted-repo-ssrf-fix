@@ -1,21 +1,12 @@
 import { z } from 'zod';
+import { BrandKitSchema as FullBrandKitSchema, type BrandKit as FullBrandKit } from '@/lib/validators';
 
 /**
- * V1 -> V2 Migration for Brand Kits
- * Ensures that legacy JSON structures are normalized to the current standard.
+ * Re-export the canonical BrandKit schema from lib/validators.ts
+ * so all consumers use the same validated type.
  */
-export const BrandKitSchema = z.object({
-  niche: z.string().default('General'),
-  audience: z.string().default('General Audience'),
-  tone: z.string().default('Professional'),
-  characterLock: z.string().default(''),
-  styleRules: z.string().default(''),
-  contentPillars: z.array(z.string()).default([]),
-  bannedTopics: z.array(z.string()).default([]),
-  platformPreferences: z.record(z.string()).default({}),
-});
-
-export type BrandKit = z.infer<typeof BrandKitSchema>;
+export const BrandKitSchema = FullBrandKitSchema;
+export type BrandKit = FullBrandKit;
 
 export const DraftVersionSchema = z.object({
   v: z.number(),
@@ -45,16 +36,22 @@ export type Draft = z.infer<typeof DraftSchema>;
  */
 export const SchemaManager = {
   async normalizeBrandKit(data: any): Promise<BrandKit> {
-    // Handle legacy key mappings
+    // Handle legacy key mappings — map old field names to new schema
     const normalized = {
+      brandName: data.brandName || data.name || data.brand || 'My Brand',
+      userName: data.userName || '',
+      agentName: data.agentName || '',
       niche: data.niche || data.brandNiche || 'General',
-      audience: data.targetAudience || data.audience || 'General Audience',
-      tone: data.tone || 'Professional',
-      characterLock: data.characterLock || data.character || '',
-      styleRules: data.styleRules || data.writingStyle || '',
+      targetAudience: data.targetAudience || data.audience || data.audiences || '',
+      primaryColor: data.primaryColor || '#3B82F6',
+      secondaryColor: data.secondaryColor || '#1E293B',
+      tone: data.tone || 'professional',
+      avoidTopics: data.avoidTopics || data.bannedTopics || [],
       contentPillars: data.contentPillars || data.pillars || [],
-      bannedTopics: data.bannedTopics || [],
-      platformPreferences: data.platformPreferences || {},
+      uniqueSellingPoint: data.uniqueSellingPoint || data.usp || '',
+      language: data.language || 'en',
+      hashtagStrategy: data.hashtagStrategy || [],
+      contentPreferences: data.contentPreferences || [],
     };
     
     return BrandKitSchema.parse(normalized);

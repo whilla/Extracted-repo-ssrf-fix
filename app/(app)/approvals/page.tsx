@@ -37,7 +37,7 @@ export default function ApprovalsPage() {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  async function loadData() {
     setLoading(true);
     try {
       const [pendingData, historyData] = await Promise.all([
@@ -51,7 +51,7 @@ export default function ApprovalsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleApprove = async (requestId: string) => {
     if (!user?.username) {
@@ -91,11 +91,11 @@ export default function ApprovalsPage() {
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
             <StatusBadge 
-              status={
+              status={(
                 request.status === 'approved' ? 'success' : 
                 request.status === 'rejected' ? 'error' : 
                 'pending'
-              }
+              ) as any}
               label={request.status.charAt(0).toUpperCase() + request.status.slice(1)}
             />
             <span className="text-xs text-muted-foreground">

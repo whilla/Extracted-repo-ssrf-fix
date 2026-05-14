@@ -126,13 +126,19 @@ nexusai/
 | `MAILCHIMP_SERVER_PREFIX` | No | Mailchimp server prefix (e.g. us19) |
 | `KLAVIYO_API_KEY` | No | Klaviyo API key |
 | `CONVERTKIT_API_KEY` | No | ConvertKit API key |
-| `SHOPIFY_STORE_URL` | No | Shopify store domain (e.g. mystore.myshopify.com) |
-| `SHOPIFY_ACCESS_TOKEN` | No | Shopify Admin API access token |
-| `MAILCHIMP_API_KEY` | No | Mailchimp API key |
-| `MAILCHIMP_LIST_ID` | No | Mailchimp audience list ID |
-| `MAILCHIMP_SERVER_PREFIX` | No | Mailchimp server prefix (e.g. us19) |
-| `KLAVIYO_API_KEY` | No | Klaviyo API key |
-| `CONVERTKIT_API_KEY` | No | ConvertKit API key |
+| `AWS_ACCESS_KEY_ID` | No | AWS access key (Amazon SP-API SigV4) |
+| `AWS_SECRET_ACCESS_KEY` | No | AWS secret key (Amazon SP-API SigV4) |
+| `AWS_REGION` | No | AWS region (defaults to us-east-1) |
+| `REPLICATE_API_KEY` | No | Replicate API (3D models, fine-tuning) |
+| `KLAVIYO_TEMPLATE_ID` | No | Klaviyo email template ID |
+| `KLAVIYO_LIST_ID` | No | Klaviyo audience list ID |
+| `SUBSTACK_N8N_WEBHOOK` | No | Substack N8N webhook bridge |
+| `NEXT_PUBLIC_COLLAB_MODE` | No | Collaboration mode: auto/supabase/local |
+| `REMOTION_API_KEY` | No | Remotion Lambda for cloud video rendering |
+| `HUGGINGFACE_API_TOKEN` | No | HuggingFace API (fine-tuning, models) |
+| `AMAZON_SP_API_REFRESH_TOKEN` | No | Amazon SP-API OAuth refresh token |
+| `AMAZON_SP_API_CLIENT_ID` | No | Amazon SP-API OAuth client ID |
+| `AMAZON_SP_API_CLIENT_SECRET` | No | Amazon SP-API OAuth client secret |
 
 
 The app supports free alternatives for paid services:

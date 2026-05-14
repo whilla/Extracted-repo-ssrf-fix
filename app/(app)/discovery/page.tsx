@@ -33,14 +33,21 @@ export default function DiscoveryPage() {
   const fetchDiscoveryData = async () => {
     setIsLoading(true);
     try {
-      const [trendsRes, searchRes, locRes] = await Promise.all([
-        fetch(`/api/discovery/trends?query=${encodeURIComponent(query)}`).then(res => res.json()),
-        fetch(`/api/discovery/trends?query=${encodeURIComponent(query)}`).then(res => res.json()), // reuse trends endpoint
-        fetch(`/api/discovery/location`).then(res => res.json()),
+      const [trendsResponse, locResponse] = await Promise.all([
+        fetch(`/api/discovery/trends?query=${encodeURIComponent(query)}`),
+        fetch(`/api/discovery/location`),
       ]);
 
-      setTrends(trendsRes.trends || []);
-      setSearchResults(searchRes.search || []);
+      if (!trendsResponse.ok) throw new Error('Failed to fetch trends');
+      if (!locResponse.ok) throw new Error('Failed to fetch location');
+
+      const [dataRes, locRes] = await Promise.all([
+        trendsResponse.json(),
+        locResponse.json(),
+      ]);
+
+      setTrends(dataRes.trends || []);
+      setSearchResults(dataRes.search || []);
       setLocation(locRes);
       toast.success('Discovery data updated');
     } catch (error) {

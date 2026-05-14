@@ -18,6 +18,13 @@ import {
   type VideoProvider,
 } from './videoGenerationService';
 import { generateSceneBreakdown, type ScenePlan } from './scenePlannerService';
+import { textToSpeech, synthesizeVoice } from './voiceService';
+import { generateMusic } from './musicGenerationService';
+import { analyzeMusicMood, generateBackgroundMusic, getBrowserMusicGenerator } from './musicEngine';
+import { buildSoundDesignPlan } from './soundDesignService';
+import { buildAudioMixPlan } from './audioMixingService';
+import { buildBeatTimingPlan } from './beatTimingEngine';
+import { mapEmotionFromScene } from './emotionMappingEngine';
 
 type MediaKind = 'image' | 'video';
 
@@ -779,4 +786,129 @@ Generated video provider: ${result.provider}`,
     prompt: plan.prompt,
     provider: result.provider,
   };
+}
+
+export async function generateAgentAudio(
+  text: string,
+  options: {
+    voice?: string;
+    preferredProvider?: string;
+  } = {}
+): Promise<MediaGenerationResult> {
+  const voice = options.voice || 'alloy';
+  const startTime = Date.now();
+
+  try {
+    // Try ElevenLabs/OpenAI via textToSpeech first
+    const { blob, provider: voiceProvider } = await textToSpeech(text);
+    const url = URL.createObjectURL(blob);
+    const duration = Math.max(3, Math.ceil(text.trim().split(/\s+/).length / 2.5));
+
+    return {
+      content: `Voice synthesis complete.
+Voice: ${voice}
+Provider: ${voiceProvider || 'web-speech'}
+Duration: ${duration}s
+Text length: ${text.length} chars`,
+      media: [{ type: 'audio', url, provider: voiceProvider || 'web-speech', prompt: text }],
+      prompt: text,
+      provider: voiceProvider || 'web-speech',
+    };
+  } catch (primaryErr) {
+    // Fallback to synthesizeVoice
+    try {
+      const fallbackUrl = await synthesizeVoice(text, { voiceId: voice });
+      if (fallbackUrl) {
+        const duration = Math.max(3, Math.ceil(text.trim().split(/\s+/).length / 2.5));
+        return {
+          content: `Voice synthesis complete (fallback).
+Voice: ${voice}
+Provider: fallback
+Duration: ${duration}s`,
+          media: [{ type: 'audio', url: fallbackUrl, provider: 'fallback', prompt: text }],
+          prompt: text,
+          provider: 'fallback',
+        };
+      }
+    } catch {
+      // ignore fallback error
+    }
+
+    throw primaryErr instanceof Error ? primaryErr : new Error('Audio generation failed');
+  }
+}
+
+export async function generateAgentMusic(
+  request: string,
+  options: {
+    duration?: number;
+    preferredProvider?: string;
+    genre?: string;
+  } = {}
+): Promise<MediaGenerationResult> {
+  const duration = options.duration || 30;
+  const startTime = Date.now();
+
+  // Analyze mood from request text
+  const mood = await analyzeMusicMood(request);
+  const emotionMap = mapEmotionFromScene(request);
+  const beatPlan = buildBeatTimingPlan(duration, emotionMap.emotion);
+  const soundPlan = buildSoundDesignPlan(emotionMap.emotion, beatPlan);
+  const mixPlan = buildAudioMixPlan(soundPlan);
+
+  // Try generateBackgroundMusic first (Mubert → Suno → Preset → Browser)
+  const bgMusic = await generateBackgroundMusic(request, { duration });
+  if (bgMusic && bgMusic.url !== 'browser-generated') {
+    return {
+      content: `Music generation complete.
+Mood: ${bgMusic.mood.primary} (${bgMusic.mood.secondary || ''})
+Tempo: ${bgMusic.mood.tempo}
+Energy: ${bgMusic.mood.energy}/100
+Source: ${bgMusic.source}
+Duration: ${bgMusic.duration}s
+Audio Mix: voice=${mixPlan.settings.voiceVolume}, music=${mixPlan.settings.musicVolume}, fx=${mixPlan.settings.fxVolume}
+Sound Design: ${soundPlan.ambience.join(', ')}
+Beat Markers: ${beatPlan.markers.length} cues`,
+      media: [{ type: 'audio', url: bgMusic.url, provider: bgMusic.source, prompt: request }],
+      prompt: request,
+      provider: bgMusic.source,
+    };
+  }
+
+  // Try musicGenerationService (8 providers with auto-fallback)
+  try {
+    const trackId = await generateMusic({ prompt: request, duration, genre: options.genre || mood.genre });
+    return {
+      content: `Music generation complete (provider).
+Track ID: ${trackId}
+Genre: ${mood.genre}
+Duration: ${duration}s
+Audio Mix: voice=${mixPlan.settings.voiceVolume}, music=${mixPlan.settings.musicVolume}`,
+      media: [{ type: 'audio', url: trackId, provider: 'music-service', prompt: request }],
+      prompt: request,
+      provider: 'music-service',
+    };
+  } catch (providerErr) {
+    // Final fallback: browser-based Web Audio API synthesis
+    try {
+      const generator = getBrowserMusicGenerator();
+      const blob = await generator.generateMusic(mood, duration);
+      const url = URL.createObjectURL(blob);
+
+      return {
+        content: `Music generation complete (browser synthesis).
+Mood: ${mood.primary}
+Tempo: ${mood.tempo}
+Energy: ${mood.energy}/100
+Duration: ${duration}s
+Audio Mix: voice=${mixPlan.settings.voiceVolume}, music=${mixPlan.settings.musicVolume}, ducking=${mixPlan.settings.duckingEnabled}
+Sound Design: ${soundPlan.ambience.join(', ')}`,
+        media: [{ type: 'audio', url, provider: 'browser-synthesis', prompt: request }],
+        prompt: request,
+        provider: 'browser-synthesis',
+      };
+    } catch (browserErr) {
+      throw new Error(`All music generation paths failed: ${providerErr instanceof Error ? providerErr.message : 'provider'} / ${browserErr instanceof Error ? browserErr.message : 'browser'}`);
+    }
+  }
 }

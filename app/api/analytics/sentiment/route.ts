@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 import { sentimentService } from '@/lib/services/sentimentService';
 import { kvGet } from '@/lib/services/puterService';
 import { DirectReaderService } from '@/lib/services/directReaderService';
@@ -9,52 +10,50 @@ const SentimentRequestSchema = z.object({
   postId: z.string().min(1, 'Post ID is required'),
 });
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
-}
-
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const result = SentimentRequestSchema.safeParse(body);
-    
-    if (!result.success) {
-      return NextResponse.json({ error: 'Post ID is required' }, { status: 400 });
-    }
+  return withApiMiddleware(request, async () => {
+    try {
+      const body = await request.json();
+      const result = SentimentRequestSchema.safeParse(body);
 
-    const { postId } = result.data;
+      if (!result.success) {
+        return NextResponse.json({ error: 'Post ID is required' }, { status: 400 });
+      }
 
-    const cached = await kvGet(`sentiment_${postId}`);
-    if (cached) {
-      return NextResponse.json({ 
-        status: 'success', 
-        data: JSON.parse(cached),
-        cached: true 
+      const { postId } = result.data;
+
+      const cached = await kvGet(`sentiment_${postId}`);
+      if (cached) {
+        return NextResponse.json({
+          status: 'success',
+          data: JSON.parse(cached),
+          cached: true
+        });
+      }
+
+      const comments = await fetchCommentsForPost(postId);
+
+      if (!comments || comments.length === 0) {
+        return NextResponse.json({
+          error: 'No comments found for this post to analyze sentiment.'
+        }, { status: 404 });
+      }
+
+      const report = await sentimentService.analyzeComments(postId, comments);
+
+      return NextResponse.json({
+        status: 'success',
+        data: report,
+        cached: false
       });
+
+    } catch (error) {
+      console.error('[api/analytics/sentiment] Error:', error);
+      return NextResponse.json({
+        error: 'Sentiment analysis failed.'
+      }, { status: 500 });
     }
-
-    const comments = await fetchCommentsForPost(postId);
-
-    if (!comments || comments.length === 0) {
-      return NextResponse.json({ 
-        error: 'No comments found for this post to analyze sentiment.' 
-      }, { status: 404 });
-    }
-
-    const report = await sentimentService.analyzeComments(postId, comments);
-
-    return NextResponse.json({
-      status: 'success',
-      data: report,
-      cached: false
-    });
-
-  } catch (error) {
-    console.error('[api/analytics/sentiment] Error:', error);
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Sentiment analysis failed.' 
-    }, { status: 500 });
-  }
+  });
 }
 
 async function fetchCommentsForPost(postId: string): Promise<string[]> {
@@ -64,7 +63,7 @@ async function fetchCommentsForPost(postId: string): Promise<string[]> {
   if (postId.startsWith('fb')) platform = 'facebook';
 
   const result = await DirectReaderService.readComments(platform, postId);
-  
+
   if (!result.success) {
     return [
       "I absolutely love this approach! So helpful.",

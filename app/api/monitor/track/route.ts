@@ -3,7 +3,7 @@
  * Allows clients to track agent events for monitoring
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   startAgentActivity,
   updateAgentActivity,
@@ -15,6 +15,8 @@ import {
 } from '@/lib/services/agentMonitorService';
 
 export const dynamic = 'force-dynamic';
+
+import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 
 const VALID_ACTIONS = [
   'start',
@@ -140,8 +142,8 @@ async function handleHeartbeat(body: { agentId: string }) {
   return NextResponse.json({ success: true, message: 'Heartbeat recorded' });
 }
 
-export async function POST(request: Request) {
-  try {
+export async function POST(request: NextRequest) {
+  return withApiMiddleware(request, async () => {
     let body: Record<string, unknown>;
 
     try {
@@ -175,11 +177,5 @@ export async function POST(request: Request) {
       default:
         return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
     }
-  } catch (error) {
-    console.error('[api/monitor/track] Error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Track error' },
-      { status: 500 }
-    );
-  }
+  });
 }

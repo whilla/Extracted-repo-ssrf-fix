@@ -6,12 +6,12 @@ import { NeonButton } from '@/components/nexus/NeonButton';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { PageHeader } from '@/components/nexus/PageHeader';
 import LoadingPulse from '@/components/nexus/LoadingPulse';
-import { 
-  Bot, 
-  Brain, 
-  Shield, 
-  Zap, 
-  TrendingUp, 
+import {
+  Bot,
+  Brain,
+  Shield,
+  Zap,
+  TrendingUp,
   Activity,
   RefreshCw,
   Settings2,
@@ -48,7 +48,7 @@ export default function AgentsPage() {
         getGovernorDashboard(),
         getOrchestrationStatus(),
       ]);
-      
+
       setAgents(agentsData);
       setStats(statsData);
       setEvolutionHistory(evolutionData);
@@ -276,13 +276,13 @@ export default function AgentsPage() {
                   <Zap className="w-4 h-4 text-primary" />
                   <h3 className="font-medium">{agent.name}</h3>
                 </div>
-                <StatusBadge 
-                  status={getEvolutionStateColor(agent.evolutionState)} 
+                <StatusBadge
+                  status={getEvolutionStateColor(agent.evolutionState) as any}
                   label={agent.evolutionState}
                   dot
                 />
               </div>
-              
+
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Role</span>
@@ -348,8 +348,8 @@ export default function AgentsPage() {
         {evolutionHistory?.proposals && evolutionHistory.proposals.length > 0 ? (
           <div className="space-y-2">
             {evolutionHistory.proposals.slice(-5).reverse().map((proposal) => (
-              <div 
-                key={proposal.id} 
+              <div
+                key={proposal.id}
                 className="p-3 rounded-lg bg-muted/20 flex items-center justify-between"
               >
                 <div className="flex items-center gap-3">
@@ -366,12 +366,12 @@ export default function AgentsPage() {
                 </div>
                 <div className="text-right">
                   <StatusBadge 
-                    status={
+                    status={(
                       proposal.status === 'applied' ? 'success' :
                       proposal.status === 'rejected' ? 'error' :
                       proposal.status === 'approved' ? 'info' :
                       'pending'
-                    } 
+                    ) as any}
                     label={proposal.status}
                     dot
                   />

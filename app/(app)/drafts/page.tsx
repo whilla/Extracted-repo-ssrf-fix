@@ -299,11 +299,11 @@ export default function DraftsPage() {
                     </p>
                     <div className="flex items-center gap-2 mt-1">
                       <StatusBadge
-                        status={
+                        status={(
                           draft.status === 'published' ? 'success' :
                           draft.status === 'scheduled' ? 'info' :
                           draft.status === 'approved' ? 'warning' : 'neutral'
-                        }
+                        ) as any}
                       >
                         {draft.status}
                       </StatusBadge>

@@ -1,4 +1,5 @@
 // Music Service - Background music generation and management
+// @deprecated Consider using musicGenerationService.ts (8 providers) for new integrations
 import type { MusicMood } from '@/lib/types';
 import { kvGet } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
