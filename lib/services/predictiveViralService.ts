@@ -1,4 +1,5 @@
 import { logger } from '@/lib/utils/logger';
+import { chat } from './aiService';
 
 export interface ContentFeatures {
   type: 'video' | 'image' | 'text' | 'carousel';
@@ -50,100 +51,158 @@ export class PredictiveViralService {
     try {
       logger.info('[PredictiveViralService] Predicting viral potential', { content, platform });
 
-      let score = 50;
+      const aiResult = await this.aiViralAnalysis(content, platform);
+      if (aiResult) return aiResult;
 
-      const factors: { factor: string; impact: 'positive' | 'negative' | 'neutral'; weight: number }[] = [];
+      return this.heuristicViralAnalysis(content, platform);
+    } catch (error) {
+      return this.heuristicViralAnalysis(content, platform);
+    }
+  }
 
-      if (content.type === 'video') {
-        score += 15;
-        factors.push({ factor: 'Video content', impact: 'positive', weight: 15 });
-      } else if (content.type === 'carousel') {
-        score += 10;
-        factors.push({ factor: 'Carousel format', impact: 'positive', weight: 10 });
-      }
+  private static async aiViralAnalysis(
+    content: ContentFeatures,
+    platform: string
+  ): Promise<ViralPrediction | null> {
+    try {
+      const prompt = `You are a viral content prediction AI. Analyze the following content and predict its viral potential on ${platform}.
 
-      if (content.hasCTA) {
-        score += 10;
-        factors.push({ factor: 'Call-to-action included', impact: 'positive', weight: 10 });
-      } else {
-        score -= 5;
-        factors.push({ factor: 'No call-to-action', impact: 'negative', weight: 5 });
-      }
+Content type: ${content.type}
+Topic: ${content.topic}
+Hashtags: ${content.hashtags.join(', ')}
+Length: ${content.length || 'N/A'}
+Contains CTA: ${content.hasCTA ? 'Yes' : 'No'}
+Contains emoji: ${content.hasEmoji ? 'Yes' : 'No'}
+Posting time: ${content.postingTime || 'Not specified'}
+Day of week: ${content.dayOfWeek || 'Not specified'}
 
-      if (content.hasEmoji) {
-        score += 5;
-        factors.push({ factor: 'Emoji usage', impact: 'positive', weight: 5 });
-      }
+Return your analysis as valid JSON (no markdown, no code blocks) with this exact structure:
+{
+  "viralScore": <0-100 number>,
+  "viralProbability": <"low"|"medium"|"high"|"viral">,
+  "potentialReach": <integer>,
+  "engagementPrediction": <integer>,
+  "factors": [
+    {"factor": "<description>", "impact": <"positive"|"negative"|"neutral">, "weight": <1-30 number>}
+  ],
+  "recommendations": ["<string>", ...]
+}`;
 
-      const trendingTopics = ['ai', 'trending', 'viral', 'challenge'];
-      const hasTrending = content.hashtags.some(t => trendingTopics.includes(t.toLowerCase()));
-      if (hasTrending) {
-        score += 15;
-        factors.push({ factor: 'Trending hashtag usage', impact: 'positive', weight: 15 });
-      }
-
-      const optimalTimes = ['9:00 AM', '12:00 PM', '6:00 PM', '9:00 PM'];
-      if (content.postingTime && optimalTimes.includes(content.postingTime)) {
-        score += 10;
-        factors.push({ factor: 'Optimal posting time', impact: 'positive', weight: 10 });
-      }
-
-      const optimalDays = ['Tuesday', 'Wednesday', 'Thursday'];
-      if (content.dayOfWeek && optimalDays.includes(content.dayOfWeek)) {
-        score += 5;
-        factors.push({ factor: 'Optimal posting day', impact: 'positive', weight: 5 });
-      }
-
-      if (content.length) {
-        if (content.type === 'video' && content.length > 60 && content.length < 180) {
-          score += 10;
-          factors.push({ factor: 'Optimal video length (60-180s)', impact: 'positive', weight: 10 });
-        } else if (content.type === 'text' && content.length > 100 && content.length < 300) {
-          score += 5;
-          factors.push({ factor: 'Optimal text length', impact: 'positive', weight: 5 });
-        }
-      }
-
-      if (this.historicalData) {
-        const topicMatch = this.historicalData.topPerformingTopics.some(
-          t => content.topic.toLowerCase().includes(t.toLowerCase())
-        );
-        if (topicMatch) {
-          score += 15;
-          factors.push({ factor: 'Historical topic performance', impact: 'positive', weight: 15 });
-        }
-      }
-
-      score = Math.max(0, Math.min(100, score));
-
-      const viralProbability: 'low' | 'medium' | 'high' | 'viral' =
-        score >= 90 ? 'viral' : score >= 70 ? 'high' : score >= 50 ? 'medium' : 'low';
-
-      const baseReach = score * 1000;
-      const platformMultiplier = platform.toLowerCase() === 'tiktok' ? 3 : platform.toLowerCase() === 'instagram' ? 2 : 1;
-      const reachMultiplier = score >= 90 ? 5 : score >= 70 ? 3 : score >= 50 ? 1.5 : 0.5;
-      const potentialReach = Math.floor(baseReach * platformMultiplier * reachMultiplier);
-      const engagementPrediction = Math.floor(potentialReach * (score / 100) * 0.08);
-
-      const recommendations: string[] = [];
-      if (!content.hasCTA) recommendations.push('Add a clear call-to-action');
-      if (!content.hasEmoji) recommendations.push('Include relevant emojis to increase engagement');
-      if (content.type !== 'video') recommendations.push('Consider video format for higher viral potential');
-      if (content.hashtags.length < 5) recommendations.push('Use more relevant hashtags including trending ones');
-      if (viralProbability === 'low') recommendations.push('Consider revising content for better viral potential');
+      const response = await chat(prompt, { model: 'gpt-4o-mini', avoidPuter: true });
+      const cleaned = response.replace(/```(?:json)?\s*/gi, '').trim();
+      const parsed = JSON.parse(cleaned);
 
       return {
         success: true,
-        viralScore: score,
-        potentialReach,
-        engagementPrediction,
-        viralProbability,
-        factors,
-        recommendations,
+        viralScore: Math.max(0, Math.min(100, parsed.viralScore || 50)),
+        potentialReach: Math.max(0, parsed.potentialReach || 1000),
+        engagementPrediction: Math.max(0, parsed.engagementPrediction || 100),
+        viralProbability: ['low', 'medium', 'high', 'viral'].includes(parsed.viralProbability)
+          ? parsed.viralProbability
+          : 'medium',
+        factors: Array.isArray(parsed.factors) ? parsed.factors : [],
+        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
       };
-    } catch (error) {
-      return { success: false, viralScore: 0, potentialReach: 0, engagementPrediction: 0, viralProbability: 'low' as const, factors: [], recommendations: [], error: error instanceof Error ? error.message : 'Unknown error' };
+    } catch {
+      return null;
     }
+  }
+
+  private static heuristicViralAnalysis(
+    content: ContentFeatures,
+    platform: string
+  ): ViralPrediction {
+    let score = 50;
+
+    const factors: { factor: string; impact: 'positive' | 'negative' | 'neutral'; weight: number }[] = [];
+
+    if (content.type === 'video') {
+      score += 15;
+      factors.push({ factor: 'Video content', impact: 'positive', weight: 15 });
+    } else if (content.type === 'carousel') {
+      score += 10;
+      factors.push({ factor: 'Carousel format', impact: 'positive', weight: 10 });
+    }
+
+    if (content.hasCTA) {
+      score += 10;
+      factors.push({ factor: 'Call-to-action included', impact: 'positive', weight: 10 });
+    } else {
+      score -= 5;
+      factors.push({ factor: 'No call-to-action', impact: 'negative', weight: 5 });
+    }
+
+    if (content.hasEmoji) {
+      score += 5;
+      factors.push({ factor: 'Emoji usage', impact: 'positive', weight: 5 });
+    }
+
+    const trendingTopics = ['ai', 'trending', 'viral', 'challenge'];
+    const hasTrending = content.hashtags.some(t => trendingTopics.includes(t.toLowerCase()));
+    if (hasTrending) {
+      score += 15;
+      factors.push({ factor: 'Trending hashtag usage', impact: 'positive', weight: 15 });
+    }
+
+    const optimalTimes = ['9:00 AM', '12:00 PM', '6:00 PM', '9:00 PM'];
+    if (content.postingTime && optimalTimes.includes(content.postingTime)) {
+      score += 10;
+      factors.push({ factor: 'Optimal posting time', impact: 'positive', weight: 10 });
+    }
+
+    const optimalDays = ['Tuesday', 'Wednesday', 'Thursday'];
+    if (content.dayOfWeek && optimalDays.includes(content.dayOfWeek)) {
+      score += 5;
+      factors.push({ factor: 'Optimal posting day', impact: 'positive', weight: 5 });
+    }
+
+    if (content.length) {
+      if (content.type === 'video' && content.length > 60 && content.length < 180) {
+        score += 10;
+        factors.push({ factor: 'Optimal video length (60-180s)', impact: 'positive', weight: 10 });
+      } else if (content.type === 'text' && content.length > 100 && content.length < 300) {
+        score += 5;
+        factors.push({ factor: 'Optimal text length', impact: 'positive', weight: 5 });
+      }
+    }
+
+    if (this.historicalData) {
+      const topicMatch = this.historicalData.topPerformingTopics.some(
+        t => content.topic.toLowerCase().includes(t.toLowerCase())
+      );
+      if (topicMatch) {
+        score += 15;
+        factors.push({ factor: 'Historical topic performance', impact: 'positive', weight: 15 });
+      }
+    }
+
+    score = Math.max(0, Math.min(100, score));
+
+    const viralProbability: 'low' | 'medium' | 'high' | 'viral' =
+      score >= 90 ? 'viral' : score >= 70 ? 'high' : score >= 50 ? 'medium' : 'low';
+
+    const baseReach = score * 1000;
+    const platformMultiplier = platform.toLowerCase() === 'tiktok' ? 3 : platform.toLowerCase() === 'instagram' ? 2 : 1;
+    const reachMultiplier = score >= 90 ? 5 : score >= 70 ? 3 : score >= 50 ? 1.5 : 0.5;
+    const potentialReach = Math.floor(baseReach * platformMultiplier * reachMultiplier);
+    const engagementPrediction = Math.floor(potentialReach * (score / 100) * 0.08);
+
+    const recommendations: string[] = [];
+    if (!content.hasCTA) recommendations.push('Add a clear call-to-action');
+    if (!content.hasEmoji) recommendations.push('Include relevant emojis to increase engagement');
+    if (content.type !== 'video') recommendations.push('Consider video format for higher viral potential');
+    if (content.hashtags.length < 5) recommendations.push('Use more relevant hashtags including trending ones');
+    if (viralProbability === 'low') recommendations.push('Consider revising content for better viral potential');
+
+    return {
+      success: true,
+      viralScore: score,
+      potentialReach,
+      engagementPrediction,
+      viralProbability,
+      factors,
+      recommendations,
+    };
   }
 
   static async analyzeHistoricalTrends(

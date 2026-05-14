@@ -99,7 +99,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data: customer, error: fetchError } = await supabase
@@ -155,7 +155,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data, error } = await supabase
@@ -192,7 +192,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data, error } = await supabase
@@ -226,7 +226,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data, error } = await supabase
@@ -261,7 +261,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const dbUpdates: Record<string, any> = {};
@@ -308,7 +308,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data: customer } = await supabase
@@ -333,7 +333,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data: customers, error } = await supabase
@@ -378,7 +378,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data, error } = await supabase
@@ -413,7 +413,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const q = `%${query.toLowerCase()}%`;
@@ -471,7 +471,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data, error } = await supabase
@@ -499,7 +499,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const dbUpdates: Record<string, any> = { updated_at: new Date().toISOString() };
@@ -543,7 +543,7 @@ export class CRMService {
     try {
       const supabase = this.getClient();
       if (!supabase) {
-        return { success: false, error: 'Supabase not configured' };
+        return { success: false, error: 'Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.' };
       }
 
       const { data: customer } = await supabase

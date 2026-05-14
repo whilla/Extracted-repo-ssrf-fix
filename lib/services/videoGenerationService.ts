@@ -2,6 +2,7 @@
 
 import { kvGet, kvSet } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { createConfigError } from './configError';
 import { mediaAssetManager, type MediaAsset } from './mediaAssetManager';
 import { enhanceVideoPrompt } from './promptEnhancer';
 
@@ -444,7 +445,7 @@ async function pollFalJob(statusUrl: string, apiKey: string, responseUrl?: strin
 async function generateWithRunway(options: VideoGenerationOptions): Promise<GeneratedVideo> {
   const apiKey = sanitizeApiKey(await kvGet('runway_key'));
   if (!apiKey) {
-    throw new Error('Runway API key not configured. Get a key at runwayml.com');
+    throw createConfigError('runway');
   }
 
   const { prompt, durationSeconds = 10, aspectRatio = '16:9', imageUrl } = options;
@@ -528,7 +529,7 @@ async function generateWithRunway(options: VideoGenerationOptions): Promise<Gene
 async function generateWithPika(options: VideoGenerationOptions): Promise<GeneratedVideo> {
   const apiKey = sanitizeApiKey(await kvGet('pika_key'));
   if (!apiKey) {
-    throw new Error('Pika API key not configured. Get a key at pika.art');
+    throw createConfigError('pika');
   }
 
   const { prompt, durationSeconds = 3, aspectRatio = '16:9', imageUrl } = options;
@@ -608,7 +609,7 @@ async function generateWithPika(options: VideoGenerationOptions): Promise<Genera
 async function generateWithStableVideo(options: VideoGenerationOptions): Promise<GeneratedVideo> {
   const apiKey = sanitizeApiKey(await kvGet('stability_key'));
   if (!apiKey) {
-    throw new Error('Stability AI API key not configured. Get a key at stability.ai');
+    throw createConfigError('stability');
   }
 
   const { prompt, durationSeconds = 5, aspectRatio = '16:9', imageUrl } = options;
@@ -687,7 +688,7 @@ async function generateWithLtx23(options: VideoGenerationOptions): Promise<Gener
     apiKey = process.env.LTX_API_KEY || process.env.FAL_API_KEY || '';
   }
   if (!apiKey) {
-    throw new Error('LTX video provider is not configured. Add a Fal/LTX API key in Settings.');
+    throw createConfigError('ltx');
   }
 
   const configuredEndpoint = await kvGet('ltx_endpoint') || process.env.NEXT_PUBLIC_LTX_ENDPOINT;
@@ -743,7 +744,7 @@ async function generateWithOpenLtx23(options: VideoGenerationOptions): Promise<G
   );
 
   if (!rawConfiguredEndpoint) {
-    throw new Error('LTX 2.3 Open is not configured. Add a reachable endpoint in Settings.');
+    throw createConfigError('ltx_open');
   }
 
   if (!isReachableOpenLtxEndpoint(rawConfiguredEndpoint)) {
@@ -751,7 +752,7 @@ async function generateWithOpenLtx23(options: VideoGenerationOptions): Promise<G
       throw new Error('LTX 2.3 Open points at localhost. Run the app locally or save a reachable HTTPS endpoint in Settings.');
     }
 
-    throw new Error('LTX 2.3 Open is not configured with a reachable endpoint. Update it in Settings.');
+    throw createConfigError('ltx_open');
   }
 
   const endpoint = rawConfiguredEndpoint;

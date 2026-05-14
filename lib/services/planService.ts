@@ -44,7 +44,7 @@ export class planService {
   private static requireSupabase(method: string) {
     const supabase = this.supabase;
     if (!supabase) {
-      throw new Error(`[planService.${method}] Supabase not configured`);
+      throw new Error(`[planService.${method}] Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.`);
     }
     return supabase;
   }

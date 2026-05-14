@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nativeProviders } from '@/lib/services/nativeProviders';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
+import { schemas, validateRequest } from '@/lib/utils/validation';
+import { withIdempotency, generateIdempotencyKey } from '@/lib/utils/idempotency';
+import { logAudit, AUDIT_ACTIONS, AUDIT_RESOURCES } from '@/lib/utils/audit';
 
 /**
  * API endpoint for Shopify integration
@@ -8,30 +11,60 @@ import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
  * POST /api/ecommerce/shopify
  * - Publish content to Shopify products
  * - Create or update products
+ * - Idempotent: safe to retry
  */
 export async function POST(request: NextRequest) {
-  return withApiMiddleware(request, async () => {
+  return withApiMiddleware(request, async (context) => {
+    // Validate input
+    const validation = await validateRequest(request, schemas.shopify);
+    if (!validation.success) {
+      return validation.response;
+    }
+
+    const { content, title, productId } = validation.data;
+
+    // Generate idempotency key from request data + user
+    const idempotencyKey = generateIdempotencyKey({
+      userId: context.userId,
+      content: content.slice(0, 100),
+      title,
+      productId,
+    });
+
     try {
-      const body = await request.json();
-      const { content, title, productId } = body;
+      const result = await withIdempotency(
+        idempotencyKey,
+        async () => {
+          return await nativeProviders.publishShopify(content, title, productId);
+        },
+        { onDuplicate: 'return_cached' }
+      );
 
-      if (!content || !title) {
-        return NextResponse.json(
-          { success: false, error: 'content and title are required' },
-          { status: 400 }
-        );
+      // Log audit event
+      if (context.userId) {
+        await logAudit({
+          userId: context.userId,
+          action: AUDIT_ACTIONS.CONTENT_PUBLISHED,
+          resourceType: AUDIT_RESOURCES.CONTENT,
+          resourceId: result.postId || 'unknown',
+          metadata: {
+            platform: 'shopify',
+            productId,
+            success: result.success,
+          },
+        });
       }
-
-      const result = await nativeProviders.publishShopify(content, title, productId);
 
       return NextResponse.json({
         success: result.success,
         postId: result.postId,
-        url: result.url
+        url: result.url,
+        idempotencyKey,
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to publish to Shopify';
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : 'Failed to publish to Shopify' },
+        { success: false, error: errorMessage, idempotencyKey },
         { status: 500 }
       );
     }

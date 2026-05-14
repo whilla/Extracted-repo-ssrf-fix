@@ -1,6 +1,7 @@
 import { getSecureCredential } from './providerCredentialUtils';
 import { serverGetCredential } from './serverCredentials';
 import { logger } from '@/lib/utils/logger';
+import { createConfigError, formatConfigErrorResponse } from './configError';
 
 export interface NativePublishResult {
   success: boolean;
@@ -110,7 +111,7 @@ export const nativeProviders = {
   async publishDiscord(content: string, imageUrl?: string): Promise<NativePublishResult> {
     try {
       const webhookUrl = await getCredential('discord_webhook_url');
-      if (!webhookUrl) throw new Error('Discord Webhook URL not configured');
+      if (!webhookUrl) throw createConfigError('discord');
 
       const payload = {
         content: content,
@@ -136,7 +137,7 @@ export const nativeProviders = {
       const token = await getCredential('reddit_access_token');
       const clientId = await getCredential('reddit_client_id');
       
-      if (!token || !clientId) throw new Error('Reddit credentials not configured');
+      if (!token || !clientId) throw createConfigError('reddit');
 
       const response = await fetch('https://oauth.reddit.com/api/submit', {
         method: 'POST',
@@ -167,7 +168,7 @@ export const nativeProviders = {
       const token = await getCredential('whatsapp_token');
       const phoneId = await getCredential('whatsapp_phone_id');
 
-      if (!token || !phoneId) throw new Error('WhatsApp credentials not configured');
+      if (!token || !phoneId) throw createConfigError('whatsapp');
 
       const response = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
         method: 'POST',
@@ -195,10 +196,10 @@ export const nativeProviders = {
   async publishTelegram(content: string, chatId?: string): Promise<NativePublishResult> {
     try {
       const botToken = await getCredential('telegram_bot_token');
-      if (!botToken) throw new Error('Telegram bot token not configured');
+      if (!botToken) throw createConfigError('telegram');
 
       const targetChatId = chatId || await getCredential('telegram_chat_id');
-      if (!targetChatId) throw new Error('Telegram chat ID not configured');
+      if (!targetChatId) throw createConfigError('telegram');
 
       const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
@@ -223,7 +224,7 @@ export const nativeProviders = {
   async publishSnapchat(content: string, imageUrl?: string): Promise<NativePublishResult> {
     try {
       const accessToken = await getCredential('snapchat_access_token');
-      if (!accessToken) throw new Error('Snapchat access token not configured');
+      if (!accessToken) throw createConfigError('snapchat');
 
       const response = await fetch('https://adsapi.snapchat.com/v1/ads', {
         method: 'POST',
@@ -253,7 +254,7 @@ export const nativeProviders = {
       const username = await getCredential('wordpress_username');
       const appPassword = await getCredential('wordpress_application_password');
       
-      if (!apiUrl || !username || !appPassword) throw new Error('WordPress credentials not configured');
+      if (!apiUrl || !username || !appPassword) throw createConfigError('wordpress');
 
       const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
       const endpoint = `${baseUrl}/wp-json/wp/v2/posts`;
@@ -286,7 +287,7 @@ export const nativeProviders = {
     try {
       const token = await getCredential('medium_integration_token');
       const userId = await getCredential('medium_user_id');
-      if (!token || !userId) throw new Error('Medium credentials not configured');
+      if (!token || !userId) throw createConfigError('medium');
 
       const response = await fetch(`https://api.medium.com/v1/users/${userId}/posts`, {
         method: 'POST',
@@ -318,7 +319,7 @@ export const nativeProviders = {
       const listId = await getCredential('mailchimp_list_id');
       const serverPrefix = await getCredential('mailchimp_server_prefix'); // e.g. 'us19'
 
-      if (!apiKey || !listId || !serverPrefix) throw new Error('Mailchimp credentials not configured');
+      if (!apiKey || !listId || !serverPrefix) throw createConfigError('mailchimp');
 
       const response = await fetch(`https://${serverPrefix}.api.mailchimp.com/3.0/campaigns`, {
         method: 'POST',
@@ -353,7 +354,7 @@ export const nativeProviders = {
   async publishKlaviyo(content: string, title: string): Promise<NativePublishResult> {
     try {
       const apiKey = await getCredential('klaviyo_api_key');
-      if (!apiKey) throw new Error('Klaviyo API key not configured');
+      if (!apiKey) throw createConfigError('klaviyo');
 
       const templateId = await getCredential('klaviyo_template_id');
       const listId = await getCredential('klaviyo_list_id');
@@ -450,7 +451,7 @@ export const nativeProviders = {
   async publishConvertKit(content: string, title: string): Promise<NativePublishResult> {
     try {
       const apiKey = await getCredential('convertkit_api_key');
-      if (!apiKey) throw new Error('ConvertKit API key not configured');
+      if (!apiKey) throw createConfigError('convertkit');
 
       const response = await fetch('https://api.convertkit.com/v3/broadcasts', {
         method: 'POST',
@@ -481,7 +482,7 @@ export const nativeProviders = {
       const apiUrl = await getCredential('ghost_api_url');
       const adminApiKey = await getCredential('ghost_admin_api_key');
       
-      if (!apiUrl || !adminApiKey) throw new Error('Ghost credentials not configured');
+      if (!apiUrl || !adminApiKey) throw createConfigError('ghost');
 
       const [id, secret] = adminApiKey.split(':');
       const authHeader = `Ghost ${utils.safeBase64Encode(`${id}:${secret}`)}`;
@@ -591,7 +592,7 @@ export const nativeProviders = {
       const storeUrl = await getCredential('shopify_store_url');
       const accessToken = await getCredential('shopify_access_token');
       
-      if (!storeUrl || !accessToken) throw new Error('Shopify credentials not configured');
+      if (!storeUrl || !accessToken) return formatConfigErrorResponse(createConfigError('shopify'));
 
       const url = `${storeUrl.replace(/\/$/, '')}/admin/api/2024-01/graphql.json`;
 
@@ -640,13 +641,10 @@ export const nativeProviders = {
       const clientSecret = await getCredential('amazon_sp_api_client_secret');
 
       if (!accessKey || !secretKey) {
-        return {
-          success: false,
-          error: 'Amazon SP-API requires AWS credentials. Configure aws_access_key_id, aws_secret_access_key, and optionally aws_region (default: us-east-1). For SP-API OAuth, also configure amazon_sp_api_refresh_token, amazon_sp_api_client_id, and amazon_sp_api_client_secret.',
-        };
+        return formatConfigErrorResponse(createConfigError('amazon'));
       }
 
-      if (!sellerId) throw new Error('Amazon seller ID not configured (amazon_seller_id)');
+      if (!sellerId) throw createConfigError('amazon');
 
       // Get access token from SP-API OAuth if refresh token is available
       let accessToken = '';
@@ -747,7 +745,7 @@ export const nativeProviders = {
       const apiKey = await getCredential('etsy_api_key');
       const shopId = await getCredential('etsy_shop_id');
       
-      if (!apiKey || !shopId) throw new Error('Etsy credentials not configured');
+      if (!apiKey || !shopId) return formatConfigErrorResponse(createConfigError('etsy'));
 
       const response = await fetch(`https://openapi.etsy.com/v3/shop/${shopId}/listings`, {
         method: 'POST',

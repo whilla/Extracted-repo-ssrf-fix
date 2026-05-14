@@ -1,5 +1,6 @@
 import { kvGet } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { createConfigError } from './configError';
 import { Product } from '@/lib/types';
 
 export type CommercePlatform = 'shopify' | 'amazon' | 'etsy';
@@ -50,7 +51,7 @@ export class DirectCommerceService {
       const accessToken = await sanitizeApiKey(await kvGet('shopify_access_token'));
 
       if (!storeUrl || !accessToken) {
-        throw new Error('Shopify credentials not configured');
+        throw createConfigError('shopify');
       }
 
       let endpoint = `https://${storeUrl}/admin/api/2024-01/products.json`;

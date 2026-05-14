@@ -1,3 +1,4 @@
+import { createConfigError } from './configError';
 /**
  * Video Production Service
  * Complex video editing, timeline management, and rendering
@@ -380,7 +381,7 @@ async function renderWithFFmpegWasm(jobId: string, timeline: VideoTimeline): Pro
 
 async function renderWithRemotionLambda(jobId: string, timeline: VideoTimeline): Promise<void> {
   const remotionApiKey = await kvGet('remotion_api_key');
-  if (!remotionApiKey) throw new Error('Remotion API key not configured for cloud rendering');
+  if (!remotionApiKey) throw createConfigError('remotion');
 
   await updateJobProgressCli(jobId, 10, 'Connecting to Remotion');
 

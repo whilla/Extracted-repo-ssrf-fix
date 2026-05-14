@@ -31,7 +31,6 @@ function timingSafeEqual(a: string, b: string): boolean {
   return cryptoTimingSafeEqual(aBuf, bBuf);
 }
 
-// TODO: Implement progress tracking
 async function updateJobProgress(supabase: any, jobId: string, percent: number, message: string): Promise<void> {
   await supabase
     .from('system_jobs')

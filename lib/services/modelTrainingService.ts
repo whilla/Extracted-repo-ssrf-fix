@@ -1,3 +1,4 @@
+import { createConfigError } from './configError';
 /**
  * Custom AI Model Training Service
  * Fine-tuning, embeddings, and custom model management
@@ -15,6 +16,7 @@ export interface TrainingDataset {
   description: string;
   examples: TrainingExample[];
   totalTokens: number;
+  fileId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -28,6 +30,7 @@ export interface TrainingExample {
 
 export interface CustomModel {
   id: string;
+  modelId?: string;
   name: string;
   description: string;
   type: ModelType;
@@ -36,6 +39,7 @@ export interface CustomModel {
   datasetId?: string;
   version: number;
   metrics?: ModelMetrics;
+  hyperparameters?: Record<string, unknown>;
   config: ModelConfig;
   endpoint?: string;
   createdAt: string;
@@ -48,6 +52,8 @@ export interface ModelMetrics {
   trainingSteps?: number;
   evalScore?: number;
   latency?: number;
+  epoch?: number;
+  samplesProcessed?: number;
 }
 
 export interface ModelConfig {
@@ -348,30 +354,98 @@ async function callFineTuningAPI(
   model: CustomModel,
   dataset: TrainingDataset | null
 ): Promise<{ success: boolean; endpoint?: string; error?: string; metrics?: ModelMetrics }> {
-  // This would integrate with actual fine-tuning APIs
-  // For now, return a placeholder that explains what's needed
-  
-  switch (provider) {
-    case 'openai':
-      return {
-        success: false,
-        error: 'OpenAI fine-tuning requires additional configuration. Set OPENAI_FINE_TUNE_KEY environment variable.',
-      };
-    case 'anthropic':
-      return {
-        success: false,
-        error: 'Anthropic fine-tuning not yet available. Use OpenAI or Replicate for custom model training.',
-      };
-    case 'replicate':
-      return {
-        success: false,
-        error: 'Replicate fine-tuning requires REPLICATE_API_KEY and custom model setup.',
-      };
-    default:
-      return {
-        success: false,
-        error: `Fine-tuning provider ${provider} not supported. Use OpenAI or Replicate.`,
-      };
+  try {
+    switch (provider) {
+      case 'openai': {
+        const apiKey = await kvGet('openai_api_key');
+        if (!apiKey) throw createConfigError('openai');
+        
+        const response = await fetch('https://api.openai.com/v1/fine_tuning/jobs', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model.baseModel || 'gpt-4o-mini-2024-07-18',
+            training_file: dataset?.fileId,
+            suffix: model.name?.slice(0, 18),
+          }),
+        });
+        
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error?.message || `OpenAI fine-tuning error: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        return {
+          success: true,
+          endpoint: data.id,
+          metrics: {
+            loss: 0,
+            accuracy: 0,
+            epoch: 0,
+            samplesProcessed: dataset?.examples?.length || 0,
+          },
+        };
+      }
+      
+      case 'replicate': {
+        const apiKey = await kvGet('replicate_api_key');
+        if (!apiKey) throw createConfigError('replicate');
+        
+        const response = await fetch('https://api.replicate.com/v1/trainings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            version: model.modelId || 'meta/llama-2-7b-chat:latest',
+            input: {
+              train_data: dataset?.examples?.map(e => ({ input: e.input, output: e.output })),
+              num_train_epochs: model.hyperparameters?.epochs || 3,
+              learning_rate: model.hyperparameters?.learningRate || 0.0001,
+            },
+          }),
+        });
+        
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.detail || `Replicate fine-tuning error: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        return {
+          success: true,
+          endpoint: data.id,
+          metrics: {
+            loss: 0,
+            accuracy: 0,
+            epoch: 0,
+            samplesProcessed: dataset?.examples?.length || 0,
+          },
+        };
+      }
+      
+      case 'anthropic':
+        return {
+          success: false,
+          error: 'Anthropic fine-tuning not yet available via public API. Use OpenAI or Replicate for custom model training.',
+        };
+      
+      default:
+        return {
+          success: false,
+          error: `Fine-tuning provider ${provider} not supported. Use OpenAI or Replicate.`,
+        };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Fine-tuning API call failed',
+    };
   }
 }
 

@@ -11,7 +11,7 @@ const ENCRYPTION_PREFIX = 'SEC_V2_';
 async function getMasterKey(): Promise<CryptoKey> {
   const seed = await kvGet('app_master_secret');
   if (!seed || typeof seed !== 'string' || seed.length < 32) {
-    throw new Error('[Security] Master secret not configured. Set app_master_secret in KV store.');
+    throw new Error('[Security] Master secret not configured. Set app_master_secret in KV store or MASTER_SECRET environment variable.');
   }
   
   let salt = await kvGet('app_master_salt');

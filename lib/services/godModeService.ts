@@ -3,6 +3,7 @@ import type { BrandKit, GodModeResult, ThoughtProcess, MusicMood } from '@/lib/t
 import { chat, universalChat } from './aiService';
 import { kvGet } from './puterService';
 import { GROQ_URL, NVIDIA_URL, TOGETHER_URL, FIREWORKS_URL, OLLAMA_URL } from '@/lib/constants/api';
+import { createConfigError } from './configError';
 
 // God Mode Perspectives - Brutally honest expert viewpoints
 const GOD_MODE_PERSPECTIVES = [
@@ -266,7 +267,7 @@ export async function callAnyModel(
 
 // Provider-specific implementations
 async function chatWithGemini(prompt: string, apiKey: string | null): Promise<string> {
-  if (!apiKey) throw new Error('Gemini API key not configured');
+  if (!apiKey) throw createConfigError('gemini');
   
   const response = await fetch(
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
@@ -288,7 +289,7 @@ async function chatWithGemini(prompt: string, apiKey: string | null): Promise<st
 }
 
 async function chatWithOpenRouter(prompt: string, model: string, apiKey: string | null): Promise<string> {
-  if (!apiKey) throw new Error('OpenRouter API key not configured');
+  if (!apiKey) throw createConfigError('openrouter');
   
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -309,7 +310,7 @@ async function chatWithOpenRouter(prompt: string, model: string, apiKey: string 
 }
 
 async function chatWithGroq(prompt: string, model: string, apiKey: string | null): Promise<string> {
-  if (!apiKey) throw new Error('Groq API key not configured');
+  if (!apiKey) throw createConfigError('groq');
   
   const response = await fetch(`${GROQ_URL}/openai/v1/chat/completions`, {
     method: 'POST',
@@ -329,7 +330,7 @@ async function chatWithGroq(prompt: string, model: string, apiKey: string | null
 }
 
 async function chatWithNvidia(prompt: string, model: string, apiKey: string | null): Promise<string> {
-  if (!apiKey) throw new Error('NVIDIA API key not configured');
+  if (!apiKey) throw createConfigError('nvidia');
   
   const response = await fetch(`${NVIDIA_URL}/v1/chat/completions`, {
     method: 'POST',
@@ -368,7 +369,7 @@ async function chatWithOllama(prompt: string, model: string): Promise<string> {
 }
 
 async function chatWithTogether(prompt: string, model: string, apiKey: string | null): Promise<string> {
-  if (!apiKey) throw new Error('Together API key not configured');
+  if (!apiKey) throw createConfigError('together');
   
   const response = await fetch(`${TOGETHER_URL}/v1/chat/completions`, {
     method: 'POST',
@@ -388,7 +389,7 @@ async function chatWithTogether(prompt: string, model: string, apiKey: string | 
 }
 
 async function chatWithFireworks(prompt: string, model: string, apiKey: string | null): Promise<string> {
-  if (!apiKey) throw new Error('Fireworks API key not configured');
+  if (!apiKey) throw createConfigError('fireworks');
   
   const response = await fetch(`${FIREWORKS_URL}/inference/v1/chat/completions`, {
     method: 'POST',

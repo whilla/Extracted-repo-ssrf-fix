@@ -1,5 +1,6 @@
 import { kvGet } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { createConfigError, formatConfigErrorResponse } from './configError';
 import { nativeProviders } from './nativeProviders';
 
 export interface DirectPublishResult {
@@ -80,7 +81,7 @@ export class DirectPublishService {
       const appPassword = await kvGet('wordpress_application_password');
       
       if (!apiUrl || !username || !appPassword) {
-        return { success: false, error: 'WordPress credentials not configured' };
+        return formatConfigErrorResponse(createConfigError('wordpress'));
       }
 
       const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
@@ -126,7 +127,7 @@ export class DirectPublishService {
       const token = await kvGet('medium_integration_token');
       const userId = await kvGet('medium_user_id');
       if (!token || !userId) {
-        return { success: false, error: 'Medium credentials not configured' };
+        return formatConfigErrorResponse(createConfigError('medium'));
       }
 
       const response = await fetch(`https://api.medium.com/v1/users/${userId}/posts`, {
@@ -171,7 +172,7 @@ export class DirectPublishService {
       const contentApiKey = await kvGet('ghost_content_api_key');
       const adminApiKey = await kvGet('ghost_admin_api_key');
       if (!apiUrl || !contentApiKey || !adminApiKey) {
-        return { success: false, error: 'Ghost credentials not configured' };
+        return formatConfigErrorResponse(createConfigError('ghost'));
       }
 
       const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
@@ -230,7 +231,7 @@ export class DirectPublishService {
       const listId = await kvGet('mailchimp_list_id');
       const serverPrefix = await kvGet('mailchimp_server_prefix');
       if (!apiKey || !listId || !serverPrefix) {
-        return { success: false, error: 'Mailchimp credentials not configured' };
+        return formatConfigErrorResponse(createConfigError('mailchimp'));
       }
 
       const response = await nativeProviders.publishMailchimp(content, title);
@@ -254,7 +255,7 @@ export class DirectPublishService {
     try {
       const apiKey = await kvGet('klaviyo_api_key');
       if (!apiKey) {
-        return { success: false, error: 'Klaviyo API key not configured' };
+        return formatConfigErrorResponse(createConfigError('klaviyo'));
       }
 
       const response = await nativeProviders.publishKlaviyo(content, title);
@@ -278,7 +279,7 @@ export class DirectPublishService {
     try {
       const apiKey = await kvGet('convertkit_api_key');
       if (!apiKey) {
-        return { success: false, error: 'ConvertKit API key not configured' };
+        return formatConfigErrorResponse(createConfigError('convertkit'));
       }
 
       const response = await nativeProviders.publishConvertKit(content, title);

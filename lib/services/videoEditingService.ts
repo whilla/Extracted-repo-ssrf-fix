@@ -1,4 +1,5 @@
 import { logger } from '@/lib/utils/logger';
+import { createConfigError } from './configError';
 
 export interface TimelineTrack {
   id: string;
@@ -58,7 +59,10 @@ export class VideoEditingService {
     this.timeline.transitions.set(`${trackId1}-${trackId2}`, transition);
   }
 
-  /** @deprecated Not implemented — returns failure. */
+  /**
+   * Render timeline to a video using Canvas API + MediaRecorder
+   * Works in-browser for simple compositions. For complex rendering, use backend API.
+   */
   static async renderTimeline(
     onProgress?: (progress: number) => void
   ): Promise<VideoEditResult> {
@@ -71,28 +75,141 @@ export class VideoEditingService {
         return { success: false, error: 'Timeline has no tracks to render' };
       }
 
-      logger.info('[VideoEditingService] Render requested (requires backend)', {
+      logger.info('[VideoEditingService] Starting canvas-based render', {
         tracks: this.timeline.tracks.length,
         duration: this.timeline.duration,
         resolution: this.timeline.resolution,
       });
 
-      // Real video rendering requires a cloud video processing service
-      // such as FFmpeg (via fluent-ffmpeg on Node.js), Remotion, or a cloud API.
-      // In-memory timeline editing is supported, but actual frame-by-frame
-      // rendering and encoding needs a backend processing pipeline.
-      //
-      // To implement real rendering:
-      // 1. Install fluent-ffmpeg and ffmpeg-static
-      // 2. Export timeline to FFmpeg filter complex
-      // 3. Pipe output to Puter.js or Supabase Storage
-      // 4. Report progress via onProgress callback
-      //
-      // For now, return a clear error:
-      return {
-        success: false,
-        error: 'Video rendering requires a backend processing pipeline. Install fluent-ffmpeg and configure FFMPEG_PATH, or use a cloud video processing API like Remotion or Shotstack.',
+      const { width, height } = this.timeline.resolution;
+      const duration = this.timeline.duration;
+      const fps = 24;
+      const totalFrames = Math.floor(duration * fps);
+
+      // Create offscreen canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { success: false, error: 'Canvas 2D context not available' };
+      }
+
+      // Setup MediaRecorder for WebM output
+      const stream = canvas.captureStream(fps);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm;codecs=vp9',
+        videoBitsPerSecond: 5000000,
+      });
+
+      const chunks: Blob[] = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
       };
+
+      return new Promise<VideoEditResult>((resolve) => {
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          resolve({ success: true, outputUrl: url });
+        };
+
+        mediaRecorder.onerror = () => {
+          resolve({ success: false, error: 'MediaRecorder failed during rendering' });
+        };
+
+        mediaRecorder.start(100); // Collect data every 100ms
+
+        let frame = 0;
+        const renderFrame = () => {
+          const time = frame / fps;
+
+          // Clear canvas
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(0, 0, width, height);
+
+          // Render each track
+          for (const track of this.timeline!.tracks) {
+            if (time >= track.startTime && time <= track.endTime) {
+              const trackProgress = (time - track.startTime) / (track.endTime - track.startTime);
+
+              switch (track.type) {
+                case 'text':
+                  if (track.text) {
+                    const style = track.style || {};
+                    ctx.font = `${style.fontSize || 48}px ${style.fontFamily || 'Arial'}`;
+                    ctx.fillStyle = style.color || '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    const y = style.position === 'top' ? height * 0.15 :
+                              style.position === 'bottom' ? height * 0.85 : height * 0.5;
+                    
+                    if (style.background) {
+                      const metrics = ctx.measureText(track.text);
+                      const pad = 20;
+                      ctx.fillStyle = style.background;
+                      ctx.fillRect(
+                        (width - metrics.width) / 2 - pad,
+                        y - (style.fontSize || 48) / 2 - pad / 2,
+                        metrics.width + pad * 2,
+                        (style.fontSize || 48) + pad
+                      );
+                      ctx.fillStyle = style.color || '#ffffff';
+                    }
+                    
+                    ctx.fillText(track.text, width / 2, y);
+                  }
+                  break;
+
+                case 'image':
+                case 'video':
+                  if (track.mediaUrl) {
+                    const img = new Image();
+                    img.src = track.mediaUrl;
+                    if (img.complete) {
+                      ctx.globalAlpha = track.style?.opacity || 1;
+                      ctx.drawImage(img, 0, 0, width, height);
+                      ctx.globalAlpha = 1;
+                    }
+                  }
+                  break;
+              }
+            }
+          }
+
+          frame++;
+          if (frame < totalFrames) {
+            onProgress?.(Math.round((frame / totalFrames) * 100));
+            requestAnimationFrame(renderFrame);
+          } else {
+            mediaRecorder.stop();
+            stream.getTracks().forEach(track => track.stop());
+          }
+        };
+
+        // Preload images before starting
+        const imageUrls = this.timeline!.tracks
+          .filter(t => (t.type === 'image' || t.type === 'video') && t.mediaUrl)
+          .map(t => t.mediaUrl!);
+        
+        if (imageUrls.length === 0) {
+          renderFrame();
+        } else {
+          let loaded = 0;
+          imageUrls.forEach(url => {
+            const img = new Image();
+            img.onload = () => {
+              loaded++;
+              if (loaded === imageUrls.length) renderFrame();
+            };
+            img.onerror = () => {
+              loaded++;
+              if (loaded === imageUrls.length) renderFrame();
+            };
+            img.src = url;
+          });
+        }
+      });
     } catch (error) {
       logger.error('[VideoEditingService] Render error', error as any);
       return {

@@ -1,3 +1,4 @@
+import { createConfigError } from './configError';
 'use client';
 
 import { kvGet, kvSet } from './puterService';
@@ -129,7 +130,7 @@ export const publishOrchestrator = {
 
     const key = await kvGet('ayrshare_key');
     const sanitized = sanitizeApiKey(key);
-    if (!sanitized) throw new Error('Ayrshare API key not configured');
+    if (!sanitized) throw createConfigError('ayrshare');
 
 const PLATFORM_MAP: Record<Platform, string> = {
   twitter: 'twitter',

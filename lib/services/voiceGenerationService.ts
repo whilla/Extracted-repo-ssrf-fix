@@ -1,3 +1,4 @@
+import { createConfigError } from './configError';
 'use client';
 
 import { kvGet, kvSet } from './puterService';
@@ -145,7 +146,7 @@ async function generateSpeechify(text: string, voiceId = 'adam'): Promise<string
   const apiKey = sanitizeApiKey(await kvGet('speechify_key'));
   
   if (!apiKey || apiKey.length < 10) {
-    throw new Error('Speechify API key not configured. Get a free key at speechify.com');
+    throw createConfigError('speechify');
   }
 
   // Validate text length
@@ -193,7 +194,7 @@ async function generatePlayHT(text: string, voiceId = 's3://voice-cloning-zero-s
   const userId = sanitizeStoredValueForKey('playht_user_id', await kvGet('playht_user_id'));
   
   if (!apiKey || !userId) {
-    throw new Error('Play.ht API key not configured. Get a free key at play.ht');
+    throw createConfigError('playht');
   }
 
   // Validate text length
@@ -242,7 +243,7 @@ async function generateResembleAI(text: string, voiceUuid = 'd1d1d1d1-d1d1-d1d1-
   const apiKey = sanitizeApiKey(await kvGet('resemble_key'));
   
   if (!apiKey) {
-    throw new Error('Resemble AI API key not configured. Get a free key at resemble.ai');
+    throw createConfigError('resemble');
   }
 
   // Validate text length (free tier limit)
@@ -292,7 +293,7 @@ async function generateElevenLabs(text: string, voiceId = '21m00Tcm4TlvDq8ikWAM'
   const apiKey = sanitizeApiKey(await kvGet('elevenlabs_key'));
   
   if (!apiKey || apiKey.length < 10) {
-    throw new Error('ElevenLabs API key not configured. Get a free key at elevenlabs.io');
+    throw createConfigError('elevenlabs');
   }
 
   // Validate text length (ElevenLabs free tier limit)
@@ -352,7 +353,7 @@ async function generateAzureTTS(text: string, voiceId = 'en-US-AriaNeural'): Pro
     const region = (await kvGet('azure_speech_region')) || process.env.AZURE_SPEECH_REGION || 'eastus';
     
     if (!apiKey) {
-      throw new Error('Azure Speech API key not configured');
+      throw createConfigError('azure_speech');
     }
 
     const response = await fetch(

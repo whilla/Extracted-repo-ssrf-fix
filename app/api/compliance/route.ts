@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RegionalContentFilterService } from '@/lib/services/regionalContentFilterService';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
+import { schemas, validateRequest } from '@/lib/utils/validation';
 
 /**
  * API endpoint for content compliance and regional filtering
@@ -8,20 +9,18 @@ import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
  * POST /api/compliance
  * - Filter content for regional compliance
  * - Check for blocked topics, words, and restrictions
+ * - Validated input with Zod schemas
  */
 export async function POST(request: NextRequest) {
   return withApiMiddleware(request, async () => {
+    const validation = await validateRequest(request, schemas.compliance);
+    if (!validation.success) {
+      return validation.response;
+    }
+
+    const { content, regions } = validation.data;
+
     try {
-      const body = await request.json();
-      const { content, regions } = body;
-
-      if (!content || typeof content !== 'string' || !Array.isArray(regions) || regions.length === 0) {
-        return NextResponse.json(
-          { success: false, error: 'content (string) and regions (non-empty array) are required' },
-          { status: 400 }
-        );
-      }
-
       const result = await RegionalContentFilterService.filterContent(content, regions);
 
       return NextResponse.json({

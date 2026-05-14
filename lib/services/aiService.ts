@@ -7,6 +7,7 @@ import { buildMemoryContext } from './agentMemoryService';
 import { waitForPuter } from './puterService';
 import { buildFallbackProviders, type RoutedProvider } from './providerFallback';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { createConfigError } from './configError';
 import {
   dispatchProviderEvent,
   isPuterFallbackDisabled,
@@ -628,7 +629,7 @@ export async function chatWithGemini(
     }
 
     if (!apiKey) {
-      throw new Error('Gemini API key not configured. Add it in Settings or configure GEMINI_API_KEY on the server.');
+      throw createConfigError('gemini');
     }
 
     const response = await fetch(

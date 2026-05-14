@@ -48,42 +48,44 @@ export class SpatialContentService {
     try {
       logger.info('[SpatialContentService] Generating 3D model via Replicate or procedural Three.js', params);
 
-      // Try Replicate API first for AI-generated 3D models
       const replicateKey = await kvGet('replicate_api_key');
       if (replicateKey) {
-        const response = await fetch('https://api.replicate.com/v1/predictions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${replicateKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            version: 'd5e0586c1f8b5a9d9b8c7f6a5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6',
-            input: {
-              prompt: params.prompt,
-              output_format: params.outputFormat || 'glb',
-              style: params.style || 'realistic',
+        const replicateModel = await kvGet('replicate_3d_model') || 'fictiverse/3d-model-generator:3d-model-generator-v1';
+        try {
+          const response = await fetch('https://api.replicate.com/v1/predictions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${replicateKey}`,
+              'Content-Type': 'application/json',
             },
-          }),
-        });
+            body: JSON.stringify({
+              version: replicateModel.includes(':') ? replicateModel.split(':')[1] : replicateModel,
+              input: {
+                prompt: params.prompt,
+                ...(params.outputFormat ? { output_format: params.outputFormat } : {}),
+              },
+            }),
+          });
 
-        if (response.ok) {
-          const data = await response.json();
-          const predictionId = data.id;
+          if (response.ok) {
+            const data = await response.json();
+            const predictionId = data.id;
 
-          // Poll for completion
-          for (let i = 0; i < 60; i++) {
-            await new Promise(r => setTimeout(r, 3000));
-            const statusRes = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
-              headers: { 'Authorization': `Bearer ${replicateKey}` },
-            });
-            const statusData = await statusRes.json();
-            if (statusData.status === 'succeeded' && statusData.output) {
-              const modelUrl = Array.isArray(statusData.output) ? statusData.output[0] : statusData.output;
-              return { success: true, modelUrl: String(modelUrl), thumbnailUrl: String(modelUrl).replace(/\.glb$/, '.png') };
+            for (let i = 0; i < 60; i++) {
+              await new Promise(r => setTimeout(r, 3000));
+              const statusRes = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+                headers: { 'Authorization': `Bearer ${replicateKey}` },
+              });
+              const statusData = await statusRes.json();
+              if (statusData.status === 'succeeded' && statusData.output) {
+                const modelUrl = Array.isArray(statusData.output) ? statusData.output[0] : statusData.output;
+                return { success: true, modelUrl: String(modelUrl), thumbnailUrl: String(modelUrl).replace(/\.glb$/, '.png') };
+              }
+              if (statusData.status === 'failed') break;
             }
-            if (statusData.status === 'failed') break;
           }
+        } catch {
+          logger.warn('SpatialContentService', 'Replicate API call failed, falling back to procedural generation');
         }
       }
 
@@ -148,6 +150,8 @@ export class SpatialContentService {
         ? `<script>${this.buildInteractiveScript(params.interactiveElements || [])}</script>`
         : '';
 
+      const vrButtonHtml = `typeof THREE !== 'undefined' && 'xr' in navigator ? '<button id="vr-btn" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:12px 24px;background:#6366f1;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;z-index:20;display:none">Enter VR</button>' : ''`;
+
       const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -157,7 +161,7 @@ export class SpatialContentService {
 <style>body{margin:0;overflow:hidden;font-family:sans-serif;background:#000}#info{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.8);font-size:14px;pointer-events:none;z-index:10}</style>
 </head>
 <body>
-<div id="info">VR Environment • ${params.sceneType} • Drag to look around • Scroll to zoom</div>
+<div id="info">VR Environment • ${params.sceneType} • Drag to look around • Scroll to zoom • ${'${vrButtonHtml}'}</div>
 <script src="${this.THREE_CDN}"></script>
 <script>
 const scene = new THREE.Scene();
@@ -168,6 +172,7 @@ const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth,window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
 
 const light = new THREE.DirectionalLight(0xffffff, 1);
@@ -202,14 +207,19 @@ window.addEventListener('mousemove',e=>{if(!controls.isDragging)return;const dx=
 window.addEventListener('mouseup',()=>{controls.isDragging=false});
 window.addEventListener('wheel',e=>{controls.zoom=Math.max(3,Math.min(50,controls.zoom+e.deltaY*0.01))});
 
+window.addEventListener('load',()=>{
+  const vrBtn = document.getElementById('vr-btn');
+  if(vrBtn && navigator.xr) {vrBtn.style.display='block';vrBtn.onclick=()=>{renderer.xr.enabled=true;renderer.xr.setSession(navigator.xr.requestSession('immersive-vr'));}}
+});
 function animate() {
-  requestAnimationFrame(animate);
-  mesh.rotation.y += 0.003;
-  camera.position.x = controls.zoom * Math.sin(controls.yaw) * Math.cos(controls.pitch);
-  camera.position.y = controls.zoom * Math.sin(controls.pitch) + 3;
-  camera.position.z = controls.zoom * Math.cos(controls.yaw) * Math.cos(controls.pitch);
-  camera.lookAt(0, 1, 0);
-  renderer.render(scene, camera);
+  renderer.setAnimationLoop(() => {
+    mesh.rotation.y += 0.003;
+    camera.position.x = controls.zoom * Math.sin(controls.yaw) * Math.cos(controls.pitch);
+    camera.position.y = controls.zoom * Math.sin(controls.pitch) + 3;
+    camera.position.z = controls.zoom * Math.cos(controls.yaw) * Math.cos(controls.pitch);
+    camera.lookAt(0, 1, 0);
+    renderer.render(scene, camera);
+  });
 }
 animate();
 window.addEventListener('resize',()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight)});

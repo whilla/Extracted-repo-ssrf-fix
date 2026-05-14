@@ -177,7 +177,7 @@ export async function callCustomProvider(
   // Gemini has a special API format
   if (providerId === 'gemini') {
     const apiKey = sanitizeApiKey(await kvGet(provider.keyName));
-    if (!apiKey) throw new Error(`${provider.name} API key not configured`);
+    if (!apiKey) throw new Error(`${provider.name} API key not configured. Add it in Settings or configure the ${provider.keyName} environment variable.`);
 
     const contents = messages
       .filter(m => m.role !== 'system')
@@ -211,7 +211,7 @@ export async function callCustomProvider(
   let apiKey = '';
   if (provider.requiresKey) {
     apiKey = sanitizeApiKey(await kvGet(provider.keyName));
-    if (!apiKey) throw new Error(`${provider.name} API key not configured`);
+    if (!apiKey) throw new Error(`${provider.name} API key not configured. Add it in Settings or configure the ${provider.keyName} environment variable.`);
   }
 
   // Build request

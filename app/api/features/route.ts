@@ -124,8 +124,19 @@ export async function GET(request: NextRequest) {
         name: 'Amazon Integration',
         description: 'Publish content to Amazon product listings',
         apiPath: '/api/ecommerce/amazon',
-        status: 'not_implemented',
-        note: 'Amazon SP-API requires AWS Signature V4 auth. Returns clear error guiding implementation. Use n8n bridge as alternative.',
+        status: 'partial',
+        note: 'AWS Signature V4 utilities implemented in nativeProviders.ts. Full SP-API product listing flow requires AWS IAM + OAuth credentials and end-to-end testing. Use n8n bridge as alternative.',
+        auth: 'enabled',
+        rateLimiting: 'enabled',
+        priority: 'high'
+      },
+      {
+        id: 'nexus-brain',
+        name: 'NexusBrain (Built-in AI)',
+        description: 'Rule-based content generation engine that works without external AI API keys',
+        apiPath: '/api/ai/chat (fallback)',
+        status: 'implemented',
+        note: 'Fully self-contained. Generates posts, hooks, strategies, critiques, hashtags, and platform advice using templates and knowledge base. No external dependencies.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'

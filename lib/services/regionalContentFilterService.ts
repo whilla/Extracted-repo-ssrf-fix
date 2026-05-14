@@ -7,11 +7,12 @@ export type Region =
 export interface RegionalRule {
   region: Region;
   restrictions: {
-    blockedTopics?: string[];
-    blockedWords?: string[];
+    blockedTopics?: (string | RegExp)[];
+    blockedWords?: (string | RegExp)[];
     requiredWarnings?: string[];
     maxContentLength?: number;
     ageRestrictions?: boolean;
+    severityLevels?: Record<string, number>; // 1-10 scale for different violation types
   };
 }
 
@@ -23,9 +24,11 @@ export interface FilteringResult {
     original?: string;
     modified?: string;
     reason: string;
+    severity?: number;
   }[];
   regions: Region[];
   contentWarnings?: string[];
+  severityScore?: number;
   error?: string;
 }
 
@@ -34,19 +37,21 @@ export class RegionalContentFilterService {
     ['us', {
       region: 'us',
       restrictions: {
-        blockedTopics: ['illegal drugs', 'weapons trafficking', 'terrorism'],
+        blockedTopics: ['illegal drugs', 'weapons trafficking', 'terrorism', /\b(sell|buy|purchase)\s+(?:illegal\s+)?(?:drugs|cocaine|heroin|meth)\b/gi],
         blockedWords: [],
         requiredWarnings: ['FTC disclosure may be required for sponsored content'],
         ageRestrictions: false,
+        severityLevels: { blockedTopics: 9, blockedWords: 7, ageRestrictions: 4, maxContentLength: 3 },
       },
     }],
     ['eu', {
       region: 'eu',
       restrictions: {
-        blockedTopics: ['hate speech', 'misinformation'],
+        blockedTopics: ['hate speech', 'misinformation', /\b(?:kill|attack|destroy)\s+(?:the\s+)?(?:jews|muslims|immigrants|refugees)\b/gi],
         blockedWords: [],
         requiredWarnings: ['GDPR Notice: Content may be subject to data protection regulations'],
         ageRestrictions: true,
+        severityLevels: { blockedTopics: 10, blockedWords: 8, ageRestrictions: 5, maxContentLength: 3 },
       },
     }],
     ['uk', {
@@ -138,6 +143,7 @@ export class RegionalContentFilterService {
 
       const modifications: FilteringResult['modifications'] = [];
       const warnings: string[] = [];
+      let totalSeverityScore = 0;
 
       for (const region of targetRegions) {
         const rule = this.rules.get(region);
@@ -146,13 +152,19 @@ export class RegionalContentFilterService {
         const { restrictions } = rule;
 
         if (restrictions.blockedWords?.length) {
-          restrictions.blockedWords.forEach(word => {
-            const regex = new RegExp(word, 'gi');
-            if (regex.test(content)) {
-              modifications.push({
-                type: 'removed',
-                original: word,
-                reason: `Blocked word in ${region.toUpperCase()}: ${word}`,
+          restrictions.blockedWords.forEach(pattern => {
+            const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern, 'gi');
+            const matches = content.match(regex);
+            if (matches) {
+              matches.forEach(match => {
+                const severity = restrictions.severityLevels?.['blockedWords'] || 5;
+                modifications.push({
+                  type: 'removed',
+                  original: match,
+                  reason: `Blocked word in ${region.toUpperCase()}: ${match}`,
+                  severity,
+                });
+                totalSeverityScore += severity;
               });
               content = content.replace(regex, '[REMOVED]');
             }
@@ -161,12 +173,16 @@ export class RegionalContentFilterService {
 
         if (restrictions.blockedTopics?.length) {
           restrictions.blockedTopics.forEach(topic => {
-            if (content.toLowerCase().includes(topic.toLowerCase())) {
+            const regex = topic instanceof RegExp ? topic : new RegExp(topic, 'gi');
+            if (regex.test(content)) {
+              const severity = restrictions.severityLevels?.['blockedTopics'] || 8;
               modifications.push({
                 type: 'blocked',
-                modified: topic,
+                modified: topic.toString(),
                 reason: `Blocked topic in ${region.toUpperCase()}: ${topic}`,
+                severity,
               });
+              totalSeverityScore += severity;
             }
           });
         }
@@ -176,15 +192,20 @@ export class RegionalContentFilterService {
         }
 
         if (restrictions.maxContentLength && content.length > restrictions.maxContentLength) {
+          const severity = restrictions.severityLevels?.['maxContentLength'] || 3;
           content = content.substring(0, restrictions.maxContentLength);
           modifications.push({
             type: 'modified',
             reason: `Content truncated for ${region.toUpperCase()} (max ${restrictions.maxContentLength} chars)`,
+            severity,
           });
+          totalSeverityScore += severity;
         }
 
         if (restrictions.ageRestrictions) {
+          const severity = restrictions.severityLevels?.['ageRestrictions'] || 4;
           warnings.push('Age-restricted content notice may be required');
+          totalSeverityScore += severity;
         }
       }
 
@@ -196,6 +217,7 @@ export class RegionalContentFilterService {
         modifications,
         regions: targetRegions,
         contentWarnings: warnings,
+        severityScore: totalSeverityScore,
       };
     } catch (error) {
       return {
@@ -250,7 +272,7 @@ export class RegionalContentFilterService {
       let isBlocked = false;
       if (restrictions.blockedTopics?.length) {
         for (const topic of restrictions.blockedTopics) {
-          if (content.toLowerCase().includes(topic.toLowerCase())) {
+          if (typeof topic === 'string' ? content.toLowerCase().includes(topic.toLowerCase()) : topic.test(content)) {
             isBlocked = true;
             break;
           }

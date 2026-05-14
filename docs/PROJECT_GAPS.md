@@ -124,5 +124,19 @@ The infrastructure covers core workflows but has gaps in enterprise collaboratio
 
 ---
 
-**Last Updated**: 2026-05-14
+**Last Updated**: 2026-05-14 (FIXES APPLIED)
 **NexusAI Version**: 1.2.0
+
+## Recently Fixed Gaps (2026-05-14)
+
+| Gap | Fix | File |
+|-----|-----|------|
+| Orchestrator fake auth | Replaced hardcoded `{ id: 'authenticated' }` with real `withApiMiddleware` + Supabase SSR cookie auth | `app/api/orchestrator/route.ts` |
+| Orchestrator hardcoded n8n | Made n8n conditional (`isAvailable()`), dynamic platform detection from goal, dynamic video flag | `app/api/orchestrator/route.ts` |
+| AI chat returns 501 without keys | Added NexusBrain — a self-contained, rule-based content engine that generates posts, hooks, strategy, critiques, and more without any external AI API keys | `app/api/ai/chat/route.ts` + `lib/services/nexusBrain.ts` |
+| Missing CRM dashboard page | Created dedicated CRM page with overview stats, customer table, segment cards, add customer/segment modals | `app/(app)/crm/page.tsx` |
+| Test suite broken (chai dependency) | Replaced `chai` with `node:test` + `node:assert/strict`, added NexusBrain tests | `tests/feature-gap-verification.test.mjs` |
+| Amazon status misleading | Updated from `not_implemented` to `partial` with accurate description | `app/api/features/route.ts` |
+| Internal docs contradiction | Documented that `docs/PROJECT_GAPS.md` previously claimed all gaps fixed while `/api/features/status` admitted several were partial | This file |
+
+---

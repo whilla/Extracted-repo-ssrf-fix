@@ -1,3 +1,4 @@
+import { createConfigError } from './configError';
 // Voice Service - ElevenLabs + Web Speech API fallback
 // @deprecated Consider using voiceGenerationService.ts (7 providers) for new integrations
 import { kvGet } from './puterService';
@@ -87,7 +88,7 @@ async function generateElevenLabsSpeech(
 ): Promise<Blob> {
   const key = sanitizeApiKey(await kvGet('elevenlabs_key'));
   if (!key) {
-    throw new Error('ElevenLabs API key not configured');
+    throw createConfigError('elevenlabs');
   }
 
   const { voiceId = '21m00Tcm4TlvDq8ikWAM', stability = 0.5, similarityBoost = 0.75 } = options;

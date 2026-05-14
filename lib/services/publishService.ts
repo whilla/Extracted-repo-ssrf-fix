@@ -4,6 +4,7 @@ import { kvGet } from './puterService';
 import { validateContent, makeGovernorDecision, evaluateMoodApproval } from './governorService';
 import { logPostingEvent, type GenerationSource } from './generationTrackerService';
 import { sanitizeApiKey } from './providerCredentialUtils';
+import { createConfigError, formatConfigErrorResponse } from './configError';
 import { DirectPublishService } from './directPublishService';
 import { publishOrchestrator } from './publishOrchestrator';
 
@@ -28,9 +29,9 @@ async function ayrshareRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const key = await getAyrshareKey();
-  if (!key) {
-    throw new Error('Ayrshare API key not configured');
-  }
+    if (!key) {
+      throw createConfigError('ayrshare');
+    }
 
   const response = await fetch(`${AYRSHARE_API_BASE}${endpoint}`, {
     ...options,

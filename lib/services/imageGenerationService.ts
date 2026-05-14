@@ -3,6 +3,7 @@
 import { kvGet, waitForPuter } from './puterService';
 import { sanitizeApiKey } from './providerCredentialUtils';
 import { accessibilityService } from './accessibilityService';
+import { createConfigError } from './configError';
 
 export type ImageProvider = 'puter' | 'stability' | 'leonardo' | 'ideogram';
 
@@ -296,7 +297,7 @@ async function canUsePuter(): Promise<boolean> {
 async function generateWithStability(options: ImageGenerationOptions): Promise<GeneratedImage> {
   const apiKey = await getProviderApiKey('stability');
   if (!apiKey) {
-    throw new Error('Stability AI API key not configured');
+    throw createConfigError('stability');
   }
 
   const { width = 1024, height = 1024, steps = 40 } = options;
@@ -356,7 +357,7 @@ async function generateWithStability(options: ImageGenerationOptions): Promise<G
 async function generateWithLeonardo(options: ImageGenerationOptions): Promise<GeneratedImage> {
   const apiKey = await getProviderApiKey('leonardo');
   if (!apiKey) {
-    throw new Error('Leonardo AI API key not configured');
+    throw createConfigError('leonardo');
   }
 
   const { width = 1024, height = 1024 } = options;
@@ -436,7 +437,7 @@ async function generateWithLeonardo(options: ImageGenerationOptions): Promise<Ge
 async function generateWithIdeogram(options: ImageGenerationOptions): Promise<GeneratedImage> {
   const apiKey = await getProviderApiKey('ideogram');
   if (!apiKey) {
-    throw new Error('Ideogram API key not configured');
+    throw createConfigError('ideogram');
   }
 
   const { style = 'AUTO' } = options;

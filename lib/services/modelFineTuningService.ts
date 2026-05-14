@@ -1,5 +1,6 @@
 import { logger } from '@/lib/utils/logger';
 import { kvGet, kvSet } from './puterService';
+import { createConfigError, formatConfigErrorResponse } from './configError';
 
 export type ModelType = 'llm' | 'diffusion';
 
@@ -129,7 +130,7 @@ export class ModelFineTuningService {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            version: config.modelType === 'diffusion' ? 'a6a8d9a4a5d2d4c8e9e8f7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7' : 'e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7a6b5c4d3e2f1a0b9c8d7',
+            version: await kvGet('replicate_finetune_model') || (config.modelType === 'diffusion' ? 'stability-ai/stable-diffusion:ac732df83cea7f18d96a9fb4039603f1f049d8d4e8e4b6a0b2f0a7e2e3f4c5d6' : 'meta/llama-2-7b-chat:13c3c55b93ce4f02b0e9b0b0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0'),
             input: {
               train_data: trainingExamples,
               num_train_epochs: config.epochs || 3,

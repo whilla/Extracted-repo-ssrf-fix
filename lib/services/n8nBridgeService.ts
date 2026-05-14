@@ -1,3 +1,4 @@
+import { createConfigError } from './configError';
 import { createClient } from '@supabase/supabase-js';
 
 /**
@@ -35,7 +36,7 @@ export class n8nBridgeService {
    */
   static async triggerWorkflow(workflowId: string, payload: any) {
     if (!this.bridgeSecret) {
-      throw new Error('N8N_BRIDGE_SECRET is not configured in environment variables');
+      throw createConfigError('n8n');
     }
 
     const url = `${this.getBaseUrl()}/webhook/${workflowId}`;
@@ -123,7 +124,7 @@ export class n8nBridgeService {
   static async callN8nApi(endpoint: string, options: any = {}) {
     const apiKey = process.env.N8N_API_KEY;
     if (!apiKey) {
-      throw new Error('N8N_API_KEY is not configured');
+      throw createConfigError('n8n');
     }
 
     const url = `${this.getBaseUrl()}/api/v1${endpoint}`;

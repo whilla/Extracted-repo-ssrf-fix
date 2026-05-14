@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic";
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { logService } from '@/lib/services/logService';
 import { n8nBridgeService } from '@/lib/services/n8nBridgeService';
@@ -11,8 +11,7 @@ import { buildMemoryContext } from '@/lib/services/agentMemoryService';
 import { kvGet } from '@/lib/services/puterService';
 import { swarmTraceService } from '@/lib/services/swarmTraceService';
 import { generateId } from '@/lib/services/memoryService';
-
-import type { User } from '@supabase/supabase-js';
+import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 
 const OrchestratorRequestSchema = z.object({
   agent_id: z.string().min(1, 'agent_id is required'),
@@ -21,38 +20,25 @@ const OrchestratorRequestSchema = z.object({
   memory_id: z.string().optional(),
 });
 
-async function getAuthenticatedUser(): Promise<{ id: string } | null> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    return null;
-  }
-  
-  try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    return { id: 'authenticated' };
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Cannot find module')) {
-      console.error('[api/orchestrator] Missing Supabase dependencies:', error.message);
-      return null;
-    }
-    console.error(
-      '[api/orchestrator] Authentication error:',
-      error instanceof Error ? error.message : 'Unknown authentication error'
-    );
-    return null;
-  }
+function detectPlatformFromGoal(goal: string): string {
+  const lower = goal.toLowerCase();
+  if (lower.includes('instagram') || lower.includes('ig ')) return 'instagram';
+  if (lower.includes('tiktok') || lower.includes('tt ')) return 'tiktok';
+  if (lower.includes('linkedin')) return 'linkedin';
+  if (lower.includes('twitter') || lower.includes('x ')) return 'twitter';
+  if (lower.includes('youtube') || lower.includes('yt ')) return 'youtube';
+  if (lower.includes('facebook') || lower.includes('fb ')) return 'facebook';
+  if (lower.includes('threads')) return 'threads';
+  if (lower.includes('pinterest')) return 'pinterest';
+  if (lower.includes('discord')) return 'discord';
+  if (lower.includes('reddit')) return 'reddit';
+  if (lower.includes('blog') || lower.includes('wordpress') || lower.includes('medium')) return 'blog';
+  return 'general';
 }
 
-export async function POST(request: Request) {
-  try {
-    const user = await getAuthenticatedUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+export async function POST(request: NextRequest) {
+  return withApiMiddleware(request, async (apiContext) => {
+    try {
 
     const body = await request.json();
     const result = OrchestratorRequestSchema.safeParse(body);
@@ -62,7 +48,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Validation failed: ${errors}` }, { status: 400 });
     }
     
-    const { agent_id, goal, context, memory_id } = result.data;
+    const { agent_id, goal, context: userContext, memory_id } = result.data;
     const traceId = generateId();
     await swarmTraceService.startTrace(traceId, goal);
 
@@ -162,12 +148,28 @@ export async function POST(request: Request) {
       message: 'Swarm execution complete. Quality validated and routed to dashboard.',
     });
 
-    await n8nBridgeService.triggerWorkflow('workflow-social-posting', {
-      agent_id,
-      caption: finalContent,
-      video_url: 'pending_generation',
-      platform: 'tiktok',
-    });
+    // ── Conditional n8n trigger with dynamic values ──
+    let n8nTriggered = false;
+    let n8nError: string | null = null;
+    try {
+      const isN8nAvailable = await n8nBridgeService.isAvailable();
+      if (isN8nAvailable) {
+        const detectedPlatform = detectPlatformFromGoal(goal);
+        const isVideoGoal = /video|reel|short|clip|youtube|tiktok/i.test(goal);
+        await n8nBridgeService.triggerWorkflow('workflow-social-posting', {
+          agent_id,
+          caption: finalContent,
+          video_url: isVideoGoal ? 'pending_generation' : null,
+          platform: detectedPlatform,
+          trace_id: traceId,
+          user_id: apiContext.userId,
+        });
+        n8nTriggered = true;
+      }
+    } catch (err) {
+      n8nError = err instanceof Error ? err.message : 'n8n trigger failed';
+      console.warn('[api/orchestrator] n8n trigger skipped:', n8nError);
+    }
 
     return NextResponse.json({ 
       status: 'success', 
@@ -178,11 +180,14 @@ export async function POST(request: Request) {
         tasks_completed: taskResults.size,
         agents_involved: new Set(Array.from(taskResults.values()).map((o: any) => o.agentId)).size
       },
-      nextStep: 'human_approval' 
+      nextStep: 'human_approval',
+      n8n_triggered: n8nTriggered,
+      n8n_error: n8nError,
     });
 
   } catch (error: any) {
     console.error('[api/orchestrator] Swarm Orchestration error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  });
 }

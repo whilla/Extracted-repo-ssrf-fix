@@ -7,6 +7,17 @@
  */
 
 import { getProviderKey, isProviderAvailable } from '@/lib/config/envValidation';
+import { ConfigError, formatConfigErrorResponse, createConfigError } from './configError';
+
+async function getConfiguredModelVersion(key: string, defaultVersion: string): Promise<string> {
+  try {
+    const { kvGet } = await import('./puterService');
+    const configured = await kvGet(key);
+    return configured || defaultVersion;
+  } catch {
+    return defaultVersion;
+  }
+}
 
 export type MediaType = 'image' | 'video' | 'audio';
 export type ImageProvider = 'stability' | 'replicate' | 'ideogram';
@@ -152,9 +163,8 @@ async function generateImageReplicate(
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        version:
-          '6359cbf9f8c1e99667e8635c5e1c5d18e97f4e7d5ba3e5c6d5c4b3a2f1e0d',
+        body: JSON.stringify({
+        version: await getConfiguredModelVersion('replicate_image_model', 'stability-ai/stable-diffusion:ac732df83cea7f18d96a9fb4039603f1f049d8d4e8e4b6a0b2f0a7e2e3f4c5d6'),
         input: {
           prompt: description,
           num_outputs: 1,
@@ -262,11 +272,7 @@ export async function generateVideo(
     }
   }
 
-  return {
-    success: false,
-    provider: 'none',
-    error: 'No video providers configured or all providers failed',
-  };
+    return { ...formatConfigErrorResponse(createConfigError('runway')), provider: 'runway' };
 }
 
 /**
@@ -300,7 +306,7 @@ async function generateVideoRunway(description: string): Promise<GenerationResul
     return {
       success: false,
       provider: 'runway',
-      error: 'Runway API key not configured. Get a key at runwayml.com',
+      error: 'Runway API key not configured. Set runway_key in Settings.',
     };
   }
 
@@ -403,7 +409,7 @@ async function generateVideoReplicate(description: string): Promise<GenerationRe
     return {
       success: false,
       provider: 'replicate',
-      error: 'Replicate API key not configured. Get a token at replicate.com',
+      error: 'Replicate API key not configured. Set replicate_api_key in Settings.',
     };
   }
 
@@ -415,8 +421,8 @@ async function generateVideoReplicate(description: string): Promise<GenerationRe
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        version: 'c77e60ed5ehaac43ba1c65e7e7a65e7e7e7e7e7e',
+        body: JSON.stringify({
+        version: await getConfiguredModelVersion('replicate_video_model', 'stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb472816fd4af51f3149cf7c3d7f6a9c9e6b6e7f8a'),
         input: {
           prompt: description,
           num_frames: 24,
@@ -548,11 +554,7 @@ export async function generateAudio(
     }
   }
 
-  return {
-    success: false,
-    provider: 'none',
-    error: 'No audio providers configured or all providers failed',
-  };
+  return { ...formatConfigErrorResponse(createConfigError('elevenlabs')), provider: 'elevenlabs' };
 }
 
 /**

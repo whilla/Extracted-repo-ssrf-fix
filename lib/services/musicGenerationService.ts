@@ -4,6 +4,7 @@ import { kvGet, kvSet } from './puterService';
 import { hasConfiguredSecret, sanitizeApiKey } from './providerCredentialUtils';
 import { mediaAssetManager, type MediaAsset } from './mediaAssetManager';
 import { enhanceMusicPrompt } from './promptEnhancer';
+import { createConfigError, formatConfigErrorResponse } from './configError';
 
 // Retry configuration
 const MAX_RETRIES = 2;
@@ -153,7 +154,7 @@ async function generateWithMusicfy(options: MusicGenerationOptions): Promise<str
       apiKey = process.env.MUSICFY_API_KEY || '';
     }
     if (!apiKey) {
-      throw new Error('Musicfy API key not configured. Get a free key at musicfy.ai');
+      throw createConfigError('musicfy');
     }
 
     const { prompt, duration = 60, style = 'pop' } = options;
@@ -202,7 +203,7 @@ async function generateWithDadabots(options: MusicGenerationOptions): Promise<st
       apiKey = process.env.HUGGINGFACE_API_KEY || '';
     }
     if (!apiKey) {
-      throw new Error('HuggingFace API key not configured for Dadabots. Get a free key at huggingface.co');
+      throw createConfigError('huggingface');
     }
 
     const { prompt, duration = 30, genre = 'metal' } = options;
@@ -254,7 +255,7 @@ async function generateWithJukebox(options: MusicGenerationOptions): Promise<str
   try {
     const apiKey = sanitizeApiKey(await kvGet('jukebox_key'));
     if (!apiKey) {
-      throw new Error('Jukebox API key not configured. Get a free key at huggingface.co');
+      throw createConfigError('jukebox');
     }
 
     const { prompt, duration = 60, genre = 'pop' } = options;
@@ -297,7 +298,7 @@ async function generateWithAmper(options: MusicGenerationOptions): Promise<strin
   try {
     const apiKey = sanitizeApiKey(await kvGet('amper_key'));
     if (!apiKey) {
-      throw new Error('Amper Music API key not configured. Get a free trial at ampermusic.com');
+      throw createConfigError('amper');
     }
 
     const { prompt, duration = 120, genre = 'background', tempo = 120 } = options;
@@ -339,7 +340,7 @@ async function generateWithSoundraw(options: MusicGenerationOptions): Promise<st
   try {
     const apiKey = sanitizeApiKey(await kvGet('soundraw_key'));
     if (!apiKey) {
-      throw new Error('SoundRaw API key not configured. Get a free key at soundraw.io');
+      throw createConfigError('soundraw');
     }
 
     const { prompt, duration = 60, genre = 'ambient', style = 'cinematic' } = options;
@@ -384,7 +385,7 @@ async function generateWithBeatoven(options: MusicGenerationOptions): Promise<st
       apiKey = process.env.BEATOVEN_API_KEY || '';
     }
     if (!apiKey) {
-      throw new Error('Beatoven API key not configured. Get a free key at beatoven.ai');
+      throw createConfigError('beatoven');
     }
 
     const { prompt, duration = 60, genre = 'cinematic' } = options;
@@ -434,7 +435,7 @@ async function generateWithAIVA(options: MusicGenerationOptions): Promise<string
       apiKey = process.env.AIVA_API_KEY || '';
     }
     if (!apiKey) {
-      throw new Error('AIVA API key not configured. Get a free key at aiva.ai');
+      throw createConfigError('aiva');
     }
 
     const { prompt, duration = 60, genre = 'cinematic', style = 'orchestral' } = options;
@@ -484,7 +485,7 @@ async function generateWithSuno(options: MusicGenerationOptions): Promise<string
     apiKey = process.env.SUNO_API_KEY || '';
   }
   if (!apiKey || apiKey.length < 10) {
-    throw new Error('Suno AI API key not configured. Get a key at suno.ai');
+    throw createConfigError('suno');
   }
 
   const { prompt, duration = 180, style = 'pop' } = options;

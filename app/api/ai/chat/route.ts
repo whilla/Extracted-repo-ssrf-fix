@@ -10,36 +10,38 @@ import {
   normalizeProxyMessages,
 } from '@/lib/server/aiProviderProxy';
 import { RateLimiter } from '@/lib/services/rateLimiter';
+import { schemas, validateRequest } from '@/lib/utils/validation';
+import { cached, TTL, CACHE_TAGS } from '@/lib/utils/cache';
+import { safeExternalCall } from '@/lib/utils/gracefulDegradation';
+import { chatWithBrain } from '@/lib/services/nexusBrain';
+import { kvGet } from '@/lib/services/puterService';
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
 export async function POST(request: NextRequest) {
-  let body: Record<string, unknown>;
-
-  try {
-    body = await request.json();
-  } catch {
-    return jsonError('Invalid JSON body.', 400);
+  const validation = await validateRequest(request, schemas.chat);
+  if (!validation.success) {
+    return validation.response;
   }
 
-  // Security: Implementation of Rate Limiting
+  const { messages, model, stream, temperature, maxTokens } = validation.data;
+
   const userId = request.headers.get('x-user-id') || 'anonymous';
   const rateLimit = await RateLimiter.checkLimit(userId);
   if (!rateLimit.allowed) {
     return jsonError('Too many requests. Please slow down.', 429);
   }
 
-  const provider = body.provider;
-  const model = body.model;
-  const messages = body.messages;
+  const provider = model ? model.split('/')[0] || 'openrouter' : 'openrouter';
+  const actualModel = model || 'openai/gpt-4o';
 
-  if (typeof provider !== 'string' || !isServerChatProvider(provider)) {
+  if (!isServerChatProvider(provider)) {
     return jsonError('Unsupported provider.', 400);
   }
 
-  if (typeof model !== 'string' || model.trim().length === 0) {
+  if (actualModel.trim().length === 0) {
     return jsonError('A model is required.', 400);
   }
 
@@ -51,48 +53,95 @@ export async function POST(request: NextRequest) {
   }
 
   const apiKey = getServerProviderApiKey(provider);
+
+  // ── FALLBACK: Use built-in NexusBrain when no external AI key is available ──
   if (!apiKey) {
-    return jsonError(`Server provider key not configured for ${provider}.`, 501);
+    let brandKit = null;
+    try {
+      const raw = await kvGet('brand_kit');
+      brandKit = raw ? JSON.parse(raw) : null;
+    } catch {
+      // Brand kit optional; brain works without it
+    }
+
+    try {
+      const result = await chatWithBrain(
+        normalizedMessages,
+        brandKit
+      );
+      return NextResponse.json({
+        text: result.text,
+        intent: result.intent,
+        confidence: result.confidence,
+        suggestedActions: result.suggestedActions,
+        provider: 'nexus-brain',
+        model: 'nexus-brain-v1',
+        note: 'Powered by NexusBrain — a built-in, rule-based content engine that works without external AI keys.',
+      });
+    } catch (brainError) {
+      return jsonError(
+        brainError instanceof Error ? brainError.message : 'NexusBrain engine failed.',
+        500
+      );
+    }
   }
 
   const config = getProviderProxyConfig(provider);
   const origin = request.headers.get('origin') || request.nextUrl.origin;
 
+  const cacheKey = `chat:${provider}:${actualModel}:${Buffer.from(JSON.stringify(normalizedMessages)).toString('base64').slice(0, 64)}`;
+
   try {
-    const endpoint =
-      config.kind === 'gemini'
-        ? `${config.endpoint}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
-        : config.endpoint;
-    const payload =
-      config.kind === 'gemini'
-        ? buildGeminiPayload(normalizedMessages)
-        : buildOpenAICompatiblePayload(model, normalizedMessages);
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(config.kind === 'openai-compatible' ? { Authorization: `Bearer ${apiKey}` } : {}),
-        ...(body.provider === 'openrouter' ? { 'HTTP-Referer': origin, 'X-Title': 'NexusAI' } : {}),
+    const result = await cached(
+      cacheKey,
+      TTL.FIVE_MINUTES,
+      async () => {
+        return await safeExternalCall(
+          'ai_chat',
+          async () => {
+            const endpoint =
+              config.kind === 'gemini'
+                ? `${config.endpoint}/${encodeURIComponent(actualModel)}:generateContent?key=${encodeURIComponent(apiKey)}`
+                : config.endpoint;
+            const payload =
+              config.kind === 'gemini'
+                ? buildGeminiPayload(normalizedMessages)
+                : buildOpenAICompatiblePayload(actualModel, normalizedMessages);
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(config.kind === 'openai-compatible' ? { Authorization: `Bearer ${apiKey}` } : {}),
+                ...(provider === 'openrouter' ? { 'HTTP-Referer': origin, 'X-Title': 'NexusAI' } : {}),
+              },
+              body: JSON.stringify(payload),
+            });
+
+            const data = await response.json().catch(async () => ({ error: await response.text().catch(() => '') }));
+            if (!response.ok) {
+              const providerError = typeof data?.error === 'string'
+                ? data.error
+                : typeof data?.message === 'string'
+                ? data.message
+                : JSON.stringify(data);
+              throw new Error(providerError || `${provider} request failed.`);
+            }
+
+            const text = extractProviderText(data);
+            if (!text.trim()) {
+              throw new Error(`${provider} returned an empty response.`);
+            }
+
+            return { text };
+          },
+          { text: 'AI service is currently unavailable. Please try again later.' },
+          { timeoutMs: 30000, retries: 1 }
+        );
       },
-      body: JSON.stringify(payload),
-    });
+      [CACHE_TAGS.AI_RESPONSE]
+    );
 
-    const data = await response.json().catch(async () => ({ error: await response.text().catch(() => '') }));
-    if (!response.ok) {
-      const providerError = typeof data?.error === 'string'
-        ? data.error
-        : typeof data?.message === 'string'
-        ? data.message
-        : JSON.stringify(data);
-      return jsonError(providerError || `${body.provider} request failed.`, 502);
-    }
-
-    const text = extractProviderText(data);
-    if (!text.trim()) {
-      return jsonError(`${body.provider} returned an empty response.`, 502);
-    }
-
-    return NextResponse.json({ text });
+    return NextResponse.json(result);
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : 'Provider proxy request failed.', 502);
   }
