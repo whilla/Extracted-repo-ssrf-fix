@@ -111,17 +111,6 @@ export default function RootLayout({
           src="https://js.puter.com/v2/"
           strategy="afterInteractive"
           crossOrigin="anonymous"
-          onError={() => {
-            if (typeof window !== 'undefined') {
-              console.warn('[Puter] CDN failed to load. Core features will work without Puter.');
-              window.__puterAvailable = false;
-            }
-          }}
-          onLoad={() => {
-            if (typeof window !== 'undefined') {
-              window.__puterAvailable = true;
-            }
-          }}
         />
 
       </head>
