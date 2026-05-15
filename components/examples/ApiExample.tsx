@@ -1,8 +1,8 @@
 'use client';
 
 import { useApi } from '@/hooks/useApi';
-import { NeonButton } from '../nexus/NeonButton';
-import { InlineError } from '../nexus/ErrorBoundary';
+import { NeonButton } from '@/components/nexus/NeonButton';
+import { InlineError } from '@/components/nexus/ErrorBoundary';
 
 export function ApiExample() {
   const { apiCall } = useApi();
