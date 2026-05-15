@@ -1,6 +1,6 @@
 'use client';
 
-import { Skeleton } from '@/components/nexus/Skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export function StatsSkeleton() {
   return (
