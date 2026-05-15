@@ -46,18 +46,14 @@ export interface RealTimeAnalytics {
 }
 
 class SocialMetricsService {
-  /**
-   * Fetch real engagement metrics from Twitter/X API
-   */
   async fetchTwitterMetrics(): Promise<SocialEngagementMetrics | null> {
     try {
       const apiKey = await CredentialVaultService.getSecret('twitter_bearer_token');
       if (!apiKey) {
-        logger.warn('[SocialMetrics] Twitter API key not configured');
-        return this.getMockTwitterMetrics();
+        logger.warn('SocialMetrics', 'Twitter API key not configured');
+        return null;
       }
 
-      // User lookup with metrics
       const response = await fetch('https://api.twitter.com/2/users/me?user.fields=public_metrics', {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -65,8 +61,8 @@ class SocialMetricsService {
       });
 
       if (!response.ok) {
-        logger.warn('[SocialMetrics] Twitter API error:', response.status);
-        return this.getMockTwitterMetrics();
+        logger.warn('SocialMetrics', 'Twitter API error', { status: response.status });
+        return null;
       }
 
       const data = await response.json();
@@ -83,27 +79,25 @@ class SocialMetricsService {
         engagementRate: 2.5,
       };
     } catch (error) {
-      logger.error('[SocialMetrics] Twitter fetch failed:', error);
-      return this.getMockTwitterMetrics();
+      logger.error('SocialMetrics', 'Twitter fetch failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     }
   }
 
-  /**
-   * Fetch real engagement metrics from Instagram Graph API
-   */
   async fetchInstagramMetrics(): Promise<SocialEngagementMetrics | null> {
     try {
       const accessToken = await CredentialVaultService.getSecret('instagram_access_token');
       if (!accessToken) {
-        logger.warn('[SocialMetrics] Instagram API key not configured');
-        return this.getMockInstagramMetrics();
+        logger.warn('SocialMetrics', 'Instagram API key not configured');
+        return null;
       }
 
-      // Instagram Graph API requires a Facebook Page ID
       const pageId = await kvGet('instagram_page_id');
       if (!pageId) {
-        logger.warn('[SocialMetrics] Instagram Page ID not configured');
-        return this.getMockInstagramMetrics();
+        logger.warn('SocialMetrics', 'Instagram Page ID not configured');
+        return null;
       }
 
       const response = await fetch(
@@ -111,7 +105,7 @@ class SocialMetricsService {
       );
 
       if (!response.ok) {
-        return this.getMockInstagramMetrics();
+        return null;
       }
 
       const data = await response.json();
@@ -119,27 +113,26 @@ class SocialMetricsService {
       return {
         platform: 'instagram',
         followers: data.fan_count || data.followers_count || 0,
-        posts: 0, // Would need additional API call
+        posts: 0,
         avgLikes: Math.floor((data.fan_count || 0) * 0.05),
         avgComments: Math.floor((data.fan_count || 0) * 0.01),
         avgShares: 0,
         engagementRate: 4.5,
       };
     } catch (error) {
-      logger.error('[SocialMetrics] Instagram fetch failed:', error);
-      return this.getMockInstagramMetrics();
+      logger.error('SocialMetrics', 'Instagram fetch failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     }
   }
 
-  /**
-   * Fetch real engagement metrics from LinkedIn API
-   */
   async fetchLinkedInMetrics(): Promise<SocialEngagementMetrics | null> {
     try {
       const accessToken = await CredentialVaultService.getSecret('linkedin_access_token');
       if (!accessToken) {
-        logger.warn('[SocialMetrics] LinkedIn API key not configured');
-        return this.getMockLinkedInMetrics();
+        logger.warn('SocialMetrics', 'LinkedIn API key not configured');
+        return null;
       }
 
       const response = await fetch(
@@ -153,17 +146,16 @@ class SocialMetricsService {
       );
 
       if (!response.ok) {
-        return this.getMockLinkedInMetrics();
+        return null;
       }
 
       const data = await response.json();
       const orgId = data.elements?.[0]?.organization;
 
       if (!orgId) {
-        return this.getMockLinkedInMetrics();
+        return null;
       }
 
-      // Get organization info
       const orgResponse = await fetch(
         `https://api.linkedin.com/v2/organizations/${orgId}`,
         {
@@ -174,9 +166,15 @@ class SocialMetricsService {
         }
       );
 
+      if (!orgResponse.ok) {
+        return null;
+      }
+
+      const orgData = await orgResponse.json();
+
       return {
         platform: 'linkedin',
-        followers: 0, // Would need additional call
+        followers: orgData.followerCount || 0,
         posts: 0,
         avgLikes: 0,
         avgComments: 0,
@@ -184,25 +182,24 @@ class SocialMetricsService {
         engagementRate: 2.0,
       };
     } catch (error) {
-      logger.error('[SocialMetrics] LinkedIn fetch failed:', error);
-      return this.getMockLinkedInMetrics();
+      logger.error('SocialMetrics', 'LinkedIn fetch failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     }
   }
 
-  /**
-   * Fetch real engagement metrics from Facebook Graph API
-   */
   async fetchFacebookMetrics(): Promise<SocialEngagementMetrics | null> {
     try {
       const accessToken = await CredentialVaultService.getSecret('facebook_access_token');
       if (!accessToken) {
-        logger.warn('[SocialMetrics] Facebook API key not configured');
-        return this.getMockFacebookMetrics();
+        logger.warn('SocialMetrics', 'Facebook API key not configured');
+        return null;
       }
 
       const pageId = await kvGet('facebook_page_id');
       if (!pageId) {
-        return this.getMockFacebookMetrics();
+        return null;
       }
 
       const response = await fetch(
@@ -210,7 +207,7 @@ class SocialMetricsService {
       );
 
       if (!response.ok) {
-        return this.getMockFacebookMetrics();
+        return null;
       }
 
       const data = await response.json();
@@ -225,14 +222,13 @@ class SocialMetricsService {
         engagementRate: 3.0,
       };
     } catch (error) {
-      logger.error('[SocialMetrics] Facebook fetch failed:', error);
-      return this.getMockFacebookMetrics();
+      logger.error('SocialMetrics', 'Facebook fetch failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     }
   }
 
-  /**
-   * Fetch real-time analytics for all configured platforms
-   */
   async fetchAllMetrics(): Promise<SocialEngagementMetrics[]> {
     const results: SocialEngagementMetrics[] = [];
 
@@ -259,63 +255,13 @@ class SocialMetricsService {
             break;
         }
       } catch (error) {
-        logger.error(`[SocialMetrics] Error fetching ${platform} metrics:`, error);
+        logger.error('SocialMetrics', `Error fetching ${platform} metrics`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
     return results;
-  }
-
-  /**
-   * Mock data for platforms without configured credentials
-   */
-  private getMockTwitterMetrics(): SocialEngagementMetrics {
-    return {
-      platform: 'twitter',
-      followers: 1500,
-      following: 200,
-      posts: 350,
-      avgLikes: 45,
-      avgComments: 12,
-      avgShares: 8,
-      engagementRate: 3.0,
-    };
-  }
-
-  private getMockInstagramMetrics(): SocialEngagementMetrics {
-    return {
-      platform: 'instagram',
-      followers: 2500,
-      posts: 180,
-      avgLikes: 125,
-      avgComments: 15,
-      avgShares: 0,
-      engagementRate: 5.2,
-    };
-  }
-
-  private getMockLinkedInMetrics(): SocialEngagementMetrics {
-    return {
-      platform: 'linkedin',
-      followers: 800,
-      posts: 50,
-      avgLikes: 35,
-      avgComments: 8,
-      avgShares: 12,
-      engagementRate: 5.6,
-    };
-  }
-
-  private getMockFacebookMetrics(): SocialEngagementMetrics {
-    return {
-      platform: 'facebook',
-      followers: 1200,
-      posts: 200,
-      avgLikes: 25,
-      avgComments: 10,
-      avgShares: 5,
-      engagementRate: 3.2,
-    };
   }
 }
 

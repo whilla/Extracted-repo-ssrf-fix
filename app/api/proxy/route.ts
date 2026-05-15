@@ -126,16 +126,31 @@ async function proxyRequest(
   const TIMEOUT_MS = 30_000;
   const MAX_BODY_SIZE = 10 * 1024 * 1024;
 
+  const requestOpts: any = {
+    method: options.method || 'GET',
+    headers: options.headers,
+    lookup,
+    timeout: TIMEOUT_MS,
+  };
+
+  if (url.protocol === 'https:') {
+    requestOpts.servername = url.hostname;
+    requestOpts.rejectUnauthorized = true;
+  }
+
   return new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
     const req = client.request(
       url,
-      {
-        method: options.method || 'GET',
-        headers: options.headers,
-        lookup,
-        timeout: TIMEOUT_MS,
-      },
+      requestOpts,
       (res) => {
+        if (res.headers.location) {
+          const redirectUrl = new URL(res.headers.location, url);
+          if (isPrivateIP(redirectUrl.hostname)) {
+            reject(new Error('Redirect to private IP blocked'));
+            return;
+          }
+        }
+
         const chunks: Buffer[] = [];
         let totalSize = 0;
         res.on('data', (chunk) => {
@@ -227,15 +242,23 @@ export async function GET(request: NextRequest) {
 
     const contentType = response.headers['content-type'] || 'application/octet-stream';
 
+    const allowedOrigins = process.env.ALLOWED_PROXY_ORIGINS?.split(',') || [];
+    const requestOrigin = request.headers.get('origin');
+    const corsOrigin = allowedOrigins.length > 0 && requestOrigin && allowedOrigins.includes(requestOrigin)
+      ? requestOrigin
+      : (process.env.NODE_ENV === 'development' ? '*' : 'null');
+
     return new NextResponse(response.body, {
       status: response.status,
       headers: {
         'Content-Type': Array.isArray(contentType) ? contentType[0] : contentType,
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': corsOrigin,
+        'Vary': 'Origin',
       },
     });
   } catch (error) {
-    return NextResponse.json({ error: `Proxy request failed: ${error instanceof Error ? error.message : String(error)}` }, { status: 502 });
+    console.error('Proxy GET error:', error);
+    return NextResponse.json({ error: 'Proxy request failed' }, { status: 502 });
   }
 }
 
@@ -271,14 +294,22 @@ export async function POST(request: NextRequest) {
 
     const contentType = response.headers['content-type'] || 'application/octet-stream';
 
+    const allowedOrigins = process.env.ALLOWED_PROXY_ORIGINS?.split(',') || [];
+    const requestOrigin = request.headers.get('origin');
+    const corsOrigin = allowedOrigins.length > 0 && requestOrigin && allowedOrigins.includes(requestOrigin)
+      ? requestOrigin
+      : (process.env.NODE_ENV === 'development' ? '*' : 'null');
+
     return new NextResponse(response.body, {
       status: response.status,
       headers: {
         'Content-Type': Array.isArray(contentType) ? contentType[0] : contentType,
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': corsOrigin,
+        'Vary': 'Origin',
       },
     });
   } catch (error) {
-    return NextResponse.json({ error: `Proxy request failed: ${error instanceof Error ? error.message : String(error)}` }, { status: 502 });
+    console.error('Proxy POST error:', error);
+    return NextResponse.json({ error: 'Proxy request failed' }, { status: 502 });
   }
 }

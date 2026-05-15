@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RegionalContentFilterService } from '@/lib/services/regionalContentFilterService';
+import { geoIPService } from '@/lib/services/geoIPService';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 
 /**
@@ -15,19 +16,24 @@ export async function POST(request: NextRequest) {
   return withApiMiddleware(request, async () => {
     try {
       const body = await request.json();
-      const { content, region } = body;
+      let { content, region, autoDetect } = body;
 
-      if (!content || !region) {
+      if (!content) {
         return NextResponse.json(
-          { success: false, error: 'content and region are required' },
+          { success: false, error: 'content is required' },
           { status: 400 }
         );
+      }
+
+      if (autoDetect || !region) {
+        region = await geoIPService.detectRegion(request);
       }
 
       const result = await RegionalContentFilterService.checkRegion(region);
 
       return NextResponse.json({
         success: true,
+        detectedRegion: autoDetect || !body.region ? region : undefined,
         ...result,
         contentLength: content.length
       });

@@ -1,36 +1,35 @@
-// lib/api-config.ts
 export const API_CONFIG = {
   mediaStack: {
-    key: process.env.REACT_APP_MEDIASTACK_KEY,
-    baseUrl: 'http://api.mediastack.com/v1/news',
-    cacheTTL: 30 * 60 * 1000, // 30 mins
+    key: process.env.MEDIASTACK_API_KEY,
+    baseUrl: 'https://api.mediastack.com/v1/news',
+    cacheTTL: 30 * 60 * 1000,
   },
   serpStack: {
-    key: process.env.REACT_APP_SERPSTACK_KEY,
-    baseUrl: 'http://api.serpstack.com/search',
-    cacheTTL: 60 * 60 * 1000, // 1 hour
+    key: process.env.SERPSTACK_API_KEY,
+    baseUrl: 'https://api.serpstack.com/search',
+    cacheTTL: 60 * 60 * 1000,
   },
   userStack: {
-    key: process.env.REACT_APP_USERSTACK_KEY,
-    baseUrl: 'http://api.userstack.com',
-    cacheTTL: 24 * 60 * 60 * 1000, // 24 hours
+    key: process.env.USERSTACK_API_KEY,
+    baseUrl: 'https://api.userstack.com',
+    cacheTTL: 24 * 60 * 60 * 1000,
   },
   ipStack: {
-    key: process.env.REACT_APP_IPSTACK_KEY,
-    baseUrl: 'http://api.ipstack.com',
-    cacheTTL: 24 * 60 * 60 * 1000, // 24 hours
+    key: process.env.IPSTACK_API_KEY,
+    baseUrl: 'https://api.ipstack.com',
+    cacheTTL: 24 * 60 * 60 * 1000,
   },
   numVerify: {
-    key: process.env.REACT_APP_NUMVERIFY_KEY,
-    baseUrl: 'http://apilayer.net/numverify',
-    cacheTTL: 0, // No cache for phone validation
+    key: process.env.NUMVERIFY_API_KEY,
+    baseUrl: 'https://apilayer.net/api/numverify',
+    cacheTTL: 0,
   },
 };
 
-export function getApiKey(service: keyof typeof API_CONFIG) {
-  const key = API_CONFIG[service].key;
-  if (!key) {
-    throw new Error(`API Key for ${service} is missing. Please add it to your environment variables.`);
-  }
-  return key;
+export function getApiKey(service: keyof typeof API_CONFIG): string | undefined {
+  return API_CONFIG[service].key;
+}
+
+export function isServiceConfigured(service: keyof typeof API_CONFIG): boolean {
+  return !!API_CONFIG[service].key;
 }

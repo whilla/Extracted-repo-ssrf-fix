@@ -16,7 +16,8 @@ export const createClient = (cookieStore: Awaited<ReturnType<typeof cookies>>) =
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
-          } catch {
+          } catch (error) {
+            console.error('[Supabase] Failed to set cookies:', error);
           }
         },
       },

@@ -62,8 +62,8 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   } catch (error) {
     console.error('Middleware error:', error);
-    // On error, allow access rather than blocking
-    return NextResponse.next();
+    // Fail closed: redirect to login on error to prevent unauthorized access
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 }
 

@@ -697,6 +697,18 @@ function fillPromptTemplate(template: string, input: string, context: Record<str
     prompt = prompt.split(`{{${key}}}`).join(value);
   }
 
+  const FALLBACKS: Record<string, string> = {
+    brandContext: context.brandContext || context.brandKit || 'Brand context not provided',
+    platform: context.platform || 'multi-platform',
+    charLimit: context.charLimit || '2200',
+    tone: context.tone || 'conversational and authentic',
+    content: context.content || input,
+  };
+
+  for (const [key, value] of Object.entries(FALLBACKS)) {
+    prompt = prompt.split(`{{${key}}}`).join(value);
+  }
+
   return prompt
     .replace(/\{\{[a-zA-Z0-9_]+\}\}/g, '')
     .replace(/\n{3,}/g, '\n\n')
@@ -716,7 +728,7 @@ function normalizeAgentConfig(raw: Partial<AgentConfig>): AgentConfig | null {
     engagement: 0.25,
     brandAlignment: 0.25,
   };
-  const defaultPrompt = template?.promptTemplate || `You are a ${role} agent. Produce concrete, high-quality output aligned to the user request and context.`;
+  const defaultPrompt = template?.promptTemplate || `You are a ${role} specialist. Produce concrete, high-quality output that a senior social media operator would approve. No templates, no clichés, no filler. Every output needs a strong hook, clear structure, and specific actionable value. If brand context is provided, enforce it strictly.`;
   const defaultName = template?.name || (role === 'hybrid' ? 'HybridAgent' : `${role[0].toUpperCase()}${role.slice(1)}Agent`);
 
   const capabilities = Array.isArray(raw.capabilities)

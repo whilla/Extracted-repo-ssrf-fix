@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 
 export async function GET(req: NextRequest) {
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Draft ID is required' }, { status: 400 });
       }
 
-      const supabase = (await createClient()) as any;
+      const supabase = (await getSupabaseAdminClient()) as any;
       if (!supabase) {
         return NextResponse.json({ error: 'Database client unavailable' }, { status: 503 });
       }
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Title and content are required' }, { status: 400 });
       }
 
-      const supabase = (await createClient()) as any;
+      const supabase = (await getSupabaseAdminClient()) as any;
       if (!supabase) {
         return NextResponse.json({ error: 'Database client unavailable' }, { status: 503 });
       }

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { useAuth } from '@/lib/context/AuthContext';
-import { Shield, Users, UserPlus, CheckCircle2, XCircle, Clock, Plus, Trash2 } from 'lucide-react';
+import { Shield, Users, UserPlus, CheckCircle2, XCircle, Clock, Plus, Trash2, Key } from 'lucide-react';
 import { toast } from 'sonner';
 
 type ApprovalStep = { role: string; order: number; status: 'pending' | 'approved' | 'rejected'; userId?: string };
@@ -52,10 +52,17 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gradient-to-br from-bg-primary via-bg-primary to-violet-900/20 p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="mb-12">
-          <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
-            <Shield className="w-8 h-8 text-nexus-cyan" /> Admin
-          </h1>
-          <p className="text-gray-400">Team management, roles, and approval workflows</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
+                <Shield className="w-8 h-8 text-nexus-cyan" /> Admin
+              </h1>
+              <p className="text-gray-400">Team management, roles, and approval workflows</p>
+            </div>
+            <a href="/admin/vault" className="flex items-center gap-2 px-4 py-2 bg-nexus-cyan/10 border border-nexus-cyan/30 rounded-lg text-nexus-cyan hover:bg-nexus-cyan/20 transition-colors text-sm font-medium">
+              <Key className="w-4 h-4" /> Credential Vault
+            </a>
+          </div>
         </div>
 
         <div className="flex gap-2 mb-8">

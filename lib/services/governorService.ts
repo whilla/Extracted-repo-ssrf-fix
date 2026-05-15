@@ -1,10 +1,10 @@
 import { governorSystem, type GovernorConfig, type GovernorState, type GovernorValidation } from '@/lib/core/GovernorSystem';
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export { type GovernorConfig, type GovernorState, type GovernorValidation };
 
 export async function loadGovernorConfig(): Promise<GovernorConfig> {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   const { data } = await supabase
     .from('system_configs')
     .select('value')
@@ -30,12 +30,12 @@ export async function loadGovernorConfig(): Promise<GovernorConfig> {
 }
 
 export async function saveGovernorConfig(config: GovernorConfig) {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   await (supabase.from('system_configs') as any).upsert({ key: 'governor_config' as any, value: config as unknown as Record<string, unknown> });
 }
 
 export async function loadGovernorState(): Promise<GovernorState> {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   const { data } = await supabase
     .from('system_configs')
     .select('value')
@@ -60,7 +60,7 @@ export async function loadGovernorState(): Promise<GovernorState> {
 }
 
 export async function saveGovernorState(state: GovernorState) {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   await (supabase.from('system_configs') as any).upsert({ key: 'governor_state' as any, value: state as unknown as Record<string, unknown> });
 }
 

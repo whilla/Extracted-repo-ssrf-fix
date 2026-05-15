@@ -389,7 +389,7 @@ Format as JSON:
 
     try {
       const messages: AIMessage[] = [
-        { role: 'system', content: 'You are an elite content strategist. Always respond with valid JSON.' },
+        { role: 'system', content: 'You are an elite content strategist. Analyze deeply and respond with valid JSON only. No markdown, no explanations.' },
         { role: 'user', content: prompt },
       ];
 

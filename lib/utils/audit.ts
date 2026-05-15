@@ -3,7 +3,7 @@
  * Tracks all critical operations: publishes, content changes, settings updates
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 import { logger } from './logger';
 
 export interface AuditEvent {
@@ -25,7 +25,7 @@ export interface AuditEvent {
  */
 export async function logAudit(event: AuditEvent): Promise<void> {
   try {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     if (!supabase) {
       logger.warn('[Audit] Supabase not available, audit event dropped', { action: event.action });
       return;
@@ -57,7 +57,7 @@ export async function getAuditTrail(
   limit = 50
 ): Promise<AuditEvent[]> {
   try {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     if (!supabase) return [];
 
     const { data, error } = await (supabase.from('audit_log') as any)
@@ -95,7 +95,7 @@ export async function getUserActivity(
   limit = 100
 ): Promise<AuditEvent[]> {
   try {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     if (!supabase) return [];
 
     const { data, error } = await (supabase.from('audit_log') as any)

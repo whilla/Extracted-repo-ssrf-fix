@@ -90,7 +90,7 @@ class MLPredictiveService {
       hashtagCount,
       emojiCount,
       questionCount,
-      ctaPresent: ctaPresent ? 1 : 0,
+      ctaPresent: !!ctaPresent,
       hookStrength,
       sentiment,
       platform,
@@ -185,7 +185,7 @@ class MLPredictiveService {
         return { adjustment };
       }
     } catch (error) {
-      logger.debug('[ML Predict] No real metrics available, using baseline');
+      logger.debug('ML Predict', 'No real metrics available, using baseline');
     }
 
     return null;

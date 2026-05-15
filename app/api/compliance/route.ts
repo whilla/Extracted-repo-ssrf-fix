@@ -23,13 +23,21 @@ export async function POST(request: NextRequest) {
 
     let { content, regions, action, autoDetect } = validation.data;
 
-    // Auto-detect region if requested or no region specified
     if (autoDetect || !regions || regions.length === 0) {
       try {
         const detectedRegion = await geoIPService.detectRegion(request);
-        regions = [detectedRegion];
+        const validRegion = ['in', 'us', 'uk', 'ca', 'au', 'jp', 'cn', 'br', 'de', 'fr', 'es', 'eu'].includes(detectedRegion)
+          ? detectedRegion as any
+          : 'us';
+        if (!regions || regions.length === 0) {
+          regions = [validRegion];
+        } else {
+          regions.push(validRegion);
+        }
       } catch {
-        regions = ['us']; // Fallback
+        if (!regions || regions.length === 0) {
+          regions = ['us'];
+        }
       }
     }
 
@@ -47,7 +55,7 @@ export async function POST(request: NextRequest) {
         case 'check_fair_use':
           const fairUse = await copyrightComplianceService.checkFairUse(
             content,
-            validation.data.purpose || 'commercial'
+            (validation.data.purpose as 'educational' | 'commentary' | 'parody' | 'commercial') || 'commercial'
           );
           return NextResponse.json({
             success: true,

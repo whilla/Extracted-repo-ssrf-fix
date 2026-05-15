@@ -1,3 +1,5 @@
+import * as Sentry from '@sentry/nextjs';
+
 /**
  * Structured Logging Utility
  * Provides consistent, categorized logging across the application
@@ -126,6 +128,14 @@ class Logger {
     const ctx = typeof messageOrContext === 'object' ? messageOrContext : context;
     const entry = (this as any).formatLog(LogLevel.ERROR, category, message, ctx);
     (this as any).output(entry);
+
+    if (typeof window !== 'undefined') {
+      Sentry.captureMessage(message, {
+        level: 'error',
+        tags: { category },
+        extra: ctx,
+      });
+    }
   }
 
   fatal(category: string, messageOrContext: string | LogContext, context?: LogContext): void {
@@ -134,6 +144,14 @@ class Logger {
     const ctx = typeof messageOrContext === 'object' ? messageOrContext : context;
     const entry = (this as any).formatLog(LogLevel.FATAL, category, message, ctx);
     (this as any).output(entry);
+
+    if (typeof window !== 'undefined') {
+      Sentry.captureMessage(message, {
+        level: 'fatal',
+        tags: { category },
+        extra: ctx,
+      });
+    }
   }
 
   child(context: LogContext): ChildLogger {

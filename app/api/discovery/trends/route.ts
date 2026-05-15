@@ -1,25 +1,27 @@
 export const dynamic = "force-dynamic";
-// app/api/discovery/trends/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 import { fetchTrendingNews } from '@/lib/services/mediaStackService';
 import { searchTrends } from '@/lib/services/serpStackService';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const query = searchParams.get('query') || 'AI trends';
-  const country = searchParams.get('country') || 'us';
+export async function GET(request: NextRequest) {
+  return withApiMiddleware(request, async () => {
+    const searchParams = request.nextUrl.searchParams;
+    const query = searchParams.get('query') || 'AI trends';
+    const country = searchParams.get('country') || 'us';
 
-  try {
-    const [news, search] = await Promise.all([
-      fetchTrendingNews(query, country),
-      searchTrends(query),
-    ]);
+    try {
+      const [news, search] = await Promise.all([
+        fetchTrendingNews({ keywords: query, countries: [country], limit: 10 }),
+        searchTrends(query, { country }),
+      ]);
 
-    return NextResponse.json({
-      trends: news,
-      search: search,
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+      return NextResponse.json({
+        trends: news,
+        search: search,
+      });
+    } catch (error: any) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  });
 }

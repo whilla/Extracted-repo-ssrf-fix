@@ -8,7 +8,7 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - .env.example
+      - .env
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
@@ -31,6 +31,29 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  collaboration:
+    build:
+      context: .
+      dockerfile: Dockerfile.collab
+    ports:
+      - "1234:1234"
+    environment:
+      - COLLAB_PORT=1234
+      - COLLAB_GC=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('ws').WebSocket"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - nexus-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
   n8n:
     image: n8nio/n8n:latest
     ports:
@@ -41,7 +64,7 @@ services:
       - N8N_PROTOCOL=http
       - NODE_ENV=production
       - WEBHOOK_URL=http://${N8N_HOST:-localhost}:5678/
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-change-me-in-production}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY is required}
     volumes:
       - n8n_data:/home/node/.n8n
     restart: unless-stopped

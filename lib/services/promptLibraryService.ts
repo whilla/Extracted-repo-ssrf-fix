@@ -450,6 +450,9 @@ export function fillPromptTemplate(
     filled = filled.replace(regex, value);
   }
 
+  // Clean up any remaining unfilled template variables
+  filled = filled.replace(/\{\{[a-zA-Z0-9_]+\}\}/g, '');
+
   // Calculate middle slides for carousel template
   if (filled.includes('{{middleSlides}}')) {
     const slides = parseInt(variables.slides || '7', 10);

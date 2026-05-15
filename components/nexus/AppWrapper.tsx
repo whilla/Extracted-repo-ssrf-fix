@@ -1,49 +1,54 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AppLoading } from './AppLoading';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 export function AppWrapper({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [initialCheckDone, setInitialCheckDone] = useState(false);
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  
+  const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    // App is ready when layout marks it as ready
     const checkReady = () => {
       if (document.documentElement.dataset.nexusAppReady === 'true') {
         setLoading(false);
+        setInitialCheckDone(true);
       } else {
-        setTimeout(checkReady, 100);
+        setTimeout(checkReady, 50);
       }
     };
-    
+
     checkReady();
-    
-    // SECURITY FIX: Add timeout to prevent infinite loading if nexusAppReady is never set
-    // This can happen if Puter.js fails to load or runtime bootstrap errors
+
     const forceReadyTimeout = setTimeout(() => {
-      if (loading) {
-        console.warn('[AppWrapper] Forcing app ready after timeout - nexusAppReady was not set');
-        document.documentElement.dataset.nexusAppReady = 'true';
-        setLoading(false);
-      }
-    }, 8000); // 8 second timeout matches PUTER_READY_TIMEOUT
-    
+      document.documentElement.dataset.nexusAppReady = 'true';
+      setLoading(false);
+      setInitialCheckDone(true);
+    }, 5000);
+
     return () => clearTimeout(forceReadyTimeout);
-  }, [loading]);
-  
-  // Show loading indicator on route changes
+  }, []);
+
   useEffect(() => {
+    if (!initialCheckDone) return;
+
+    if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+
     setLoading(true);
-    const timer = setTimeout(() => setLoading(false), 300);
-    return () => clearTimeout(timer);
-  }, [pathname, searchParams]);
-  
+    routeTimerRef.current = setTimeout(() => {
+      setLoading(false);
+    }, 200);
+
+    return () => {
+      if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+    };
+  }, [pathname, initialCheckDone]);
+
   if (loading) {
     return <AppLoading />;
   }
-  
+
   return <>{children}</>;
 }

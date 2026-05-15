@@ -1,5 +1,5 @@
 import { logger } from '@/lib/utils/logger';
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export interface CRMCustomer {
   id: string;
@@ -42,10 +42,47 @@ export interface CRMSegment {
 export class CRMService {
   private static getClient(): any {
     try {
-      return createClient();
+      return getSupabaseAdminClient();
     } catch {
       return null;
     }
+  }
+
+  private static async fetchEngagementHistory(supabase: any, customerId: string): Promise<CRMCustomer['engagementHistory']> {
+    try {
+      const { data, error } = await supabase
+        .from('crm_interactions')
+        .select('content_id, content_title, action, created_at')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error || !data) return [];
+
+      return data.map((interaction: any) => ({
+        contentId: interaction.content_id,
+        contentTitle: interaction.content_title,
+        action: interaction.action,
+        timestamp: interaction.created_at,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private static mapCustomerRow(c: any, engagementHistory: CRMCustomer['engagementHistory'] = []): CRMCustomer {
+    return {
+      id: c.id,
+      email: c.email,
+      name: c.name,
+      source: c.source,
+      tags: c.tags || [],
+      engagementHistory,
+      lifecycleStage: c.lifecycle_stage || 'lead',
+      score: c.score || 0,
+      lastContact: c.last_contact,
+      notes: c.notes,
+    };
   }
 
   static async createCustomer(data: {
@@ -135,17 +172,14 @@ export class CRMService {
         updated_at: new Date().toISOString(),
       }).eq('id', customerId);
 
+      const engagementHistory = await this.fetchEngagementHistory(supabase, customerId);
+
       logger.info('[CRMService] Added engagement', { customerId, action: engagement.action });
-      return { success: true, data: {
-        id: customerId,
-        email: customer.email,
-        name: customer.name,
-        source: customer.source,
-        tags: customer.tags || [],
-        engagementHistory: [],
-        lifecycleStage: lifecycleStage as CRMCustomer['lifecycleStage'],
+      return { success: true, data: this.mapCustomerRow({
+        ...customer,
         score: newScore,
-      }};
+        lifecycle_stage: lifecycleStage,
+      }, engagementHistory) };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
@@ -168,20 +202,11 @@ export class CRMService {
         return { success: false, error: 'Customer not found' };
       }
 
+      const engagementHistory = await this.fetchEngagementHistory(supabase, customerId);
+
       return {
         success: true,
-        data: {
-          id: data.id,
-          email: data.email,
-          name: data.name,
-          source: data.source,
-          tags: data.tags || [],
-          engagementHistory: [],
-          lifecycleStage: data.lifecycle_stage || 'lead',
-          score: data.score || 0,
-          lastContact: data.last_contact,
-          notes: data.notes,
-        },
+        data: this.mapCustomerRow(data, engagementHistory),
       };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -202,20 +227,16 @@ export class CRMService {
 
       if (error) throw error;
 
+      const customers = await Promise.all(
+        (data || []).map(async (c: any) => {
+          const engagementHistory = await this.fetchEngagementHistory(supabase, c.id);
+          return this.mapCustomerRow(c, engagementHistory);
+        })
+      );
+
       return {
         success: true,
-        data: (data || []).map((c: any) => ({
-          id: c.id,
-          email: c.email,
-          name: c.name,
-          source: c.source,
-          tags: c.tags || [],
-          engagementHistory: [],
-          lifecycleStage: c.lifecycle_stage || 'lead',
-          score: c.score || 0,
-          lastContact: c.last_contact,
-          notes: c.notes,
-        })),
+        data: customers,
       };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -237,20 +258,16 @@ export class CRMService {
 
       if (error) throw error;
 
+      const customers = await Promise.all(
+        (data || []).map(async (c: any) => {
+          const engagementHistory = await this.fetchEngagementHistory(supabase, c.id);
+          return this.mapCustomerRow(c, engagementHistory);
+        })
+      );
+
       return {
         success: true,
-        data: (data || []).map((c: any) => ({
-          id: c.id,
-          email: c.email,
-          name: c.name,
-          source: c.source,
-          tags: c.tags || [],
-          engagementHistory: [],
-          lifecycleStage: c.lifecycle_stage || 'lead',
-          score: c.score || 0,
-          lastContact: c.last_contact,
-          notes: c.notes,
-        })),
+        data: customers,
       };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -284,20 +301,11 @@ export class CRMService {
 
       if (error) throw error;
 
+      const engagementHistory = await this.fetchEngagementHistory(supabase, customerId);
+
       return {
         success: true,
-        data: {
-          id: data.id,
-          email: data.email,
-          name: data.name,
-          source: data.source,
-          tags: data.tags || [],
-          engagementHistory: [],
-          lifecycleStage: data.lifecycle_stage || 'lead',
-          score: data.score || 0,
-          lastContact: data.last_contact,
-          notes: data.notes,
-        },
+        data: this.mapCustomerRow(data, engagementHistory),
       };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -389,20 +397,16 @@ export class CRMService {
 
       if (error) throw error;
 
+      const customers = await Promise.all(
+        (data || []).map(async (c: any) => {
+          const engagementHistory = await this.fetchEngagementHistory(supabase, c.id);
+          return this.mapCustomerRow(c, engagementHistory);
+        })
+      );
+
       return {
         success: true,
-        data: (data || []).map((c: any) => ({
-          id: c.id,
-          email: c.email,
-          name: c.name,
-          source: c.source,
-          tags: c.tags || [],
-          engagementHistory: [],
-          lifecycleStage: c.lifecycle_stage || 'lead',
-          score: c.score || 0,
-          lastContact: c.last_contact,
-          notes: c.notes,
-        })),
+        data: customers,
       };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -425,20 +429,16 @@ export class CRMService {
 
       if (error) throw error;
 
+      const customers = await Promise.all(
+        (data || []).map(async (c: any) => {
+          const engagementHistory = await this.fetchEngagementHistory(supabase, c.id);
+          return this.mapCustomerRow(c, engagementHistory);
+        })
+      );
+
       return {
         success: true,
-        data: (data || []).map((c: any) => ({
-          id: c.id,
-          email: c.email,
-          name: c.name,
-          source: c.source,
-          tags: c.tags || [],
-          engagementHistory: [],
-          lifecycleStage: c.lifecycle_stage || 'lead',
-          score: c.score || 0,
-          lastContact: c.last_contact,
-          notes: c.notes,
-        })),
+        data: customers,
       };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -536,7 +536,27 @@ export class CRMService {
         action: interaction.action,
       });
     }
-    return { success: true, data: { success: true } };
+
+    if (interaction.email) {
+      const supabase = this.getClient();
+      if (supabase) {
+        const { data: customer } = await supabase
+          .from('crm_customers')
+          .select('id')
+          .eq('email', interaction.email)
+          .single();
+
+        if (customer) {
+          return this.addEngagement(customer.id, {
+            contentId: interaction.contentId,
+            contentTitle: interaction.contentTitle,
+            action: interaction.action,
+          });
+        }
+      }
+    }
+
+    return { success: false, error: 'customerId or email required to track interaction' };
   }
 
   static async getSegmentsByCustomer(customerId: string): Promise<CRMResult<{ id: string; name: string; matchScore: number }[]>> {

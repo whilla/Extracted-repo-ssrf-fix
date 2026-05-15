@@ -1,15 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SearchService } from '@/lib/services/searchService';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
+import { searchTrends, searchCompetitors } from '@/lib/services/serpStackService';
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   return withApiMiddleware(request, async () => {
     try {
-      const { query, limit } = await request.json();
-      if (!query || typeof query !== 'string') {
-        return NextResponse.json({ success: false, error: 'query string is required' }, { status: 400 });
+      const searchParams = request.nextUrl.searchParams;
+      const action = searchParams.get('action') || 'search';
+      const query = searchParams.get('query') || searchParams.get('q');
+      const country = searchParams.get('country') || undefined;
+      const language = searchParams.get('language') || undefined;
+      const maxResults = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined;
+
+      if (!query) {
+        return NextResponse.json(
+          { success: false, error: 'query parameter is required' },
+          { status: 400 }
+        );
       }
-      const result = await SearchService.search(query, limit || 20);
+
+      let result;
+      if (action === 'competitors') {
+        result = await searchCompetitors(query, { country });
+      } else {
+        result = await searchTrends(query, { country, language, maxResults });
+      }
+
       return NextResponse.json(result);
     } catch (error) {
       return NextResponse.json(

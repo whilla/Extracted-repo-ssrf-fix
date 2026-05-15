@@ -116,7 +116,7 @@ export class AnalyticsIngestionService {
       for (const file of publishedContent) {
         if (file.is_dir) continue;
         const content = await puterService.readFile(`${puterService.PATHS.published}/${file.name}`, true);
-        const data = content as Record<string, unknown>;
+        const data = typeof content === 'string' ? JSON.parse(content) : (content as unknown as Record<string, unknown>);
         if (data.postId === postId || (data as any).publishedUrls?.some((url: string) => url.includes(postId))) {
           return {
             postId,

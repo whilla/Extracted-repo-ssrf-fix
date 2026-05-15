@@ -65,7 +65,9 @@ class VideoRenderingService {
   ): Promise<VideoRenderResult> {
     try {
       const startTime = Date.now();
-      const { width, height, fps, duration } = options;
+      const { fps, duration } = options;
+      const width = options.resolution.width;
+      const height = options.resolution.height;
       const totalFrames = Math.floor(duration * fps);
 
       // Create offscreen canvas

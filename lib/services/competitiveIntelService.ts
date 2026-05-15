@@ -1,5 +1,7 @@
 import { logger } from '@/lib/utils/logger';
 import { aiService } from './aiService';
+import { kvGet, kvSet } from './puterService';
+import { nativeProviders } from './nativeProviders';
 
 export interface CompetitorData {
   name: string;
@@ -27,6 +29,17 @@ export interface CompetitorAnalysisResult {
   error?: string;
 }
 
+export interface CompetitorContentItem {
+  id: string;
+  url: string;
+  platform: string;
+  publishedAt: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  contentText: string;
+}
+
 export class CompetitiveIntelService {
   static async analyzeCompetitors(
     competitorNames: string[],
@@ -46,7 +59,6 @@ export class CompetitiveIntelService {
         };
       }
 
-      // Use AI to generate competitor analysis since we don't have a real competitive data API
       const analysisPrompt = `Analyze these competitors on ${normalizedPlatform}: ${competitorNames.join(', ')}.
         For each competitor, provide a realistic assessment of their:
         - Estimated follower count range
@@ -78,29 +90,13 @@ export class CompetitiveIntelService {
           }));
         }
       } catch {
-        // AI fallback: use sensible defaults based on competitor names
-        aiCompetitors = competitorNames.map((name, i) => ({
-          name,
-          platform: normalizedPlatform,
-          followers: [250000, 50000, 1500000, 10000, 500000][i % 5],
-          engagement: [3.2, 1.8, 4.5, 2.1, 3.8][i % 5],
-          postsPerWeek: [7, 3, 14, 5, 10][i % 5],
-          avgLikes: [15000, 3000, 80000, 500, 25000][i % 5],
-          avgComments: [500, 100, 2000, 20, 800][i % 5],
-          topContent: [
-            { type: 'video', performance: 88 },
-            { type: 'image', performance: 62 },
-            { type: 'carousel', performance: 74 },
-          ],
-          postingFrequency: (['daily', 'weekly', 'monthly'] as const)[i % 3],
-          contentThemes: [
-            ['educational', 'how-to', 'tutorial'],
-            ['promotional', 'product', 'sale'],
-            ['entertainment', 'behind-scenes', 'story'],
-            ['user-generated', 'reviews', 'testimonials'],
-            ['industry-news', 'trends', 'analysis'],
-          ][i % 5],
-        }));
+        return {
+          success: false,
+          competitors: [],
+          gaps: [],
+          recommendations: ['AI analysis failed. Ensure an AI provider is configured.'],
+          error: 'AI provider unavailable for competitor analysis',
+        };
       }
 
       const totalFollowers = aiCompetitors.reduce((s, c) => s + c.followers, 0);
@@ -148,19 +144,118 @@ export class CompetitiveIntelService {
   static async trackCompetitorContent(
     competitorName: string,
     platform: string
-  ): Promise<{ success: boolean; content?: any[]; error?: string }> {
+  ): Promise<{ success: boolean; content?: CompetitorContentItem[]; error?: string }> {
     try {
-      logger.info('[CompetitiveIntelService] Tracking competitor content (requires real data API)', { competitorName, platform: platform.toLowerCase() });
+      logger.info('[CompetitiveIntelService] Tracking competitor content', { competitorName, platform });
 
-      // Real competitor content tracking requires a social media monitoring API
-      // such as Social Blade, Brandwatch, or platform-specific Graph APIs.
-      // This returns a clear message instead of simulating fake data.
-      return {
-        success: false,
-        error: `Real competitor content tracking requires a social monitoring API integration. Configure SOCIAL_BLADE_API_KEY or use the N8N bridge with a social listening workflow.`,
-      };
+      const normalizedPlatform = platform.toLowerCase();
+      const cacheKey = `competitor_content_${normalizedPlatform}_${competitorName.toLowerCase()}`;
+      
+      const cached = await kvGet(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const cacheAge = Date.now() - parsed.timestamp;
+        if (cacheAge < 3600000) {
+          return { success: true, content: parsed.content };
+        }
+      }
+
+      const content = await this.fetchCompetitorContentFromAPI(competitorName, normalizedPlatform);
+
+      if (content.length > 0) {
+        await kvSet(cacheKey, JSON.stringify({
+          content,
+          timestamp: Date.now(),
+        }));
+      }
+
+      return { success: true, content };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      };
+    }
+  }
+
+  private static async fetchCompetitorContentFromAPI(
+    competitorName: string,
+    platform: string
+  ): Promise<CompetitorContentItem[]> {
+    const apiKeys: Record<string, string | null> = {
+      twitter: await kvGet('twitter_bearer_token'),
+      youtube: await kvGet('youtube_api_key'),
+      instagram: await kvGet('instagram_access_token'),
+    };
+
+    const apiKey = apiKeys[platform];
+    if (!apiKey) {
+      logger.warn('CompetitiveIntel', `No API key configured for ${platform} competitor tracking`);
+      return [];
+    }
+
+    switch (platform) {
+      case 'twitter': {
+        const searchRes = await fetch(
+          `https://api.twitter.com/2/tweets/search/recent?query=from:${encodeURIComponent(competitorName)}&max_results=10&tweet.fields=public_metrics,created_at`,
+          {
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+          }
+        );
+        if (!searchRes.ok) return [];
+        const data = await searchRes.json();
+        return (data.data || []).map((tweet: any) => ({
+          id: tweet.id,
+          url: `https://twitter.com/${competitorName}/status/${tweet.id}`,
+          platform: 'twitter',
+          publishedAt: tweet.created_at,
+          likes: tweet.public_metrics?.like_count || 0,
+          comments: tweet.public_metrics?.reply_count || 0,
+          shares: tweet.public_metrics?.retweet_count || 0,
+          contentText: tweet.text,
+        }));
+      }
+
+      case 'youtube': {
+        const searchRes = await fetch(
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(competitorName)}&type=video&maxResults=10&key=${apiKey}`
+        );
+        if (!searchRes.ok) return [];
+        const data = await searchRes.json();
+        return (data.items || []).map((item: any) => ({
+          id: item.id.videoId,
+          url: `https://youtube.com/watch?v=${item.id.videoId}`,
+          platform: 'youtube',
+          publishedAt: item.snippet.publishedAt,
+          likes: 0,
+          comments: 0,
+          shares: 0,
+          contentText: item.snippet.title,
+        }));
+      }
+
+      case 'instagram': {
+        const pageId = await kvGet('instagram_page_id');
+        if (!pageId) return [];
+        const mediaRes = await fetch(
+          `https://graph.facebook.com/v18.0/${pageId}/media?fields=id,caption,media_type,permalink,timestamp,like_count,comments_count&access_token=${apiKey}`
+        );
+        if (!mediaRes.ok) return [];
+        const data = await mediaRes.json();
+        return (data.data || []).map((item: any) => ({
+          id: item.id,
+          url: item.permalink,
+          platform: 'instagram',
+          publishedAt: item.timestamp,
+          likes: item.like_count || 0,
+          comments: item.comments_count || 0,
+          shares: 0,
+          contentText: item.caption || '',
+        }));
+      }
+
+      default:
+        return [];
     }
   }
 

@@ -526,29 +526,27 @@ export class ProviderRouter {
       
       case 'audio':
         try {
-          const { blob, provider: voiceProv } = await textToSpeech(prompt);
-          const audioUrl = URL.createObjectURL(blob);
+          const { generateVoice } = await import('../services/voiceGenerationService');
+          const audioUrl = await generateVoice({ text: prompt, voiceId: 'default' });
           return JSON.stringify({
             type: 'audio',
             url: audioUrl,
             duration: Math.max(3, Math.ceil(prompt.trim().split(/\s+/).length / 2.5)),
             provider: provider.id,
-            voiceProvider: voiceProv || 'web-speech',
+            voiceProvider: audioUrl === 'web-speech-generated' ? 'web-speech' : 'multi-provider',
           });
         } catch (audioErr) {
-          // Fallback to voiceService.ts synthesizeVoice if textToSpeech fails
-          const { synthesizeVoice } = await import('../services/voiceService');
-          const fallbackUrl = await synthesizeVoice(prompt, { voiceId: 'alloy' });
-          if (fallbackUrl) {
-            return JSON.stringify({
-              type: 'audio',
-              url: fallbackUrl,
-              duration: Math.max(3, Math.ceil(prompt.trim().split(/\s+/).length / 2.5)),
-              provider: provider.id,
-              voiceProvider: 'fallback',
-            });
-          }
-          throw audioErr;
+          // Fallback to voiceService.ts (ElevenLabs + Web Speech)
+          const { textToSpeech } = await import('../services/voiceService');
+          const { blob, provider: voiceProv } = await textToSpeech(prompt);
+          const fallbackUrl = URL.createObjectURL(blob);
+          return JSON.stringify({
+            type: 'audio',
+            url: fallbackUrl,
+            duration: Math.max(3, Math.ceil(prompt.trim().split(/\s+/).length / 2.5)),
+            provider: provider.id,
+            voiceProvider: voiceProv || 'web-speech',
+          });
         }
 
       case 'music':

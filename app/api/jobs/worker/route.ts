@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 import { NextResponse, type NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 import { executeOrchestrationJob } from '@/lib/services/orchestrationEngine';
 import { timingSafeEqual as cryptoTimingSafeEqual } from 'crypto';
 
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const supabase = (await createClient()) as any;
+  const supabase = (await getSupabaseAdminClient()) as any;
   if (!supabase) {
     return NextResponse.json({ status: 'error', error: 'Supabase not configured' }, { status: 503 });
   }

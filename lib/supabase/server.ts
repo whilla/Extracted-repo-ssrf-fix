@@ -1,7 +1,11 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
-// The Service Role key bypasses Row Level Security (RLS).
-// This MUST be kept secret and only used on the server.
+// Admin Supabase client using Service Role key.
+// WARNING: This bypasses ALL Row Level Security (RLS) policies.
+// ONLY use for server-side operations that require admin access
+// (e.g., Stripe webhook subscription management, background jobs).
+// NEVER use this for user-facing requests.
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -15,16 +19,16 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
     },
   });
 } else {
-  console.warn('[SupabaseServer] Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable.');
+  console.warn('[SupabaseAdmin] Service role client not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
 }
 
-export function getSupabaseServerClient() {
-  return supabaseClient;
-}
-
-export function createClient() {
+/**
+ * Returns the admin Supabase client (bypasses RLS).
+ * Use only for server-side admin operations.
+ */
+export function getSupabaseAdminClient() {
   if (!supabaseClient) {
-    throw new Error('Supabase server client is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+    throw new Error('Supabase admin client is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
   }
   return supabaseClient;
 }

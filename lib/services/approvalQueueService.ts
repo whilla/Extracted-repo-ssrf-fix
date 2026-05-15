@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export interface ApprovalItem {
   id: string;
@@ -16,7 +16,7 @@ export async function addToApprovalQueue(
   content: string,
   metadata: Partial<ApprovalItem>
 ): Promise<string> {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
 
   const { data, error } = await supabase
     .from('approval_queue')
@@ -35,7 +35,7 @@ export async function addToApprovalQueue(
 }
 
 export async function getPendingApprovals(): Promise<ApprovalItem[]> {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   
   const { data, error } = await supabase
     .from('approval_queue')
@@ -52,7 +52,7 @@ export async function resolveApproval(
   decision: 'approved' | 'rejected',
   reason?: string
 ): Promise<void> {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   
   const updateData = {
     status: decision,

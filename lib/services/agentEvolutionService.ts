@@ -308,9 +308,22 @@ export async function testEvolutionProposal(
 async function runDefaultEvolutionTest(agent: AgentConfig, promptTemplate: string): Promise<{ content: string; score: number }> {
   const brandKit = await loadBrandKit();
   const candidateInput = 'Create a concise, platform-native social media post about turning one useful idea into a monetizable short-form content series.';
-  const renderedPrompt = promptTemplate.includes('{{input}}')
-    ? promptTemplate.replace('{{input}}', candidateInput)
-    : `${promptTemplate}\n\nInput: ${candidateInput}`;
+
+  let renderedPrompt = promptTemplate;
+  renderedPrompt = renderedPrompt.includes('{{input}}')
+    ? renderedPrompt.replace(/{{input}}/g, candidateInput)
+    : `${renderedPrompt}\n\nInput: ${candidateInput}`;
+
+  const brandStr = brandKit
+    ? `Brand: ${brandKit.brandName || 'N/A'}\nTone: ${brandKit.tone || 'conversational'}\nAudience: ${brandKit.targetAudience || 'general'}\nNiche: ${brandKit.niche || 'general'}`
+    : 'No brand context available';
+
+  renderedPrompt = renderedPrompt.replace(/{{brandContext}}/g, brandStr);
+  renderedPrompt = renderedPrompt.replace(/{{platform}}/g, 'instagram');
+  renderedPrompt = renderedPrompt.replace(/{{charLimit}}/g, '2200');
+  renderedPrompt = renderedPrompt.replace(/{{tone}}/g, brandKit?.tone || 'conversational');
+  renderedPrompt = renderedPrompt.replace(/{{content}}/g, candidateInput);
+  renderedPrompt = renderedPrompt.replace(/\{\{[a-zA-Z0-9_]+\}\}/g, '');
 
   const content = await universalChat(renderedPrompt, {
     model: 'gpt-4o-mini',

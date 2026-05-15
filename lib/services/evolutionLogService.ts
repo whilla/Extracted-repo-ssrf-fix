@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export interface EvolutionLog {
   version: string;
@@ -8,7 +8,7 @@ export interface EvolutionLog {
 }
 
 export async function saveEvolutionLog(log: EvolutionLog) {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   
   const { error } = await supabase
     .from('evolution_logs')
@@ -23,7 +23,7 @@ export async function saveEvolutionLog(log: EvolutionLog) {
 }
 
 export async function getEvolutionHistory() {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   
   const { data, error } = await supabase
     .from('evolution_logs')
@@ -38,7 +38,7 @@ export const getEvolutionLog = getEvolutionHistory;
 export const logEvolutionEvent = saveEvolutionLog;
 
 export async function getEvolutionStats() {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   const { count, error } = await supabase
     .from('evolution_logs')
     .select('*', { count: 'exact', head: true });

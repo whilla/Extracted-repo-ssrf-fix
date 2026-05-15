@@ -1,16 +1,13 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withSentryConfig } from '@sentry/nextjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+const baseConfig = {
   output: 'standalone',
   typescript: {
-    ignoreBuildErrors: true,
-  },
-  experimental: {
-    turbopack: {},
+    ignoreBuildErrors: false,
   },
 
   images: {
@@ -53,10 +50,6 @@ const nextConfig = {
             value: 'DENY'
           },
           {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block'
-          },
-          {
             key: 'Referrer-Policy',
             value: 'strict-origin-when-cross-origin'
           }
@@ -66,4 +59,13 @@ const nextConfig = {
   },
 }
 
-export default nextConfig
+export default withSentryConfig(baseConfig, {
+  org: process.env.SENTRY_ORG || '',
+  project: process.env.SENTRY_PROJECT || 'nexusai',
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: true,
+  widenClientFileUpload: true,
+  hideSourceMaps: true,
+  disableLogger: process.env.NODE_ENV === 'production',
+  tunnelRoute: '/monitoring/sentry',
+});

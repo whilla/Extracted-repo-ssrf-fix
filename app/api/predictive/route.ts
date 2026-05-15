@@ -6,6 +6,7 @@ import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 import { schemas, validateRequest } from '@/lib/utils/validation';
 import { cached, TTL, CACHE_TAGS } from '@/lib/utils/cache';
 import { safeExternalCall } from '@/lib/utils/gracefulDegradation';
+import { viralScoringEngine } from '@/lib/core/ViralScoringEngine';
 
 /**
  * API endpoint for predictive performance analysis
@@ -35,8 +36,11 @@ export async function POST(request: NextRequest) {
         cacheKey,
         TTL.FIFTEEN_MINUTES,
         async () => {
+          // ── Deterministic Viral Scoring (always runs) ──
+          const deterministicScore = await viralScoringEngine.score(content);
+
           // Try ML-powered prediction with real engagement data
-          const mlResult = await mlPredictiveService.predictPerformance(content, platform, hashtags);
+          const mlResult = await mlPredictiveService.predictPerformance(content, platform || 'twitter', hashtags || []);
           
           // Try AI-powered prediction as enhancement
           const aiAnalysis = await safeExternalCall(
@@ -51,26 +55,40 @@ export async function POST(request: NextRequest) {
                 length: content.length,
               }, platform);
             },
-            // Fallback to ML result if AI fails
             null,
             { timeoutMs: 15000, retries: 1 }
           );
 
-          // Combine ML insights with AI analysis
-          if (aiAnalysis) {
-            return aiAnalysis;
-          }
+          // Combine all scoring sources
+          const combinedScore = aiAnalysis
+            ? {
+                success: true,
+                engagementPrediction: aiAnalysis.engagementPrediction || mlResult.engagementScore,
+                viralScore: Math.round((deterministicScore.total + (aiAnalysis.viralScore || mlResult.viralPotential)) / 2),
+                deterministicScore: deterministicScore.total,
+                mlScore: mlResult.engagementScore,
+                aiScore: aiAnalysis.viralScore || null,
+                viralProbability: deterministicScore.viralPotential,
+                potentialReach: mlResult.predictedReach,
+                factors: [...new Set([...(mlResult.tags || []), ...deterministicScore.insights])],
+                recommendations: [...new Set([...(aiAnalysis.recommendations || []), ...deterministicScore.improvements])],
+                viralBreakdown: deterministicScore.breakdown,
+              }
+            : {
+                success: true,
+                engagementPrediction: mlResult.engagementScore,
+                viralScore: Math.round((deterministicScore.total + mlResult.viralPotential) / 2),
+                deterministicScore: deterministicScore.total,
+                mlScore: mlResult.engagementScore,
+                aiScore: null,
+                viralProbability: deterministicScore.viralPotential,
+                potentialReach: mlResult.predictedReach,
+                factors: [...new Set([...(mlResult.tags || []), ...deterministicScore.insights])],
+                recommendations: [...new Set([...deterministicScore.improvements])],
+                viralBreakdown: deterministicScore.breakdown,
+              };
 
-          // Return ML-based analysis
-          return {
-            success: true,
-            engagementPrediction: mlResult.engagementScore,
-            viralScore: mlResult.viralPotential,
-            viralProbability: mlResult.engagementScore > 70 ? 'high' : mlResult.engagementScore > 40 ? 'medium' : 'low',
-            potentialReach: mlResult.predictedReach,
-            factors: mlResult.tags || [],
-            recommendations: mlResult.tags.map(t => `Consider improving: ${t.replace(/_/g, ' ')}`),
-          };
+          return combinedScore;
         },
         [CACHE_TAGS.AI_RESPONSE]
       );
@@ -87,6 +105,13 @@ export async function POST(request: NextRequest) {
           platform,
           contentType,
           factors: analysis.factors,
+        },
+        scoring: {
+          combined: analysis.viralScore,
+          deterministic: analysis.deterministicScore,
+          ml: analysis.mlScore,
+          ai: analysis.aiScore,
+          breakdown: analysis.viralBreakdown,
         },
         scheduling: {
           bestDays: ['Wednesday', 'Friday'],

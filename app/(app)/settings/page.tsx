@@ -9,7 +9,7 @@ import { kvDelete, kvGet, kvSet } from '@/lib/services/puterService';
 import { saveProviderAccount, verifyProviderKey } from '@/lib/services/accountService';
 import { sanitizeApiKey, sanitizeStoredValueForKey } from '@/lib/services/providerCredentialUtils';
 import { setActiveChatModel } from '@/lib/services/providerControl';
-import { 
+import {
   Brain,
   Zap,
   Cloud,
@@ -30,11 +30,108 @@ import {
   BarChart3,
   Cuboid,
   TrendingUp,
+  Link2,
+  XCircle,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { SecretsVault } from '@/components/nexus/SecretsVault';
 import { CRMTabContent } from '@/components/settings/CRMTabContent';
+
+const SOCIAL_PLATFORMS = [
+  { id: 'twitter', name: 'X (Twitter)', icon: '𝕏', color: 'bg-gray-800' },
+  { id: 'linkedin', name: 'LinkedIn', icon: 'in', color: 'bg-blue-700' },
+  { id: 'facebook', name: 'Facebook', icon: 'f', color: 'bg-blue-600' },
+  { id: 'instagram', name: 'Instagram', icon: '📷', color: 'bg-pink-600' },
+  { id: 'tiktok', name: 'TikTok', icon: '♪', color: 'bg-black' },
+  { id: 'reddit', name: 'Reddit', icon: '🤖', color: 'bg-orange-600' },
+  { id: 'discord', name: 'Discord', icon: '💬', color: 'bg-indigo-600' },
+  { id: 'telegram', name: 'Telegram', icon: '✈', color: 'bg-sky-500' },
+  { id: 'youtube', name: 'YouTube', icon: '▶', color: 'bg-red-600' },
+  { id: 'pinterest', name: 'Pinterest', icon: '📌', color: 'bg-red-500' },
+  { id: 'threads', name: 'Threads', icon: '@', color: 'bg-gray-900' },
+  { id: 'whatsapp', name: 'WhatsApp', icon: '📱', color: 'bg-green-600' },
+  { id: 'snapchat', name: 'Snapchat', icon: '👻', color: 'bg-yellow-400' },
+];
+
+function SocialConnections() {
+  const [connections, setConnections] = useState<Record<string, { connected: boolean }>>({});
+  const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/social/connections')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) setConnections(data.connections);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleConnect = (platform: string) => {
+    setConnecting(platform);
+    window.location.href = `/api/social/oauth?platform=${platform}`;
+  };
+
+  const handleDisconnect = async (platform: string) => {
+    try {
+      const res = await fetch(`/api/social/oauth?platform=${platform}`, { method: 'DELETE' });
+      if (res.ok) {
+        setConnections((prev) => ({ ...prev, [platform]: { connected: false } }));
+        toast.success(`${platform} disconnected`);
+      }
+    } catch {
+      toast.error('Failed to disconnect');
+    }
+  };
+
+  if (loading) {
+    return <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading connections...</div>;
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      {SOCIAL_PLATFORMS.map((platform) => {
+        const isConnected = connections[platform.id]?.connected;
+        return (
+          <div
+            key={platform.id}
+            className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+              isConnected ? 'border-nexus-cyan/30 bg-nexus-cyan/5' : 'border-border bg-muted/20'
+            }`}
+          >
+            <div className={`w-8 h-8 rounded-full ${platform.color} flex items-center justify-center text-white text-xs font-bold`}>
+              {platform.icon}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{platform.name}</p>
+              <p className="text-xs text-muted-foreground">{isConnected ? 'Connected' : 'Not connected'}</p>
+            </div>
+            {isConnected ? (
+              <button
+                onClick={() => handleDisconnect(platform.id)}
+                className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
+                title="Disconnect"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => handleConnect(platform.id)}
+                disabled={connecting === platform.id}
+                className="px-2 py-1 text-xs font-medium text-nexus-cyan hover:text-nexus-cyan/80 border border-nexus-cyan/30 rounded hover:bg-nexus-cyan/10 transition-colors disabled:opacity-50"
+              >
+                {connecting === platform.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Connect'}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // All supported AI providers
 const AI_PROVIDERS = [
@@ -756,6 +853,18 @@ export default function SettingsPage() {
                 Get API Key <ExternalLink className="w-3 h-3" />
               </a>
             </div>
+          </GlassCard>
+
+          <GlassCard className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Link2 className="w-5 h-5 text-nexus-cyan" />
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Direct Platform Connections</h3>
+                <p className="text-sm text-muted-foreground">Connect social platforms via OAuth for native publishing</p>
+              </div>
+            </div>
+
+            <SocialConnections />
           </GlassCard>
         </div>
       )}

@@ -86,7 +86,7 @@ async function handleTimelineRender(timeline: any, options: any) {
 }
 
 async function getNextPreset(preset: string) {
-  const options = videoRenderingService.getPreset(preset);
+  const options = videoRenderingService.getPreset(preset as 'social' | 'youtube' | 'square');
   return NextResponse.json({ success: true, options });
 }
 

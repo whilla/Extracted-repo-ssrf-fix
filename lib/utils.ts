@@ -43,8 +43,13 @@ export function isValidInternalRoute(url: string | null | undefined): boolean {
     }
 
     // Allow dynamic routes within safe sections
-    if (pathname.startsWith('/dashboard/') || pathname.startsWith('/settings/')) {
-      return true
+    // Normalize path to prevent traversal attacks (e.g., /dashboard/..%2f..%2fetc/passwd)
+    const normalizedPath = decodeURIComponent(pathname).replace(/\/+/g, '/');
+    if (normalizedPath.includes('..') || normalizedPath.includes('//')) {
+      return false;
+    }
+    if (normalizedPath.startsWith('/dashboard/') || normalizedPath.startsWith('/settings/')) {
+      return true;
     }
 
     return false

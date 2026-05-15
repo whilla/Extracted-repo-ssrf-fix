@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, type RateLimitConfig } from './rateLimit';
+import { RateLimiter } from '@/lib/services/rateLimiter';
 import { createAuthError, createRateLimitError, formatErrorResponse } from './errors';
 import { logger } from './logger';
+import { circuitBreakers, CircuitBreakerOpenError } from '@/lib/services/circuitBreaker';
 
 export interface ApiHandlerContext {
   userId?: string;
@@ -13,17 +15,37 @@ export interface AuthResult {
   error?: NextResponse;
 }
 
-/**
- * Enhanced authentication with structured error handling
- */
+const RATE_LIMIT_ROUTES: Record<string, { windowMs: number; limit: number }> = {
+  '/api/ai/chat': { windowMs: 60_000, limit: 20 },
+  '/api/orchestrator': { windowMs: 60_000, limit: 5 },
+  '/api/posts/generate': { windowMs: 60_000, limit: 10 },
+  '/api/video': { windowMs: 60_000, limit: 3 },
+  '/api/agent/chat': { windowMs: 60_000, limit: 30 },
+  '/api/ecommerce': { windowMs: 60_000, limit: 10 },
+  '/api/crm': { windowMs: 60_000, limit: 30 },
+  '/api/publish': { windowMs: 60_000, limit: 15 },
+  '/api/training': { windowMs: 60_000, limit: 2 },
+  '/api/worker': { windowMs: 60_000, limit: 5 },
+  '/api/health': { windowMs: 10_000, limit: 30 },
+  default: { windowMs: 60_000, limit: 60 },
+};
+
+function getRouteRateConfig(pathname: string): { windowMs: number; limit: number } {
+  for (const [prefix, config] of Object.entries(RATE_LIMIT_ROUTES)) {
+    if (prefix !== 'default' && pathname.startsWith(prefix)) {
+      return config;
+    }
+  }
+  return RATE_LIMIT_ROUTES.default;
+}
+
 export async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      logger.error('Auth', '[Auth] Supabase not configured');
-      return {};
-    }
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return {};
+  }
 
   try {
     const { createServerClient } = await import('@supabase/ssr');
@@ -48,49 +70,69 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) {
       const authError = createAuthError('Unauthorized');
-      logger.warn('Auth', '[Auth] Authentication failed', {
-        error: error?.message,
-        path: request.nextUrl.pathname,
-      });
       return { error: NextResponse.json(formatErrorResponse(authError), { status: authError.status }) };
     }
     return { userId: user.id };
   } catch (error) {
     const authError = createAuthError('Authentication service unavailable');
-      logger.error('Auth', '[Auth] Authentication service error', {
-        error: error instanceof Error ? error.message : String(error),
-        path: request.nextUrl.pathname,
-      });
     return { error: NextResponse.json(formatErrorResponse(authError), { status: 503 }) };
   }
 }
 
-/**
- * Enhanced rate limiting with structured error handling
- */
-export function checkRateLimit(request: NextRequest, config?: Partial<RateLimitConfig>): NextResponse | null {
+export async function checkRateLimitDb(
+  userId: string,
+  pathname: string
+): Promise<{ allowed: boolean; remaining: number; response?: NextResponse }> {
+  const routeConfig = getRouteRateConfig(pathname);
+
+  try {
+    const result = await RateLimiter.checkLimit(userId, {
+      windowMs: routeConfig.windowMs,
+      limit: routeConfig.limit,
+    }, pathname);
+
+    if (!result.allowed) {
+      const retryAfter = Math.ceil(routeConfig.windowMs / 1000);
+      const rateLimitError = createRateLimitError('Rate limit exceeded', retryAfter);
+      return {
+        allowed: false,
+        remaining: 0,
+        response: NextResponse.json(formatErrorResponse(rateLimitError), {
+          status: rateLimitError.status,
+          headers: {
+            'Retry-After': String(retryAfter),
+            'X-RateLimit-Limit': String(routeConfig.limit),
+            'X-RateLimit-Remaining': '0',
+          },
+        }),
+      };
+    }
+
+    return { allowed: true, remaining: result.remaining };
+  } catch (error) {
+    return { allowed: true, remaining: -1 };
+  }
+}
+
+export function checkRateLimitMemory(request: NextRequest, config?: Partial<RateLimitConfig>): NextResponse | null {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   const key = `api:${forwarded}:${request.nextUrl.pathname}`;
 
+  const routeConfig = getRouteRateConfig(request.nextUrl.pathname);
   const result = rateLimit({
-    maxRequests: config?.maxRequests ?? 60,
-    windowMs: config?.windowMs ?? 60000,
+    maxRequests: config?.maxRequests ?? routeConfig.limit,
+    windowMs: config?.windowMs ?? routeConfig.windowMs,
     key,
   });
 
   if (!result.allowed) {
     const retryAfter = Math.ceil((result.resetAt - Date.now()) / 1000);
     const rateLimitError = createRateLimitError('Rate limit exceeded', retryAfter);
-    logger.warn('RateLimit', '[RateLimit] Exceeded', {
-      key,
-      retryAfter,
-      path: request.nextUrl.pathname,
-    });
     return NextResponse.json(formatErrorResponse(rateLimitError), {
       status: rateLimitError.status,
       headers: {
         'Retry-After': String(retryAfter),
-        'X-RateLimit-Limit': String(config?.maxRequests ?? 60),
+        'X-RateLimit-Limit': String(config?.maxRequests ?? routeConfig.limit),
         'X-RateLimit-Remaining': '0',
       },
     });
@@ -99,67 +141,40 @@ export function checkRateLimit(request: NextRequest, config?: Partial<RateLimitC
   return null;
 }
 
-/**
- * CSRF protection middleware
- */
-export function verifyCSRF(request: NextRequest): NextResponse | null {
-  const csrfToken = request.headers.get('x-csrf-token');
-  const expectedToken = request.cookies.get('csrf_token')?.value;
-
-  // Allow GET, HEAD, OPTIONS
-  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-    return null;
-  }
-
-  if (!csrfToken || !expectedToken || csrfToken !== expectedToken) {
-      logger.warn('CSRF', '[CSRF] Invalid CSRF token', {
-        method: request.method,
-        path: request.nextUrl.pathname,
-      });
-    return NextResponse.json(
-      { error: 'Invalid CSRF token' },
-      { status: 403 }
-    );
-  }
-
-  return null;
-}
-
-/**
- * Enhanced API middleware with error handling and CSRF protection
- */
 export async function withApiMiddleware(
   request: NextRequest,
   handler: (context: ApiHandlerContext) => Promise<NextResponse>,
   options?: { 
     requireAuth?: boolean; 
     rateLimitConfig?: Partial<RateLimitConfig>;
-    requireCSRF?: boolean;
+    skipRateLimit?: boolean;
   }
 ): Promise<NextResponse> {
-  // CSRF protection
-  if (options?.requireCSRF !== false) {
-    const csrfResponse = verifyCSRF(request);
-    if (csrfResponse) return csrfResponse;
+  const pathname = request.nextUrl.pathname;
+
+  if (!options?.skipRateLimit) {
+    const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    const memoryResult = checkRateLimitMemory(request, options?.rateLimitConfig);
+    if (memoryResult) return memoryResult;
   }
 
-  // Rate limiting
-  const rateLimitResponse = checkRateLimit(request, options?.rateLimitConfig);
-  if (rateLimitResponse) return rateLimitResponse;
-
-  // Authentication
   if (options?.requireAuth !== false) {
     const auth = await authenticateRequest(request);
     if (auth.error) return auth.error;
+
+    if (!options?.skipRateLimit && auth.userId) {
+      const dbRateLimit = await checkRateLimitDb(auth.userId, pathname);
+      if (!dbRateLimit.allowed && dbRateLimit.response) {
+        return dbRateLimit.response;
+      }
+    }
+
     return handler({ userId: auth.userId, isAuthenticated: true });
   }
 
   return handler({ isAuthenticated: false });
 }
 
-/**
- * Error handling middleware wrapper
- */
 export function withErrorHandling(
   handler: (request: NextRequest) => Promise<NextResponse>
 ): (request: NextRequest) => Promise<NextResponse> {
@@ -167,6 +182,14 @@ export function withErrorHandling(
     try {
       return await handler(request);
     } catch (error) {
+      if (error instanceof CircuitBreakerOpenError) {
+        const retryAfter = error.nextRetryAt ? Math.ceil((error.nextRetryAt.getTime() - Date.now()) / 1000) : 60;
+        return NextResponse.json(
+          { error: `Service '${error.circuitName}' is temporarily unavailable. Please retry later.`, retryAfter },
+          { status: 503, headers: { 'Retry-After': String(retryAfter) } }
+        );
+      }
+
       logger.error('API', '[API] Handler error', {
         error: error instanceof Error ? error.message : String(error),
         path: request.nextUrl.pathname,
@@ -176,7 +199,7 @@ export function withErrorHandling(
       if (error instanceof Error) {
         return NextResponse.json(
           formatErrorResponse(error),
-          { status: error instanceof Error ? 500 : 400 }
+          { status: 500 }
         );
       }
       

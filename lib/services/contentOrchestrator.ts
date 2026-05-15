@@ -75,7 +75,7 @@ export async function orchestrateStep1_Plan(sessionId: string): Promise<string> 
   };
 
   try {
-    const prompt = `You are a content strategist. Create a detailed content plan based on this brief:
+    const prompt = `You are a senior content strategist. Create a detailed content plan from this brief:
 
 Topic: ${session.brief.topic}
 Platform: ${session.brief.platform}
@@ -83,19 +83,13 @@ Goal: ${session.brief.goal}
 ${session.brandKit?.tone ? `Brand Tone: ${session.brandKit.tone}` : ''}
 ${session.brandKit?.audience ? `Target Audience: ${session.brandKit.audience}` : ''}
 
-Create a structured plan that includes:
-1. Hook strategy (first 3 seconds)
-2. Main message (what to communicate)
-3. Call-to-action (what should the audience do)
-4. Emotional angle (what should they feel)
-5. Platform-specific optimization
-
-Format as JSON with these exact keys: {
-  "hook_strategy": "...",
-  "main_message": "...",
-  "call_to_action": "...",
-  "emotional_angle": "...",
-  "platform_optimization": "..."
+Return JSON with these exact keys:
+{
+  "hook_strategy": "specific hook mechanism — not generic advice",
+  "main_message": "the single core idea to communicate",
+  "call_to_action": "specific action the audience should take",
+  "emotional_angle": "what the audience should feel and why",
+  "platform_optimization": "how to adapt for ${session.brief.platform} specifically"
 }`;
 
     const response = await universalChat(
@@ -134,7 +128,7 @@ export async function orchestrateStep2_Script(sessionId: string): Promise<string
   };
 
   try {
-    const prompt = `You are a screenwriter creating content based on this plan:
+    const prompt = `You are a senior scriptwriter. Write a production-ready script from this plan:
 
 ${planStep.output}
 
@@ -142,15 +136,15 @@ Topic: ${session.brief.topic}
 Platform: ${session.brief.platform}
 ${session.brandKit?.tone ? `Brand Tone: ${session.brandKit.tone}` : ''}
 
-Write a production-ready script that:
-- Starts with a strong hook (first line should stop scrollers)
-- Flows naturally with rhythm and pacing
-- Includes specific visual beats or actions
-- Is platform-native (${session.brief.platform} style)
-- Ends with a clear call-to-action
-- Is between 60-120 words for scripts, adapt for ${session.brief.platform} platform conventions
+Rules:
+- First line must stop scrollers (curiosity, tension, or contrast).
+- Natural rhythm — vary sentence length. Use fragments for impact.
+- Include specific visual beats or actions.
+- Platform-native style for ${session.brief.platform}.
+- Clear CTA at the end.
+- 60-120 words. Adapt to ${session.brief.platform} conventions.
 
-Return ONLY the script text, no annotations.`;
+Return ONLY the script text. No annotations, no explanations.`;
 
     const response = await universalChat(
       [
@@ -194,23 +188,24 @@ export async function orchestrateStep3_Optimize(sessionId: string): Promise<stri
   };
 
   try {
-    const prompt = `You are a social media optimization expert. Optimize this content for maximum impact:
+    const prompt = `You are a senior social media optimizer. Improve this content for maximum impact:
 
 Content: ${session.finalContent}
 Platform: ${session.brief.platform}
 ${(session.brandKit as any)?.emotionalTriggers?.length ? `Emotional triggers: ${(session.brandKit as any).emotionalTriggers.join(', ')}` : ''}
 
-Provide BOTH:
-1. Optimized version (better hooks, keywords, rhythm for ${session.brief.platform})
-2. Two alternative versions with different angles
+Rules:
+- Strengthen the hook if it is weak.
+- Remove any AI-isms, clichés, or filler.
+- Two alternative versions must use distinctly different angles (not just rewording).
 
-Format as JSON:
+Return JSON:
 {
-  "optimized": "main version...",
-  "alternatives": ["version 2...", "version 3..."],
-  "hashtags": ["tag1", "tag2"],
-  "emoji_suggestions": ["emoji1", "emoji2"],
-  "engagement_tips": "brief tips for max engagement"
+  "optimized": "main improved version",
+  "alternatives": ["angle 2 with different hook mechanism", "angle 3 with different emotional trigger"],
+  "hashtags": ["relevant", "specific"],
+  "emoji_suggestions": ["only if they add value"],
+  "engagement_tips": "one specific tip for ${session.brief.platform}"
 }`;
 
     const response = await universalChat(

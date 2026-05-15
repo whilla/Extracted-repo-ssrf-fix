@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export interface PerformanceMetrics {
   views: number;
@@ -18,7 +18,7 @@ export interface PerformanceInsight {
 }
 
 function getSupabaseClient() {
-  return getSupabaseServerClient();
+  return getSupabaseAdminClient();
 }
 
 export class performanceService {
@@ -26,7 +26,7 @@ export class performanceService {
 
   private static get supabase() {
     if (!this._supabase) {
-      this._supabase = getSupabaseServerClient();
+      this._supabase = getSupabaseAdminClient();
     }
     return this._supabase;
   }

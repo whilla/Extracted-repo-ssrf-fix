@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
-import { NextResponse, type NextRequest } from 'next/server';
-import { z } from 'zod';
+import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
+import { z } from 'zod';
 import { sentimentService } from '@/lib/services/sentimentService';
 import { kvGet } from '@/lib/services/puterService';
 import { DirectReaderService } from '@/lib/services/directReaderService';
@@ -65,26 +65,22 @@ async function fetchCommentsForPost(postId: string): Promise<string[]> {
   const result = await DirectReaderService.readComments(platform, postId);
 
   if (!result.success) {
-    return [
-      "I absolutely love this approach! So helpful.",
-      "I'm not sure I agree with the second point, seems a bit off.",
-      "Can you explain how this works for small businesses?",
-      "This is the best content I've seen all week. Great job!",
-      "Waste of time. Didn't learn anything new.",
-    ];
+    return [];
   }
 
   return result.comments.map(c => c.text);
 }
 
-export async function GET() {
-  return NextResponse.json({
-    status: 'ready',
-    capabilities: [
-      'Emotion detection',
-      'Intent classification',
-      'Strategic insight generation',
-      'Batch comment processing'
-    ]
+export async function GET(request: NextRequest) {
+  return withApiMiddleware(request, async () => {
+    return NextResponse.json({
+      status: 'ready',
+      capabilities: [
+        'Emotion detection',
+        'Intent classification',
+        'Strategic insight generation',
+        'Batch comment processing'
+      ]
+    });
   });
 }

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 import { jobQueueService } from './jobQueueService';
 
 export interface JobProgress {
@@ -36,7 +36,7 @@ export async function updateJobProgress(
   jobId: string,
   progress: JobProgress
 ): Promise<void> {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   const { error } = await (supabase as any)
     .from('system_jobs')
     .update({ progress, updated_at: new Date().toISOString() } as any)

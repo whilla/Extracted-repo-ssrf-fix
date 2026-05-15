@@ -28,6 +28,16 @@ interface HealthStatus {
 const startTime = Date.now();
 
 export async function GET() {
+  // Health endpoint is intended for container orchestration (K8s, Docker Compose).
+  // In production, restrict access to internal networks only via firewall/reverse proxy.
+  // Return only status code for unauthenticated requests to limit information disclosure.
+  const isInternal = process.env.NODE_ENV === 'development' ||
+    process.env.HEALTH_CHECK_PUBLIC === 'true';
+
+  if (!isInternal) {
+    return NextResponse.json({ status: 'ok', timestamp: new Date().toISOString() }, { status: 200 });
+  }
+
   const checks: HealthStatus['checks'] = {};
   let overallStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
 

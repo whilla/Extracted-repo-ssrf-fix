@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 const AUTOMATION_CONFIG_KEY = 'automation_config';
 const AUTOMATION_STATE_KEY = 'automation_state';
@@ -9,7 +9,7 @@ const AUTOMATION_DEAD_LETTERS_KEY = 'automation_dead_letters';
 export const automationPersistenceService = {
   async getConfig<T>(): Promise<T | null> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return null;
       const { data } = (await (supabase as any)
         .from('system_configs')
@@ -25,7 +25,7 @@ export const automationPersistenceService = {
 
   async saveConfig<T>(config: T): Promise<void> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return;
       const { error } = await (supabase as any)
         .from('system_configs')
@@ -40,7 +40,7 @@ export const automationPersistenceService = {
 
   async getState<T>(): Promise<T | null> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return null;
       const { data } = (await (supabase as any)
         .from('system_configs')
@@ -56,7 +56,7 @@ export const automationPersistenceService = {
 
   async saveState<T>(state: T): Promise<void> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return;
       const { error } = await (supabase as any)
         .from('system_configs')
@@ -71,7 +71,7 @@ export const automationPersistenceService = {
 
   async getOutputs<T>(): Promise<T[]> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return [];
       const { data } = (await (supabase as any)
         .from('system_configs')
@@ -88,7 +88,7 @@ export const automationPersistenceService = {
 
   async saveOutputs<T>(outputs: T[]): Promise<void> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return;
       const { error } = await (supabase as any)
         .from('system_configs')
@@ -103,7 +103,7 @@ export const automationPersistenceService = {
 
   async getQueue<T>(): Promise<T[]> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return [];
       const { data } = (await (supabase as any)
         .from('system_configs')
@@ -120,7 +120,7 @@ export const automationPersistenceService = {
 
   async saveQueue<T>(queue: T[]): Promise<void> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return;
       const { error } = await (supabase as any)
         .from('system_configs')
@@ -135,7 +135,7 @@ export const automationPersistenceService = {
 
   async getDeadLetters<T>(): Promise<T[]> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return [];
       const { data } = (await (supabase as any)
         .from('system_configs')
@@ -152,7 +152,7 @@ export const automationPersistenceService = {
 
   async saveDeadLetters<T>(deadLetters: T[]): Promise<void> {
     try {
-      const supabase = await createClient();
+      const supabase = await getSupabaseAdminClient();
       if (!supabase) return;
       const { error } = await (supabase as any)
         .from('system_configs')

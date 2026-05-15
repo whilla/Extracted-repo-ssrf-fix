@@ -47,9 +47,9 @@ export const ToolRegistry: Record<string, ToolDefinition<any>> = {
           return { content: '', success: false, error: 'Query must be a non-empty string' };
         }
         const results = await searchTrends(query);
-        if (!results || results.length === 0) return { content: 'No search results found.', success: true };
+        if (!results || !results.results || results.results.length === 0) return { content: 'No search results found.', success: true };
         
-        const formatted = results.map(r => `Title: ${r.title}\nSnippet: ${r.snippet}\nLink: ${r.link}`).join('\n\n');
+        const formatted = results.results.map((r: any) => `Title: ${r.title}\nSnippet: ${r.snippet}\nLink: ${r.link}`).join('\n\n');
         return { content: formatted, success: true };
       } catch (e) {
         return { content: '', success: false, error: e instanceof Error ? e.message : 'Search failed' };

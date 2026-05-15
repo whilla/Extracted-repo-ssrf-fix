@@ -21,7 +21,11 @@ export async function POST(request: NextRequest) {
     const webhookToken = request.headers.get('x-webhook-token');
     const expectedToken = process.env.WEBHOOK_SECRET_TOKEN;
 
-    if (expectedToken && webhookToken !== expectedToken) {
+    if (!expectedToken) {
+      return NextResponse.json({ error: 'Webhook authentication not configured' }, { status: 503 });
+    }
+
+    if (!webhookToken || webhookToken !== expectedToken) {
       return NextResponse.json({ error: 'Invalid webhook token' }, { status: 401 });
     }
 

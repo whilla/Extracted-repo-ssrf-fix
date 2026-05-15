@@ -799,42 +799,51 @@ export async function generateAgentAudio(
   const startTime = Date.now();
 
   try {
-    // Try ElevenLabs/OpenAI via textToSpeech first
-    const { blob, provider: voiceProvider } = await textToSpeech(text);
-    const url = URL.createObjectURL(blob);
+    // Use voiceGenerationService for 6-provider fallback chain
+    // (ElevenLabs → Play.ht → Speechify → Resemble → Azure → Web Speech)
+    const { generateVoice } = await import('./voiceGenerationService');
+    const audioUrl = await generateVoice({ text, voiceId: voice });
+
+    let blob: Blob | null = null;
+    let provider = 'multi-provider';
+
+    if (audioUrl === 'web-speech-generated') {
+      provider = 'web-speech';
+    } else if (audioUrl.startsWith('blob:')) {
+      blob = await fetch(audioUrl).then(r => r.blob());
+    }
+
     const duration = Math.max(3, Math.ceil(text.trim().split(/\s+/).length / 2.5));
 
     return {
       content: `Voice synthesis complete.
 Voice: ${voice}
-Provider: ${voiceProvider || 'web-speech'}
+Provider: ${provider}
 Duration: ${duration}s
 Text length: ${text.length} chars`,
-      media: [{ type: 'audio', url, provider: voiceProvider || 'web-speech', prompt: text }],
+      media: [{ type: 'audio', url: audioUrl, provider, prompt: text }],
       prompt: text,
-      provider: voiceProvider || 'web-speech',
+      provider,
     };
   } catch (primaryErr) {
-    // Fallback to synthesizeVoice
+    // Final fallback: direct Web Speech API
     try {
-      const fallbackUrl = await synthesizeVoice(text, { voiceId: voice });
-      if (fallbackUrl) {
-        const duration = Math.max(3, Math.ceil(text.trim().split(/\s+/).length / 2.5));
-        return {
-          content: `Voice synthesis complete (fallback).
+      const { textToSpeech } = await import('./voiceService');
+      const { blob, provider: voiceProvider } = await textToSpeech(text);
+      const url = URL.createObjectURL(blob);
+      const duration = Math.max(3, Math.ceil(text.trim().split(/\s+/).length / 2.5));
+      return {
+        content: `Voice synthesis complete (fallback).
 Voice: ${voice}
-Provider: fallback
+Provider: ${voiceProvider || 'web-speech'}
 Duration: ${duration}s`,
-          media: [{ type: 'audio', url: fallbackUrl, provider: 'fallback', prompt: text }],
-          prompt: text,
-          provider: 'fallback',
-        };
-      }
+        media: [{ type: 'audio', url, provider: voiceProvider || 'web-speech', prompt: text }],
+        prompt: text,
+        provider: voiceProvider || 'web-speech',
+      };
     } catch {
-      // ignore fallback error
+      throw primaryErr instanceof Error ? primaryErr : new Error('Audio generation failed — no voice providers available');
     }
-
-    throw primaryErr instanceof Error ? primaryErr : new Error('Audio generation failed');
   }
 }
 

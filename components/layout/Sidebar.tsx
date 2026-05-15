@@ -36,6 +36,10 @@ import {
   Repeat,
   Gauge,
   Shield,
+  ShoppingCart,
+  Gamepad2,
+  Cuboid,
+  Users,
 } from 'lucide-react';
 
 const navItems = [
@@ -63,6 +67,14 @@ const navItems = [
   { href: '/realtime', label: 'Live Analytics', icon: Gauge },
   { href: '/fine-tuning', label: 'Model Tuning', icon: FlaskConical },
   { href: '/repurpose', label: 'Repurpose', icon: Repeat },
+  { href: '/ecommerce', label: 'E-Commerce', icon: ShoppingCart },
+  { href: '/interactive', label: 'Interactive', icon: Gamepad2 },
+  { href: '/dataviz', label: 'Data Viz', icon: BarChart3 },
+  { href: '/spatial', label: '3D / AR / VR', icon: Cuboid },
+  { href: '/predictive', label: 'Predictive', icon: TrendingUp },
+  { href: '/compliance', label: 'Compliance', icon: Shield },
+  { href: '/collaboration', label: 'Collaboration', icon: Users },
+  { href: '/crm', label: 'CRM', icon: Database },
   { href: '/settings', label: 'Settings', icon: Settings },
   { href: '/admin', label: 'Admin', icon: Shield },
 ];

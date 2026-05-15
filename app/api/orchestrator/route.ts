@@ -12,6 +12,8 @@ import { kvGet } from '@/lib/services/puterService';
 import { swarmTraceService } from '@/lib/services/swarmTraceService';
 import { generateId } from '@/lib/services/memoryService';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
+import { viralScoringEngine } from '@/lib/core/ViralScoringEngine';
+import { quickBrainstorm, initBrainstormSession, generateInitialIdeas } from '@/lib/services/brainstormEngine';
 
 const OrchestratorRequestSchema = z.object({
   agent_id: z.string().min(1, 'agent_id is required'),
@@ -133,7 +135,57 @@ export async function POST(request: NextRequest) {
     const generatorOutput = Array.from(taskResults.values()).find((o: any) => o.agentRole === 'generator');
     const distributionOutput = Array.from(taskResults.values()).find((o: any) => o.agentRole === 'distribution');
     
-    const finalContent = distributionOutput?.content || generatorOutput?.content || 'No content generated';
+    let finalContent = distributionOutput?.content || generatorOutput?.content || 'No content generated';
+
+    // ── Viral Scoring: Score and optimize final content ──
+    let viralScore = null;
+    try {
+      viralScore = await viralScoringEngine.score(finalContent);
+      
+      // If score is below threshold, regenerate with improvements
+      if (viralScore.total < 55 && viralScore.improvements.length > 0) {
+        await logService.logEvent({
+          agent_id,
+          status: 'thinking',
+          message: `Viral score ${viralScore.total}/100 is low. Regenerating with improvements...`,
+        });
+
+        const improvementPrompt = `Improve this content based on these suggestions:\n${viralScore.improvements.map((i: string) => `- ${i}`).join('\n')}\n\nOriginal content:\n${finalContent}`;
+        
+        const optimizedContent = await aiService.chat(improvementPrompt);
+        if (optimizedContent && optimizedContent !== finalContent) {
+          finalContent = optimizedContent;
+          viralScore = await viralScoringEngine.score(finalContent);
+        }
+      }
+    } catch (err) {
+      console.warn('[api/orchestrator] Viral scoring failed:', err);
+    }
+
+    // ── Brainstorm: If goal is vague, generate ideas first ──
+    let brainstormIdeas: string[] = [];
+    if (goal.length < 30) {
+      try {
+        await logService.logEvent({
+          agent_id,
+          status: 'thinking',
+          message: `Goal is broad. Running brainstorm for: "${goal}"`,
+        });
+
+        const brandKit = await kvGet('brand_kit');
+        brainstormIdeas = await quickBrainstorm(goal, brandKit ? JSON.parse(brandKit) : null, 3);
+        
+        if (brainstormIdeas.length > 0) {
+          await logService.logEvent({
+            agent_id,
+            status: 'thinking',
+            message: `Generated ${brainstormIdeas.length} ideas from brainstorm engine.`,
+          });
+        }
+      } catch (err) {
+        console.warn('[api/orchestrator] Brainstorm failed:', err);
+      }
+    }
 
     const humanizedResponse = await personaService.humanize(
       `The agent swarm has completed the task. Final content: ${finalContent}`, 
@@ -180,6 +232,8 @@ export async function POST(request: NextRequest) {
         tasks_completed: taskResults.size,
         agents_involved: new Set(Array.from(taskResults.values()).map((o: any) => o.agentId)).size
       },
+      viral_score: viralScore,
+      brainstorm_ideas: brainstormIdeas,
       nextStep: 'human_approval',
       n8n_triggered: n8nTriggered,
       n8n_error: n8nError,

@@ -1,7 +1,7 @@
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export async function savePlan(plan: any) {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   
   const { error } = await supabase
     .from('orchestration_plans')
@@ -17,7 +17,7 @@ export async function savePlan(plan: any) {
 }
 
 export async function getPlan(id: string) {
-  const supabase = await createClient();
+  const supabase = await getSupabaseAdminClient();
   
   const { data, error } = await supabase
     .from('orchestration_plans')

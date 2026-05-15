@@ -1,6 +1,6 @@
 
 
-import { kvGet, kvSet } from './puterService';
+import { kvGet, kvSet, kvList } from './puterService';
 import { encryptSensitiveData, decryptSensitiveData, markAsEncrypted, isEncrypted, extractCiphertext } from '../utils/crypto';
 import { sanitizeApiKey } from './providerCredentialUtils';
 
@@ -102,6 +102,15 @@ export class CredentialVaultService {
    * Clears a specific secret from the vault
    */
   static async deleteSecret(key: string): Promise<void> {
-    await kvSet(key, ''); // Or use kvDelete if available in puterService
+    await kvSet(key, '');
+  }
+
+  static async listAllKeys(): Promise<string[]> {
+    try {
+      const allKeys = await kvList();
+      return allKeys.filter((k) => !k.startsWith('_') && k.length > 0);
+    } catch {
+      return [];
+    }
   }
 }

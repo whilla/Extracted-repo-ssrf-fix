@@ -1,0 +1,11 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN npm init -y && npm install y-websocket ws
+
+COPY collaboration-server.mjs .
+
+EXPOSE 1234
+
+CMD ["node", "collaboration-server.mjs"]

@@ -1,19 +1,21 @@
 export const dynamic = "force-dynamic";
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 import { kvGet, kvSet } from '@/lib/services/puterService';
 
 const BRAND_KIT_KEY = 'brand_kit';
 
-export async function GET() {
-  try {
-    const brandKit = await kvGet(BRAND_KIT_KEY);
-    return NextResponse.json({
-      brandKit: brandKit ? JSON.parse(brandKit) : null,
-    });
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to load brand' }, { status: 500 });
-  }
+export async function GET(request: NextRequest) {
+  return withApiMiddleware(request, async () => {
+    try {
+      const brandKit = await kvGet(BRAND_KIT_KEY);
+      return NextResponse.json({
+        brandKit: brandKit ? JSON.parse(brandKit) : null,
+      });
+    } catch (error) {
+      return NextResponse.json({ error: 'Failed to load brand' }, { status: 500 });
+    }
+  });
 }
 
 export async function POST(request: NextRequest) {

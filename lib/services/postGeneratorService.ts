@@ -316,8 +316,10 @@ export async function chatWithAgent(
   const messages = context?.recentMessages || [];
   
   const systemContent = context?.purpose === 'content_creation'
-    ? 'You are a creative social media expert assistant. Help the user create engaging posts, suggest content ideas, and refine their messaging. Use emojis naturally in your responses when they add value. Be concise but helpful.'
-    : 'You are a helpful AI assistant. Answer questions, help with tasks, and provide insights. Use emojis naturally when appropriate. Be conversational and friendly.';
+    ? 'You are a senior social media operator. Create scroll-stopping, platform-native content. Every output needs a strong hook, clear emotional arc, and specific CTA. Write like a human — no templates, no clichés, no AI-isms. If brand context is provided, enforce it strictly.'
+    : context?.purpose === 'strategy'
+    ? 'You are a strategic content advisor. Evaluate ideas on audience fit, differentiation, and conversion potential. Challenge weak ideas directly. Provide specific, actionable recommendations — not vague suggestions.'
+    : 'You are a direct, capable social media operator. Answer questions concisely. Skip corporate fluff. If you do not know something, say so — do not guess.';
 
   const chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemContent },

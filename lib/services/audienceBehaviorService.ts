@@ -52,17 +52,13 @@ export class AudienceBehaviorService {
     try {
       logger.info('[AudienceBehaviorService] Analyzing audience behavior', { platform });
 
-      // Load real publishing data
       const publishedContent = await this.loadPublishedContent();
       const dataPoints = await this.loadAudienceDataPoints();
 
-      // Derive segments from actual content patterns
       const segments = this.deriveSegmentsFromData(publishedContent, dataPoints, platform);
 
-      // Calculate insights from data
       const insights = this.calculateInsights(segments, dataPoints);
 
-      // Generate AI-powered recommendations
       const recommendations = await this.generateRecommendations(segments, insights, platform);
 
       return { success: true, segments, insights, recommendations };
@@ -97,7 +93,6 @@ export class AudienceBehaviorService {
   static async recordEngagement(dataPoint: AudienceDataPoint): Promise<void> {
     const points = await this.loadAudienceDataPoints();
     points.push(dataPoint);
-    // Keep last 10k data points
     const trimmed = points.slice(-10000);
     await writeFile(AUDIENCE_DATA_PATH, JSON.stringify(trimmed));
   }
@@ -108,11 +103,9 @@ export class AudienceBehaviorService {
     platform: string
   ): AudienceSegment[] {
     if (drafts.length === 0 && dataPoints.length === 0) {
-      // No data yet - return sensible defaults based on platform
-      return this.getDefaultSegments(platform);
+      return [];
     }
 
-    // Group content by topic clusters
     const topicClusters = new Map<string, { count: number; engagements: number[]; platforms: Set<string> }>();
     const contentTypes = new Map<string, number>();
     const postingHourCounts = new Map<number, number>();
@@ -138,7 +131,6 @@ export class AudienceBehaviorService {
       }
     }
 
-    // Merge data points into clusters
     for (const dp of dataPoints) {
       if (dp.platform !== platform) continue;
       const existing = topicClusters.get(dp.topic) || { count: 0, engagements: [], platforms: new Set([platform]) };
@@ -146,7 +138,6 @@ export class AudienceBehaviorService {
       topicClusters.set(dp.topic, existing);
     }
 
-    // Build segments from clusters
     const segments: AudienceSegment[] = [];
     let segId = 0;
     const sortedClusters = Array.from(topicClusters.entries())
@@ -157,7 +148,7 @@ export class AudienceBehaviorService {
       segId++;
       const avgEngagement = data.engagements.length > 0
         ? Math.round((data.engagements.reduce((a, b) => a + b, 0) / data.engagements.length) * 10) / 10
-        : 2.5 + Math.random() * 3;
+        : 0;
 
       const bestHours = Array.from(postingHourCounts.entries())
         .sort((a, b) => b[1] - a[1])
@@ -167,7 +158,7 @@ export class AudienceBehaviorService {
       segments.push({
         id: `seg_${segId}`,
         name: `${topic.charAt(0).toUpperCase() + topic.slice(1)} Audience`,
-        size: data.count * 1000 + Math.floor(Math.random() * 5000),
+        size: data.count * 1000,
         demographics: {
           ageRange: '25-44',
           location: 'Global',
@@ -178,28 +169,14 @@ export class AudienceBehaviorService {
             .sort((a, b) => b[1] - a[1])
             .slice(0, 2)
             .map(([t]) => t),
-          bestTimes: bestHours.length > 0 ? bestHours : ['9:00 AM', '6:00 PM'],
+          bestTimes: bestHours.length > 0 ? bestHours : [],
           avgEngagement,
         },
         behaviorScore: Math.min(99, Math.round(avgEngagement * 20)),
       });
     }
 
-    return segments.length > 0 ? segments : this.getDefaultSegments(platform);
-  }
-
-  private static getDefaultSegments(platform: string): AudienceSegment[] {
-    const platformDefaults: Record<string, AudienceSegment[]> = {
-      instagram: [
-        { id: 'seg_1', name: 'Visual Scrollers', size: 20000, demographics: { ageRange: '18-34', location: 'Global' }, interests: ['photography', 'lifestyle', 'fashion'], engagementPatterns: { preferredContentTypes: ['image', 'video'], bestTimes: ['7:00 PM', '9:00 PM'], avgEngagement: 3.5 }, behaviorScore: 70 },
-        { id: 'seg_2', name: 'Engaged Followers', size: 8000, demographics: { ageRange: '25-44', location: 'US, UK' }, interests: ['art', 'design', 'travel'], engagementPatterns: { preferredContentTypes: ['carousel', 'video'], bestTimes: ['12:00 PM', '6:00 PM'], avgEngagement: 6.2 }, behaviorScore: 85 },
-      ],
-      twitter: [
-        { id: 'seg_1', name: 'News Followers', size: 15000, demographics: { ageRange: '25-54', location: 'Global' }, interests: ['news', 'technology', 'politics'], engagementPatterns: { preferredContentTypes: ['text', 'image'], bestTimes: ['8:00 AM', '12:00 PM'], avgEngagement: 2.8 }, behaviorScore: 55 },
-        { id: 'seg_2', name: 'Conversation Starters', size: 5000, demographics: { ageRange: '20-35', location: 'Global' }, interests: ['memes', 'trending', 'culture'], engagementPatterns: { preferredContentTypes: ['text', 'video'], bestTimes: ['9:00 PM', '11:00 PM'], avgEngagement: 7.1 }, behaviorScore: 90 },
-      ],
-    };
-    return platformDefaults[platform] || platformDefaults.instagram;
+    return segments;
   }
 
   private static calculateInsights(
@@ -232,10 +209,9 @@ export class AudienceBehaviorService {
       const days = ['Mon', 'Wed', 'Fri'];
       optimalPostingSchedule[seg.name] = times.length > 0
         ? days.map((d, i) => `${d} ${times[i % times.length]}`).join(', ')
-        : 'Mon 9AM, Wed 12PM, Fri 6PM';
+        : 'No optimal times derived yet';
     }
 
-    // Identify low-engagement segments as churn risks
     const avgEngagement = segments.reduce((s, seg) => s + seg.engagementPatterns.avgEngagement, 0) / segments.length;
     const churnRisk = segments
       .filter(seg => seg.engagementPatterns.avgEngagement < avgEngagement * 0.5)
@@ -254,11 +230,20 @@ export class AudienceBehaviorService {
     insights: BehaviorMappingResult['insights'],
     platform: string
   ): Promise<string[]> {
-    const recommendations: string[] = [
-      `Create segment-specific content for your ${segments.length} identified audience segments`,
-      segments.length > 1 ? `Prioritize "${insights.mostEngagedSegment}" with higher-frequency posting` : 'Build audience segments by publishing diverse content types',
-      `Schedule posts according to optimal times derived from ${platform} engagement data`,
-    ];
+    const recommendations: string[] = [];
+
+    if (segments.length === 0) {
+      recommendations.push('Publish diverse content types to begin building audience segments');
+      return recommendations;
+    }
+
+    recommendations.push(`Create segment-specific content for your ${segments.length} identified audience segments`);
+    
+    if (segments.length > 1) {
+      recommendations.push(`Prioritize "${insights.mostEngagedSegment}" with higher-frequency posting`);
+    }
+
+    recommendations.push(`Schedule posts according to optimal times derived from ${platform} engagement data`);
 
     if (insights.churnRisk.length > 0) {
       recommendations.push(`Develop re-engagement campaigns for at-risk segments: ${insights.churnRisk.join(', ')}`);
@@ -309,13 +294,10 @@ Return ONLY valid JSON: { "predictedEngagement": number, "confidence": number }`
           confidence: Math.max(0, Math.min(1, parsed.confidence || 0.5)),
         };
       } catch {
-        // Deterministic fallback based on content type
-        const typeScores: Record<string, number> = { video: 6.5, carousel: 5.0, image: 4.0, text: 3.0 };
-        const baseEngagement = typeScores[contentType] || 3.5;
         return {
-          success: true,
-          predictedEngagement: baseEngagement,
-          confidence: 0.4,
+          success: false,
+          predictedEngagement: 0,
+          confidence: 0,
         };
       }
     } catch (error) {
@@ -326,32 +308,18 @@ Return ONLY valid JSON: { "predictedEngagement": number, "confidence": number }`
   static async getContentRecommendations(
     segmentId: string
   ): Promise<{ success: boolean; recommendations: string[] }> {
-    const recommendationsBySegment: Record<string, string[]> = {
-      seg_1: [
-        'Create behind-the-scenes tech content',
-        'Share AI tools and productivity hacks',
-        'Post tutorial videos under 60 seconds',
-      ],
-      seg_2: [
-        'Share business case studies',
-        'Post leadership tips and strategies',
-        'Create carousel posts with actionable insights',
-      ],
-      seg_3: [
-        'Share high-quality visual content',
-        'Post design process videos',
-        'Create collaborative challenges',
-      ],
-      seg_4: [
-        'Create entertaining short-form content',
-        'Share trending topics and challenges',
-        'Use humor and relatable content',
-      ],
-    };
-
-    return {
-      success: true,
-      recommendations: recommendationsBySegment[segmentId] || [],
-    };
+    try {
+      const response = await aiService.chat(
+        `Generate 3 content recommendations for audience segment ${segmentId}. Return as JSON array of strings.`,
+        { model: 'gpt-4o-mini' }
+      );
+      const parsed = JSON.parse(response.replace(/```json|```/g, '').trim());
+      if (Array.isArray(parsed)) {
+        return { success: true, recommendations: parsed.slice(0, 3) };
+      }
+      return { success: true, recommendations: [] };
+    } catch {
+      return { success: false, recommendations: [] };
+    }
   }
 }

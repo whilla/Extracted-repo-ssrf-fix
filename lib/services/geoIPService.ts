@@ -1,4 +1,5 @@
 import { kvGet, kvSet } from './puterService';
+import { getUserLocation as getIpStackLocation, detectRegionFromCountry } from './ipStackService';
 
 export interface GeoLocation {
   country: string;
@@ -108,6 +109,27 @@ class GeoIPService {
    * Uses ipapi.co as primary (free tier: 1000/day)
    */
   private async fetchGeoData(ip: string): Promise<GeoLocation | null> {
+    const ipstackKey = process.env.IPSTACK_API_KEY || await kvGet('ipstack_api_key');
+    if (ipstackKey) {
+      try {
+        const ipstackData = await getIpStackLocation(ip);
+        if (ipstackData) {
+          return {
+            country: ipstackData.country_name || 'Unknown',
+            countryCode: ipstackData.country_code || 'XX',
+            region: ipstackData.region || 'Unknown',
+            regionCode: ipstackData.region_code || '',
+            city: ipstackData.city || 'Unknown',
+            latitude: ipstackData.latitude || 0,
+            longitude: ipstackData.longitude || 0,
+            timezone: ipstackData.timezone || 'UTC',
+          };
+        }
+      } catch {
+        // Fall through to other services
+      }
+    }
+
     try {
       // Primary: ipapi.co
       const response = await fetch(`https://ipapi.co/${ip}/json/`, {

@@ -16,22 +16,21 @@ export async function gatherNexusContext(query: string): Promise<DiscoveryContex
   try {
     // Parallel fetch for efficiency
     const [news, search, location] = await Promise.allSettled([
-      fetchTrendingNews(query),
+      fetchTrendingNews({ keywords: query, limit: 10 }),
       searchTrends(query),
       getUserLocation(),
     ]);
 
-    const trends = news.status === 'fulfilled' ? news.value : [];
-    const searchResults = search.status === 'fulfilled' ? search.value : [];
+    const trends = news.status === 'fulfilled' ? news.value.articles : [];
+    const searchResults = search.status === 'fulfilled' ? search.value.results : [];
     const locationData = location.status === 'fulfilled' ? location.value : null;
 
-    // Synthesize a summary for the AI agents
     const trendSummary = trends.length > 0 
-      ? trends.map(n => `${n.title} (${n.source})`).join('; ')
+      ? trends.map((n: any) => `${n.title} (${n.source})`).join('; ')
       : 'No specific trending news found.';
     
     const searchSummary = searchResults.length > 0
-      ? searchResults.map(r => `${r.title}: ${r.snippet}`).join('; ')
+      ? searchResults.map((r: any) => `${r.title}: ${r.snippet}`).join('; ')
       : 'No real-time search results found.';
     
     const locationSummary = locationData 

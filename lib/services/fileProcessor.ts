@@ -3,7 +3,8 @@
 import { aiService } from './aiService';
 
 // PDF.js will be loaded dynamically
-let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let pdfjsLib: any | null = null;
 const PDF_OCR_MIN_TEXT_LENGTH = 180;
 const PDF_OCR_MAX_PAGES = 4;
 
@@ -111,7 +112,7 @@ async function extractPDFText(base64Data: string): Promise<PDFExtractionResult> 
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       const pageText = textContent.items
-        .map((item) => ('str' in item ? item.str : ''))
+        .map((item: { str?: string }) => ('str' in item ? item.str : ''))
         .join(' ');
       textParts.push(`[Page ${i}]\n${pageText.trim()}`);
     }
@@ -233,7 +234,7 @@ async function parseCSV(base64Data: string): Promise<{ headers: string[]; rows: 
   try {
     const Papa = await import('papaparse');
     const text = atob(base64Data);
-    const result = Papa.parse(text, { header: false });
+    const result = Papa.default.parse(text, { header: false });
     
     const data = result.data as string[][];
     return {

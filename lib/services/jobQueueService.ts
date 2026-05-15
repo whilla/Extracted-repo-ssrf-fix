@@ -3,7 +3,7 @@
  * Database-backed queue replacing the fragile in-memory JSON implementation.
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export interface Job<T = unknown> {
   id: string;
@@ -30,7 +30,7 @@ export const jobQueueService = {
     workspaceId?: string,
     options: { priority?: number; maxAttempts?: number } = {}
   ): Promise<string> {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     const { data, error } = await supabase
       .from('system_jobs')
       .insert({
@@ -54,7 +54,7 @@ export const jobQueueService = {
    * to prevent multiple workers from picking up the same job.
    */
   async claimNextJob(): Promise<Job | null> {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     const { data, error } = await supabase.rpc('claim_next_job');
     
     if (error) {
@@ -68,7 +68,7 @@ export const jobQueueService = {
    * Mark a job as completed.
    */
   async completeJob(jobId: string, result?: any): Promise<void> {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     const { error } = await (supabase.from('system_jobs') as any).update({
         status: 'completed',
         completed_at: new Date().toISOString(),
@@ -83,7 +83,7 @@ export const jobQueueService = {
    * Mark a job as failed and handle retries.
    */
   async failJob(jobId: string, error: string): Promise<void> {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     const { data: job } = await supabase
       .from('system_jobs')
       .select('attempts, max_attempts')
@@ -109,7 +109,7 @@ export const jobQueueService = {
    * Get status of a specific job.
    */
   async getJobStatus(jobId: string): Promise<Job | null> {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     const { data, error } = await supabase
       .from('system_jobs')
       .select('*')

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 import { 
   initializeAgents,
   loadAgents,
@@ -946,7 +946,7 @@ interface OrchestrationJobPayload {
   payload?: { userRequest?: string; options?: OrchestrationOptions };
 }
 
-export async function executeOrchestrationJob(job: OrchestrationJobPayload, supabase: ReturnType<typeof createClient>): Promise<{
+export async function executeOrchestrationJob(job: OrchestrationJobPayload, supabase: ReturnType<typeof getSupabaseAdminClient>): Promise<{
   success: boolean;
   result?: OrchestrationResult;
   error?: string;

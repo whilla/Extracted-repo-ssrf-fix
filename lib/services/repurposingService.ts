@@ -99,14 +99,13 @@ export const repurposingService = {
       : content;
 
     const systemPrompt = `
-      You are a Master Content Strategist. Your goal is to distill long-form content into its most potent, viral elements.
-      
-      ${isTranscript ? 'SPECIAL INSTRUCTION: This is a raw transcript. Focus on extracting the la-essence of the message, removing verbal tics, and identifying the "Gold Nuggets" (the most impactful quotes and ideas).' : ''}
-      
-      Analyze the provided content and identify:
-      1. The Core Message: The one single truth or value proposition.
-      2. Key Hooks: 3-5 different "angles" (e.g., Contrarian, Educational, Emotional, Listicle) that can be used for different platforms.
-      3. Target Audience: Who is this most likely to resonate with?
+      You are a senior content strategist. Distill long-form content into its most potent, viral elements.
+      ${isTranscript ? 'This is a raw transcript. Remove filler words, repetitions, and verbal tics. Extract the core message and strongest quotes.' : ''}
+
+      Identify:
+      1. Core Message: The single most important truth or value proposition.
+      2. Key Hooks: 3-5 distinct angles (contrarian, educational, emotional, listicle, story-driven).
+      3. Target Audience: Who this resonates with most and why.
     `;
 
     const userPrompt = `Analyze this content:\n\n${processedContent}`;
@@ -142,15 +141,15 @@ export const repurposingService = {
     const brandContext = brandKit ? JSON.stringify(brandKit) : 'No specific brand kit defined.';
 
     const systemPrompt = `
-      You are a Platform-Specific Content Expert for ${platform}.
-      Your goal is to adapt a master message into a high-performing post for ${platform}.
-      
-      ${platform} CULTURE GUIDELINES:
-      - Twitter: Concise, punchy, thread-ready, high curiosity gap.
-      - LinkedIn: Professional, value-driven, structured, focused on growth/career.
-      - TikTok/Instagram: High energy, immediate hook, visually descriptive, casual.
-      - Facebook: Community-focused, conversational, storytelling.
-      - YouTube: SEO-optimized, descriptive, curiosity-driven.
+      You are a platform-native content expert for ${platform}.
+      Adapt the master message into a high-performing post that feels native to ${platform}, not repurposed.
+
+      ${platform} RULES:
+      - Twitter: Concise, punchy, thread-ready. Strong curiosity gap in first line.
+      - LinkedIn: Professional, value-driven, structured. Focus on growth, leadership, or insight.
+      - TikTok/Instagram: Immediate hook. High energy. Visually descriptive. Casual tone.
+      - Facebook: Community-focused, conversational, story-driven.
+      - YouTube: SEO-optimized title/description. Curiosity-driven. Clear value proposition.
     `;
 
     const userPrompt = `

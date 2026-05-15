@@ -15,6 +15,8 @@ import { cached, TTL, CACHE_TAGS } from '@/lib/utils/cache';
 import { safeExternalCall } from '@/lib/utils/gracefulDegradation';
 import { chatWithBrain } from '@/lib/services/nexusBrain';
 import { kvGet } from '@/lib/services/puterService';
+import { quickBrainstorm } from '@/lib/services/brainstormEngine';
+import { viralScoringEngine } from '@/lib/core/ViralScoringEngine';
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -69,11 +71,40 @@ export async function POST(request: NextRequest) {
         normalizedMessages,
         brandKit
       );
+
+      // ── Brainstorm: If user is asking for ideas, augment with brainstorm engine ──
+      const lastMessage = normalizedMessages[normalizedMessages.length - 1];
+      const lastMessageText = typeof lastMessage?.content === 'string'
+        ? lastMessage.content
+        : lastMessage?.content?.map(p => p.type === 'text' ? p.text : '').join('') || '';
+      const isIdeationRequest = /brainstorm|idea|suggest|generate.*content|give me/i.test(lastMessageText);
+      let brainstormIdeas: string[] = [];
+      if (isIdeationRequest && lastMessageText) {
+        try {
+          const topic = lastMessageText.replace(/brainstorm|suggest|give me|ideas? for?/gi, '').trim().slice(0, 100);
+          brainstormIdeas = await quickBrainstorm(topic, brandKit, 5);
+        } catch {
+          // Brainstorm is optional enhancement
+        }
+      }
+
+      // ── Viral Scoring: If response contains content, score it ──
+      let viralScore = null;
+      if (result.text && result.text.length > 20) {
+        try {
+          viralScore = await viralScoringEngine.score(result.text);
+        } catch {
+          // Scoring is optional
+        }
+      }
+
       return NextResponse.json({
         text: result.text,
         intent: result.intent,
         confidence: result.confidence,
         suggestedActions: result.suggestedActions,
+        brainstorm_ideas: brainstormIdeas,
+        viral_score: viralScore,
         provider: 'nexus-brain',
         model: 'nexus-brain-v1',
         note: 'Powered by NexusBrain — a built-in, rule-based content engine that works without external AI keys.',
@@ -101,7 +132,7 @@ export async function POST(request: NextRequest) {
           async () => {
             const endpoint =
               config.kind === 'gemini'
-                ? `${config.endpoint}/${encodeURIComponent(actualModel)}:generateContent?key=${encodeURIComponent(apiKey)}`
+                ? `${config.endpoint}/${encodeURIComponent(actualModel)}:generateContent`
                 : config.endpoint;
             const payload =
               config.kind === 'gemini'
@@ -111,6 +142,7 @@ export async function POST(request: NextRequest) {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
+                ...(config.kind === 'gemini' ? { 'x-goog-api-key': apiKey } : {}),
                 ...(config.kind === 'openai-compatible' ? { Authorization: `Bearer ${apiKey}` } : {}),
                 ...(provider === 'openrouter' ? { 'HTTP-Referer': origin, 'X-Title': 'NexusAI' } : {}),
               },
@@ -144,5 +176,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : 'Provider proxy request failed.', 502);
+  }
+}
+
+async function scoreAndEnhanceResponse(text: string): Promise<{ viral_score: any; improved_text: string | null }> {
+  try {
+    const score = await viralScoringEngine.score(text);
+    if (score.total < 55 && score.improvements.length > 0) {
+      return { viral_score: score, improved_text: null };
+    }
+    return { viral_score: score, improved_text: null };
+  } catch {
+    return { viral_score: null, improved_text: null };
   }
 }

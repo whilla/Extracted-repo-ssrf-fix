@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
-import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 import { adaptContentForPlatform } from '@/lib/services/platformAdapterService';
 import { sanitizeApiKey } from '@/lib/services/providerCredentialUtils';
 import { generateIdempotencyKey, withIdempotency } from '@/lib/utils/idempotency';
@@ -117,7 +117,7 @@ export async function POST(request: Request) {
     console.warn('[api/worker/process] WORKER_SECRET not set - running without authentication');
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
   if (!supabase) {
     return NextResponse.json({
       status: 'error',

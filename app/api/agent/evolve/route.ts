@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 
 async function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -11,47 +12,185 @@ async function getSupabaseClient() {
   return createClient(url, key);
 }
 
-export async function POST(request: Request) {
+async function createGitHubCommit(owner: string, repo: string, branch: string, path: string, content: string, message: string, githubToken: string) {
+  const encodedContent = Buffer.from(content).toString('base64');
+  
+  let sha: string | undefined;
   try {
-    const supabase = await getSupabaseClient();
-    if (!supabase) {
-      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+    const existingRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`, {
+      headers: {
+        'Authorization': `Bearer ${githubToken}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+    if (existingRes.ok) {
+      const existing = await existingRes.json();
+      sha = existing.sha;
     }
-    const body = await request.json();
-    const { action, payload, secret } = body;
-
-    if (secret !== process.env.N8N_BRIDGE_SECRET) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    switch (action) {
-      case 'install_skill':
-        // In a Vercel production environment, the filesystem is read-only.
-        // To install a skill, we must commit it to GitHub via the GitHub API.
-        const { skillName, repoPath } = payload;
-        console.log(`[AgentEvolve] Request to install skill: ${skillName} from ${repoPath}`);
-        
-        // 1. Trigger GitHub API to clone/add skill to the repo
-        // 2. This will trigger a Vercel redeploy
-        return NextResponse.json({ 
-          status: 'initiated', 
-          message: `Installation of ${skillName} has been triggered via GitHub. The app will redeploy automatically.` 
-        });
-
-      case 'edit_code':
-        const { filePath, oldText, newText } = payload;
-        console.log(`[AgentEvolve] Request to edit code at ${filePath}`);
-        
-        // Trigger GitHub API to create a commit with the edit
-        return NextResponse.json({ 
-          status: 'initiated', 
-          message: `Edit for ${filePath} has been committed to GitHub. Redeploying...` 
-        });
-
-      default:
-        return NextResponse.json({ error: 'Unknown evolution action' }, { status: 400 });
-    }
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch {
+    // File doesn't exist yet
   }
+
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${githubToken}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message,
+      content: encodedContent,
+      branch,
+      ...(sha ? { sha } : {}),
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`GitHub API error ${res.status}: ${err}`);
+  }
+
+  return res.json();
+}
+
+export async function POST(request: NextRequest) {
+  return withApiMiddleware(request, async () => {
+    try {
+      const supabase = await getSupabaseClient();
+      if (!supabase) {
+        return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+      }
+
+      const body = await request.json();
+      const { action, payload } = body;
+
+      const githubToken = process.env.GITHUB_TOKEN;
+      const githubOwner = process.env.GITHUB_REPO_OWNER;
+      const githubRepo = process.env.GITHUB_REPO_NAME;
+      const githubBranch = process.env.GITHUB_REPO_BRANCH || 'main';
+
+      if (!githubToken || !githubOwner || !githubRepo) {
+        return NextResponse.json({
+          error: 'GitHub integration not configured. Set GITHUB_TOKEN, GITHUB_REPO_OWNER, and GITHUB_REPO_NAME environment variables.',
+        }, { status: 503 });
+      }
+
+      switch (action) {
+        case 'install_skill': {
+          const { skillName, repoPath, skillContent } = payload;
+          
+          if (!skillName || !repoPath) {
+            return NextResponse.json({ error: 'skillName and repoPath are required' }, { status: 400 });
+          }
+
+          const content = skillContent || `// ${skillName} - Auto-installed skill\nexport default {};\n`;
+          const filePath = `${repoPath}/${skillName}.ts`;
+          const commitMessage = `feat: install agent skill "${skillName}"`;
+
+          const result = await createGitHubCommit(githubOwner, githubRepo, githubBranch, filePath, content, commitMessage, githubToken);
+
+          await supabase.from('evolution_logs').insert({
+            action: 'install_skill',
+            skill_name: skillName,
+            file_path: filePath,
+            status: 'committed',
+            commit_sha: result.commit?.sha,
+          });
+
+          return NextResponse.json({ 
+            status: 'completed', 
+            message: `Skill "${skillName}" committed to GitHub at ${filePath}. Vercel will redeploy automatically.`,
+            commit: result.commit?.sha,
+          });
+        }
+
+        case 'edit_code': {
+          const { filePath, newContent, commitMessage } = payload;
+          
+          if (!filePath || !newContent) {
+            return NextResponse.json({ error: 'filePath and newContent are required' }, { status: 400 });
+          }
+
+          const message = commitMessage || `feat: update ${filePath} via agent evolution`;
+          const result = await createGitHubCommit(githubOwner, githubRepo, githubBranch, filePath, newContent, message, githubToken);
+
+          await supabase.from('evolution_logs').insert({
+            action: 'edit_code',
+            file_path: filePath,
+            status: 'committed',
+            commit_sha: result.commit?.sha,
+          });
+
+          return NextResponse.json({ 
+            status: 'completed', 
+            message: `Changes to ${filePath} committed to GitHub. Vercel will redeploy automatically.`,
+            commit: result.commit?.sha,
+          });
+        }
+
+        case 'delete_file': {
+          const { filePath, commitMessage } = payload;
+          
+          if (!filePath) {
+            return NextResponse.json({ error: 'filePath is required' }, { status: 400 });
+          }
+
+          // Get existing file SHA
+          const existingRes = await fetch(`https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/${filePath}?ref=${githubBranch}`, {
+            headers: {
+              'Authorization': `Bearer ${githubToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+            },
+          });
+
+          if (!existingRes.ok) {
+            return NextResponse.json({ error: `File ${filePath} not found in repository` }, { status: 404 });
+          }
+
+          const existing = await existingRes.json();
+
+          const res = await fetch(`https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/${filePath}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${githubToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: commitMessage || `chore: delete ${filePath} via agent evolution`,
+              sha: existing.sha,
+              branch: githubBranch,
+            }),
+          });
+
+          if (!res.ok) {
+            const err = await res.text();
+            return NextResponse.json({ error: `GitHub API error: ${err}` }, { status: 500 });
+          }
+
+          const result = await res.json();
+
+          await supabase.from('evolution_logs').insert({
+            action: 'delete_file',
+            file_path: filePath,
+            status: 'committed',
+            commit_sha: result.commit?.sha,
+          });
+
+          return NextResponse.json({ 
+            status: 'completed', 
+            message: `File ${filePath} deleted from GitHub. Vercel will redeploy automatically.`,
+            commit: result.commit?.sha,
+          });
+        }
+
+        default:
+          return NextResponse.json({ error: 'Unknown evolution action' }, { status: 400 });
+      }
+    } catch (error: any) {
+      console.error('[api/agent/evolve] Error:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  });
 }

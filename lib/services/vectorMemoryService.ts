@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 
 export interface VectorMemoryItem {
   id?: string;
@@ -11,7 +11,7 @@ export interface VectorMemoryItem {
 }
 
 function getSupabaseClient() {
-  return getSupabaseServerClient();
+  return getSupabaseAdminClient();
 }
 
 export class vectorMemoryService {

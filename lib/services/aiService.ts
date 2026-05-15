@@ -1284,7 +1284,7 @@ export async function chat(
   return universalChat(messages, options);
 }
 
-// Generate image with DALL-E 3
+// Generate image with multi-provider fallback (delegates to imageGenerationService)
 export async function generateImage(
   prompt: string,
   options: {
@@ -1293,11 +1293,6 @@ export async function generateImage(
   } = {}
 ): Promise<string> {
   const { enhancePrompt = true, negativePrompt } = options;
-  
-  const ready = await waitForPuter();
-  if (typeof window === 'undefined' || !ready || !window.puter) {
-    throw new Error('Puter not available');
-  }
 
   const fullPrompt = enhancePrompt
     ? `${prompt}, ${IMAGE_QUALITY_PROMPT}`
@@ -1305,12 +1300,27 @@ export async function generateImage(
 
   const negative = negativePrompt || IMAGE_NEGATIVE_PROMPT;
 
-  return withRetry(async () => {
-    const result = await window.puter.ai.txt2img(fullPrompt, {
-      negativePrompt: negative
-    });
-    return result.src;
-  }, 3, 'generateImage');
+  // Delegate to imageGenerationService for multi-provider fallback
+  // (Puter, Stability, Leonardo, Ideogram with automatic failover)
+  try {
+    const { generateImage: generateImageWithFallback } = await import('./imageGenerationService');
+    const result = await generateImageWithFallback({ prompt: fullPrompt, negativePrompt: negative });
+    return result.url;
+  } catch (error) {
+    // If imageGenerationService is unavailable, fall back to Puter directly
+    console.warn('imageGenerationService unavailable, falling back to Puter:', error);
+    const ready = await waitForPuter();
+    if (typeof window === 'undefined' || !ready || !window.puter) {
+      throw new Error('No image providers available. Puter is not loaded and no API keys are configured.');
+    }
+
+    return withRetry(async () => {
+      const result = await window.puter.ai.txt2img(fullPrompt, {
+        negativePrompt: negative
+      });
+      return result.src;
+    }, 3, 'generateImage');
+  }
 }
 
 // Generate multiple prompt variations

@@ -63,23 +63,21 @@ export async function generateInitialIdeas(
   const session = getBrainstormSession(sessionId);
   if (!session) throw new Error('Brainstorm session not found');
 
-  const systemPrompt = `You are a creative content strategist helping generate scroll-stopping, viral content ideas.
-${session.brandKit ? `Niche: ${session.brandKit.niche}
-Tone: ${session.brandKit.tone}
-Target audience: ${session.brandKit.audience || 'general'}` : ''}
+  const systemPrompt = `You are a senior creative content strategist. Generate scroll-stopping, platform-native content ideas that a real audience would engage with.
+${session.brandKit ? `Brand: ${session.brandKit.niche} | Tone: ${session.brandKit.tone} | Audience: ${session.brandKit.audience || 'general'}` : ''}
 
-Generate ${count} unique content ideas that are:
-- Emotionally resonant
-- Platform-native (can adapt to Twitter/TikTok/Instagram/LinkedIn)
-- Trend-aligned
-- Actionable
+Rules:
+- No generic ideas. Every idea must have a specific hook mechanism (curiosity, tension, contrast, or transformation).
+- Ideas must be executable — not vague concepts.
+- Avoid repeating ideas from the session history.
+- Favor advertiser-safe, platform-compliant concepts.
 
-For EACH idea, provide:
-1. Core idea (1-2 sentences)
-2. Confidence level (0-1 scale)
-3. Three different angles to approach it
+For each idea provide:
+1. Core idea (1-2 sentences with a clear hook)
+2. Confidence (0-1 scale based on viral potential)
+3. Three distinct angles to approach it
 
-Format as JSON array with objects: { "idea": "...", "confidence": 0.8, "angles": ["angle1", "angle2", "angle3"] }`;
+Return JSON array: [{ "idea": "...", "confidence": 0.8, "angles": ["angle1", "angle2", "angle3"] }]`;
 
   const userMessage = `Topic: "${session.topic}"
   ${session.brandKit?.contentPillars?.length ? `Content pillars: ${session.brandKit.contentPillars.join(', ')}` : ''}
@@ -148,18 +146,15 @@ export async function refineIdea(
     
   });
 
-  const systemPrompt = `You are helping refine a content idea with iterative suggestions.
-${session.brandKit ? `Niche: ${session.brandKit.niche}\nTone: ${session.brandKit.tone}` : ''}
+  const systemPrompt = `You are a senior content strategist refining ideas iteratively.
+${session.brandKit ? `Brand: ${session.brandKit.niche} | Tone: ${session.brandKit.tone}` : ''}
 
-Respond with BOTH:
-1. A thoughtful refinement of the idea based on the question
-2. Three alternative angles that could work
+Rules:
+- Strengthen the hook. If the original idea is weak, say why and fix it.
+- Provide three alternative angles that are distinctly different from each other.
+- No generic suggestions. Each alternative must have a specific mechanism (curiosity gap, contrarian take, emotional spike, or pattern interrupt).
 
-Format as JSON:
-{
-  "refinement": "improved version of the idea...",
-  "alternatives": ["alt1", "alt2", "alt3"]
-}`;
+Return JSON: { "refinement": "improved version...", "alternatives": ["alt1", "alt2", "alt3"] }`;
 
   try {
     const response = await universalChat(
@@ -214,13 +209,13 @@ export async function exploreAngles(
     timestamp: new Date().toISOString(),
   });
 
-  const systemPrompt = `You are a creative strategist exploring multiple content angles.
-  ${session.brandKit ? `Niche: ${session.brandKit.niche}` : ''}
+  const systemPrompt = `You are a creative strategist exploring distinct content angles.
+${session.brandKit ? `Brand: ${session.brandKit.niche}` : ''}
 
-For the given idea, provide ${angleCount} distinct angles that could be taken. Each angle should:
-- Be platform-specific or adaptable
-- Have different hooks/approaches
-- Appeal to different segments of the audience
+For the given idea, provide ${angleCount} angles that are genuinely different from each other. Each must have:
+- A unique hook mechanism (curiosity, tension, contrast, transformation, or revelation)
+- A clear platform fit
+- A specific audience segment it targets
 
 Return ONLY a JSON array of strings: ["angle1", "angle2", "angle3"]`;
 
@@ -276,13 +271,12 @@ export async function continueBrainstorm(
     timestamp: new Date().toISOString(),
   });
 
-  const systemPrompt = `You are a creative brainstorming partner helping develop content ideas for:
+  const systemPrompt = `You are a senior creative strategist in an active brainstorm session.
 Topic: "${session.topic}"
-${session.brandKit ? `Brand: ${session.brandKit.niche}` : ''}
+${session.brandKit ? `Brand: ${session.brandKit.niche} | Tone: ${session.brandKit.tone}` : ''}
+Current ideas: ${session.ideas.map((i) => i.text).join(' | ')}
 
-Current ideas: ${session.ideas.map((i) => i.text).join(', ')}
-
-Continue the brainstorm conversation naturally. Suggest refinements, alternatives, or new directions based on the user's input.`;
+Continue the conversation naturally. Build on what exists — do not repeat ideas. Suggest refinements, new directions, or challenge weak ideas directly. Be specific, not vague.`;
 
   try {
     const response = await universalChat(

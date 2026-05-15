@@ -5,7 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { kvGet, kvSet } from '@/lib/services/puterService';
-import { createClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/server';
 import { logger } from '@/lib/utils/logger';
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
@@ -105,7 +105,7 @@ async function verifyStripeSignature(
  */
 async function logWebhookEvent(event: StripeEvent, processed: boolean, error?: string): Promise<void> {
   try {
-    const supabase = await createClient();
+    const supabase = await getSupabaseAdminClient();
     if (supabase) {
       await (supabase.from('stripe_webhook_events') as any).insert({
         stripe_event_id: event.id,
@@ -154,9 +154,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // Step 4: Idempotency - check if we've already processed this event
-  const eventProcessed = await checkEventProcessed(event.id);
-  if (eventProcessed) {
+  // Step 4: Idempotency - atomically check and mark event as processed
+  const alreadyProcessed = await checkAndMarkEventProcessed(event.id);
+  if (alreadyProcessed) {
     logger.info('Stripe Webhook', 'Event already processed, skipping', { eventId: event.id });
     return NextResponse.json({ received: true, idempotency: true });
   }
@@ -168,12 +168,19 @@ export async function POST(request: Request) {
         const session = event.data.object;
         const customerId = session.customer as string;
         const subscriptionId = session.subscription as string;
-        const userId = session.client_reference_id as string | undefined;
+        const userId = (session.metadata as Record<string, unknown>)?.user_id as string | undefined;
+        const planId = (session.metadata as Record<string, unknown>)?.plan_id as string | undefined;
         
-        logger.info('Stripe Webhook', 'Checkout completed', { customerId, subscriptionId, userId });
+        logger.info('Stripe Webhook', 'Checkout completed', { customerId, subscriptionId, userId, planId });
         
         if (subscriptionId && userId) {
-          await updateSubscriptionStatus(subscriptionId, 'active', userId);
+          await upsertSubscription({
+            userId,
+            stripeCustomerId: customerId,
+            stripeSubscriptionId: subscriptionId,
+            planId: planId || 'pro',
+            status: 'active',
+          });
         }
         break;
       }
@@ -194,6 +201,7 @@ export async function POST(request: Request) {
         const subscriptionId = subscription.id as string;
         const status = subscription.status as string;
         const cancelAtPeriodEnd = subscription.cancel_at_period_end as boolean;
+        const customerId = subscription.customer as string;
         
         logger.info('Stripe Webhook', 'Subscription updated', { subscriptionId, status, cancelAtPeriodEnd });
         
@@ -210,6 +218,10 @@ export async function POST(request: Request) {
         
         const mappedStatus = statusMap[status] || status;
         await updateSubscriptionStatus(subscriptionId, mappedStatus);
+        
+        if (customerId) {
+          await updateSubscriptionCustomerId(subscriptionId, customerId);
+        }
         
         if (cancelAtPeriodEnd) {
           await updateSubscriptionCancelAtPeriodEnd(subscriptionId, true);
@@ -275,8 +287,6 @@ export async function POST(request: Request) {
         logger.info('Stripe Webhook', 'Unhandled event type', { type: event.type });
     }
 
-    // Mark event as processed
-    await markEventProcessed(event.id);
     await logWebhookEvent(event, true);
 
     return NextResponse.json({ received: true });
@@ -292,39 +302,22 @@ export async function POST(request: Request) {
   }
 }
 
-// Idempotency tracking
-const PROCESSED_EVENTS_KEY = 'stripe_processed_events';
+// Idempotency tracking using atomic KV operations
+const PROCESSED_EVENTS_KEY_PREFIX = 'stripe_processed:';
 const MAX_PROCESSED_EVENTS = 1000;
 
-async function loadProcessedEvents(): Promise<Set<string>> {
+async function checkAndMarkEventProcessed(eventId: string): Promise<boolean> {
+  const key = `${PROCESSED_EVENTS_KEY_PREFIX}${eventId}`;
   try {
-    const data = await kvGet(PROCESSED_EVENTS_KEY);
-    if (data) {
-      const parsed = JSON.parse(data);
-      return new Set(Array.isArray(parsed) ? parsed : []);
+    const existing = await kvGet(key);
+    if (existing) {
+      return true;
     }
+    await kvSet(key, '1');
+    return false;
   } catch {
-    // Invalid data, start fresh
+    return false;
   }
-  return new Set();
-}
-
-async function checkEventProcessed(eventId: string): Promise<boolean> {
-  const processed = await loadProcessedEvents();
-  return processed.has(eventId);
-}
-
-async function markEventProcessed(eventId: string): Promise<void> {
-  const processed = await loadProcessedEvents();
-  processed.add(eventId);
-  
-  // Keep only the most recent events to prevent unbounded growth
-  const eventsArray = Array.from(processed);
-  if (eventsArray.length > MAX_PROCESSED_EVENTS) {
-    eventsArray.splice(0, eventsArray.length - MAX_PROCESSED_EVENTS);
-  }
-  
-  await kvSet(PROCESSED_EVENTS_KEY, JSON.stringify(eventsArray));
 }
 
 const SUBSCRIPTIONS_KEY = 'stripe_subscriptions';
@@ -400,4 +393,54 @@ async function updateSubscriptionCancelAtPeriodEnd(stripeSubscriptionId: string,
   }
   
   await saveSubscriptions(subscriptions);
+}
+
+async function upsertSubscription(data: {
+  userId: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId: string;
+  planId: string;
+  status: string;
+}): Promise<void> {
+  try {
+    const supabase = await getSupabaseAdminClient();
+    if (!supabase) return;
+
+    const { error } = await (supabase as any)
+      .from('subscriptions')
+      .upsert({
+        user_id: data.userId,
+        stripe_customer_id: data.stripeCustomerId || null,
+        stripe_subscription_id: data.stripeSubscriptionId,
+        plan_id: data.planId,
+        status: data.status,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'stripe_subscription_id',
+      });
+
+    if (error) {
+      logger.error('Stripe Webhook', 'Failed to upsert subscription', { error: error.message });
+    }
+  } catch (error) {
+    logger.error('Stripe Webhook', 'upsertSubscription error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function updateSubscriptionCustomerId(stripeSubscriptionId: string, customerId: string): Promise<void> {
+  try {
+    const supabase = await getSupabaseAdminClient();
+    if (!supabase) return;
+
+    await (supabase as any)
+      .from('subscriptions')
+      .update({ stripe_customer_id: customerId, updated_at: new Date().toISOString() })
+      .eq('stripe_subscription_id', stripeSubscriptionId);
+  } catch (error) {
+    logger.error('Stripe Webhook', 'updateSubscriptionCustomerId error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }

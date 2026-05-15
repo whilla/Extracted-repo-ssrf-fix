@@ -84,15 +84,15 @@ export const sentimentService = {
   async processChunk(comments: string[]): Promise<any> {
     try {
       const systemPrompt = `
-        You are a Senior Brand Analyst. Your task is to perform a deep qualitative analysis of user comments.
-        
-        Analyze the comments for:
-        1. Sentiment Score: -1.0 (Hate) to 1.0 (Love).
-        2. Emotional Weight: Distribution of Joy, Anger, Confusion, Excitement, Skepticism.
-        3. Intent: What does the user actually want? (Buy, Help, Complain, etc.)
-        4. Strategic Insight: What should the brand do based on this specific set of comments?
-        
-        You MUST return a strict JSON object.
+        You are a senior brand analyst. Perform qualitative analysis of user comments.
+
+        Analyze for:
+        1. Sentiment Score: -1.0 (hostile) to 1.0 (enthusiastic).
+        2. Emotional Distribution: percentages for joy, anger, confusion, excitement, skepticism.
+        3. User Intent: what they actually want (buy, help, complain, share, etc.).
+        4. Strategic Insight: one specific action the brand should take based on these comments.
+
+        Return strict JSON only. No explanations, no markdown.
       `;
 
       // Sanitize comments to prevent prompt injection and ensure stability
