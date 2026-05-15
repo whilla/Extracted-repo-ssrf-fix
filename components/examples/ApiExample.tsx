@@ -2,7 +2,7 @@
 
 import { useApi } from '@/hooks/useApi';
 import { NeonButton } from '@/components/nexus/NeonButton';
-import { InlineError } from '@/components/nexus/ErrorBoundary';
+import { InlineError } from '@/components/ErrorBoundary';
 
 export function ApiExample() {
   const { apiCall } = useApi();
