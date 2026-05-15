@@ -8,6 +8,7 @@ import { LoadingPulse } from '@/components/nexus/LoadingPulse';
 import { StatsSkeleton } from '@/components/crm/StatsSkeleton';
 import { CustomerTableSkeleton } from '@/components/crm/CustomerTableSkeleton';
 import { SegmentsSkeleton } from '@/components/crm/SegmentsSkeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { toast } from 'sonner';
 import {
