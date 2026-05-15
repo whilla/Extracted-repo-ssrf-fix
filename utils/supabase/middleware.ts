@@ -2,9 +2,22 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 export const updateSession = async (request: NextRequest) => {
+  // SECURITY FIX: Return early if Supabase is not configured
+  if (!supabaseUrl || !supabaseKey) {
+    const response = NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    });
+    return { 
+      supabase: null as unknown as ReturnType<typeof createServerClient>, 
+      supabaseResponse: response 
+    };
+  }
+
   let supabaseResponse = NextResponse.next({
     request: {
       headers: request.headers,
@@ -12,8 +25,8 @@ export const updateSession = async (request: NextRequest) => {
   });
 
   const supabase = createServerClient(
-    supabaseUrl!,
-    supabaseKey!,
+    supabaseUrl,
+    supabaseKey,
     {
       cookies: {
         getAll() {

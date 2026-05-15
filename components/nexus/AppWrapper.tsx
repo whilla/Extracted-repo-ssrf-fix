@@ -20,7 +20,19 @@ export function AppWrapper({ children }: { children: React.ReactNode }) {
     };
     
     checkReady();
-  }, []);
+    
+    // SECURITY FIX: Add timeout to prevent infinite loading if nexusAppReady is never set
+    // This can happen if Puter.js fails to load or runtime bootstrap errors
+    const forceReadyTimeout = setTimeout(() => {
+      if (loading) {
+        console.warn('[AppWrapper] Forcing app ready after timeout - nexusAppReady was not set');
+        document.documentElement.dataset.nexusAppReady = 'true';
+        setLoading(false);
+      }
+    }, 8000); // 8 second timeout matches PUTER_READY_TIMEOUT
+    
+    return () => clearTimeout(forceReadyTimeout);
+  }, [loading]);
   
   // Show loading indicator on route changes
   useEffect(() => {

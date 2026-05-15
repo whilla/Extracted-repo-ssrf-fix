@@ -145,6 +145,8 @@ export default function RuntimeReadinessGate({ children }: { children: ReactNode
     const globalTimeout = setTimeout(() => {
       console.error('[RuntimeReadinessGate] Global timeout reached - forcing ready state');
       if (!runtimeState.ready) {
+        // SECURITY FIX: Set nexusAppReady before updating state
+        document.documentElement.dataset.nexusAppReady = 'true';
         setRuntimeState(prev => ({
           ...prev,
           ready: true,
@@ -165,6 +167,8 @@ export default function RuntimeReadinessGate({ children }: { children: ReactNode
     
     const timeoutId = setTimeout(() => {
       console.error('[RuntimeReadinessGate] Runtime assessment timed out after 5 seconds');
+      // SECURITY FIX: Always set ready state even on timeout to prevent hanging
+      document.documentElement.dataset.nexusAppReady = 'true';
       setRuntimeState({ 
         ready: true, 
         issues: [{
@@ -179,6 +183,7 @@ export default function RuntimeReadinessGate({ children }: { children: ReactNode
       const issues = assessRuntime();
       console.log('[RuntimeReadinessGate] Runtime assessment completed', { issueCount: issues.length });
       clearTimeout(timeoutId);
+      // SECURITY FIX: Set nexusAppReady before updating state to ensure AppWrapper sees it
       document.documentElement.dataset.nexusAppReady = 'true';
       setRuntimeState({ ready: true, issues });
 
@@ -189,6 +194,8 @@ export default function RuntimeReadinessGate({ children }: { children: ReactNode
     } catch (error) {
       console.error('[RuntimeReadinessGate] Runtime assessment failed', error);
       clearTimeout(timeoutId);
+      // SECURITY FIX: Always set ready state even on error
+      document.documentElement.dataset.nexusAppReady = 'true';
       setRuntimeState({ 
         ready: true, 
         issues: [{

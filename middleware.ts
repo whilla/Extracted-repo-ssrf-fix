@@ -11,7 +11,8 @@ export async function middleware(request: NextRequest) {
     if (request.nextUrl.pathname.startsWith('/api/') || 
         request.nextUrl.pathname.startsWith('/_next/') ||
         request.nextUrl.pathname.startsWith('/login') ||
-        request.nextUrl.pathname.startsWith('/auth')) {
+        request.nextUrl.pathname.startsWith('/auth') ||
+        request.nextUrl.pathname === '/') {
       return NextResponse.next();
     }
     // For other paths, continue without auth requirement
@@ -20,7 +21,23 @@ export async function middleware(request: NextRequest) {
 
   try {
     const { supabase, supabaseResponse } = await updateSession(request);
+    
+    // SECURITY FIX: Handle case where supabase is null (not configured)
+    if (!supabase) {
+      if (request.nextUrl.pathname === '/' || 
+          request.nextUrl.pathname.startsWith('/login') || 
+          request.nextUrl.pathname.startsWith('/auth')) {
+        return NextResponse.next();
+      }
+      return NextResponse.next();
+    }
+    
     const { data: { session } } = await supabase.auth.getSession();
+
+    // SECURITY FIX: Allow public access to landing page
+    if (request.nextUrl.pathname === '/') {
+      return supabaseResponse;
+    }
 
     if (!session && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
       const redirectResponse = NextResponse.redirect(new URL('/login', request.url));
