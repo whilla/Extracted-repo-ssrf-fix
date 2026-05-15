@@ -68,6 +68,9 @@ export const schemas = {
   compliance: z.object({
     content: z.string().min(1).max(50000),
     regions: z.array(z.enum(['us', 'eu', 'uk', 'ca', 'au', 'jp', 'cn', 'in', 'br', 'de', 'fr', 'es'])).min(1),
+    action: z.enum(['verify_copyright', 'check_fair_use', 'generate_alternatives']).optional(),
+    autoDetect: z.boolean().optional(),
+    purpose: z.string().optional(),
   }),
   
   // Spatial
