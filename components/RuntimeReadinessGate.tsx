@@ -136,56 +136,23 @@ function assessRuntime(): RuntimeIssue[] {
 
 export default function RuntimeReadinessGate({ children }: { children: ReactNode }) {
   const [runtimeState, setRuntimeState] = useState<RuntimeState>({
-    ready: false,
+    ready: true,
     issues: [],
   });
   
-  // Add a global timeout to prevent infinite loading
-  useEffect(() => {
-    const globalTimeout = setTimeout(() => {
-      console.error('[RuntimeReadinessGate] Global timeout reached - forcing ready state');
-      if (!runtimeState.ready) {
-        // SECURITY FIX: Set nexusAppReady before updating state
-        document.documentElement.dataset.nexusAppReady = 'true';
-        setRuntimeState(prev => ({
-          ...prev,
-          ready: true,
-          issues: [...prev.issues, {
-            code: 'global-timeout',
-            severity: 'fatal',
-            message: 'Runtime readiness check timed out. App may have limited functionality.'
-          }]
-        }));
-      }
-    }, 10000); // 10 second global timeout
-    
-    return () => clearTimeout(globalTimeout);
-  }, [runtimeState.ready]);
-
   useEffect(() => {
     console.log('[RuntimeReadinessGate] Starting runtime assessment...');
-    
-    const timeoutId = setTimeout(() => {
-      console.error('[RuntimeReadinessGate] Runtime assessment timed out after 5 seconds');
-      // SECURITY FIX: Always set ready state even on timeout to prevent hanging
-      document.documentElement.dataset.nexusAppReady = 'true';
-      setRuntimeState({ 
-        ready: true, 
-        issues: [{
-          code: 'assessment-timeout',
-          severity: 'fatal',
-          message: 'Runtime assessment timed out. The app may not function properly.'
-        }]
-      });
-    }, 5000);
     
     try {
       const issues = assessRuntime();
       console.log('[RuntimeReadinessGate] Runtime assessment completed', { issueCount: issues.length });
-      clearTimeout(timeoutId);
-      // SECURITY FIX: Set nexusAppReady before updating state to ensure AppWrapper sees it
-      document.documentElement.dataset.nexusAppReady = 'true';
-      setRuntimeState({ ready: true, issues });
+      
+      const fatalIssues = issues.filter((issue) => issue.severity === 'fatal');
+      if (fatalIssues.length > 0) {
+        setRuntimeState({ ready: true, issues });
+      } else {
+        setRuntimeState({ ready: true, issues });
+      }
 
       const warnings = issues.filter((issue) => issue.severity === 'warning');
       if (warnings.length > 0) {
@@ -193,14 +160,11 @@ export default function RuntimeReadinessGate({ children }: { children: ReactNode
       }
     } catch (error) {
       console.error('[RuntimeReadinessGate] Runtime assessment failed', error);
-      clearTimeout(timeoutId);
-      // SECURITY FIX: Always set ready state even on error
-      document.documentElement.dataset.nexusAppReady = 'true';
       setRuntimeState({ 
         ready: true, 
         issues: [{
           code: 'assessment-failed',
-          severity: 'fatal',
+          severity: 'warning',
           message: `Runtime assessment failed: ${error instanceof Error ? error.message : 'Unknown error'}`
         }]
       });
@@ -211,17 +175,6 @@ export default function RuntimeReadinessGate({ children }: { children: ReactNode
     () => runtimeState.issues.filter((issue) => issue.severity === 'fatal'),
     [runtimeState.issues]
   );
-
-  if (!runtimeState.ready) {
-    return (
-      <div
-        data-nexus-runtime-gate
-        className="min-h-screen bg-background text-foreground flex items-center justify-center p-6"
-      >
-        <div className="text-sm text-muted-foreground">Starting NexusAI...</div>
-      </div>
-    );
-  }
 
   if (fatalIssues.length > 0) {
     return (

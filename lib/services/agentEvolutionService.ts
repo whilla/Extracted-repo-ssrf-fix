@@ -12,6 +12,7 @@ import {
   createHybridAgent,
   type AgentConfig,
   type AgentRole,
+  type AgentCapability,
 } from './multiAgentService';
 import { PromptManager } from './promptManager';
 import { stateStore } from './supabaseStore';
@@ -26,8 +27,8 @@ export interface EvolutionProposal {
   id: string;
   agentId: string;
   proposalType: 'prompt_update' | 'weight_adjustment' | 'capability_add' | 'strategy_change';
-  currentValue: string | number | Record<string, number>;
-  proposedValue: string | number | Record<string, number>;
+  currentValue: string | number | Record<string, unknown>;
+  proposedValue: string | number | Record<string, unknown>;
   reasoning: string;
   expectedImprovement: number;
   status: 'pending' | 'testing' | 'approved' | 'rejected' | 'applied';
@@ -210,8 +211,8 @@ export async function proposeEvolution(agentId: string): Promise<EvolutionPropos
   
   // Generate proposal based on weaknesses
   let proposalType: EvolutionProposal['proposalType'] = 'prompt_update';
-  let currentValue: string | number | Record<string, number> = agent.promptTemplate;
-  let proposedValue: string | number | Record<string, number> = agent.promptTemplate;
+  let currentValue: string | number | Record<string, unknown> = agent.promptTemplate;
+  let proposedValue: string | number | Record<string, unknown> = agent.promptTemplate;
   let reasoning = '';
   let expectedImprovement = 5;
   
@@ -236,6 +237,16 @@ export async function proposeEvolution(agentId: string): Promise<EvolutionPropos
     proposedValue = PromptManager.updateTemplate(agent.promptTemplate, '', 'simplify');
     reasoning = 'Simplifying prompt to improve response time';
     expectedImprovement = 5;
+  } else if (agent.capabilities.length < 3 && analysis.avgScore < 70) {
+    proposalType = 'capability_add';
+    currentValue = { capabilities: agent.capabilities };
+    const suggestedCapabilities: string[] = [];
+    if (!agent.capabilities.includes('tool_use')) suggestedCapabilities.push('tool_use');
+    if (!agent.capabilities.includes('multi_task')) suggestedCapabilities.push('multi_task');
+    if (!agent.capabilities.includes('content_optimization')) suggestedCapabilities.push('content_optimization');
+    proposedValue = { capabilities: suggestedCapabilities.slice(0, 2) };
+    reasoning = `Adding capabilities (${suggestedCapabilities.slice(0, 2).join(', ')}) to improve agent versatility`;
+    expectedImprovement = 12;
   }
   
   const proposal: EvolutionProposal = {
@@ -283,6 +294,21 @@ export async function testEvolutionProposal(
   let testPrompt = agent.promptTemplate;
   if (proposal.proposalType === 'prompt_update') {
     testPrompt = proposal.proposedValue as string;
+  } else if (proposal.proposalType === 'capability_add') {
+    const newCaps = (proposal.proposedValue as unknown as { capabilities: string[] }).capabilities;
+    const capabilityEnhancements = newCaps.map((cap: string) => {
+      switch (cap) {
+        case 'tool_use':
+          return '\n\nYou can now use external tools. Invoke them using [[tool:action_name(param: value)]] format.';
+        case 'multi_task':
+          return '\n\nYou can handle multiple related tasks in a single response. Break down complex requests.';
+        case 'content_optimization':
+          return '\n\nOptimize content for engagement, readability, and platform-specific best practices.';
+        default:
+          return `\n\nNew capability enabled: ${cap}`;
+      }
+    }).join('');
+    testPrompt = agent.promptTemplate + capabilityEnhancements;
   }
   const afterResult = await testRunner(testPrompt);
   
@@ -385,7 +411,10 @@ export async function applyEvolution(proposalId: string): Promise<boolean> {
       updates.scoringWeights = proposal.proposedValue as AgentConfig['scoringWeights'];
       break;
     case 'capability_add':
-      // Would need to handle capability additions
+      const newCapabilities = proposal.proposedValue as { capabilities: string[] };
+      const existingCapabilities = agent.capabilities || [];
+      const mergedCapabilities = [...new Set([...existingCapabilities, ...newCapabilities.capabilities])] as AgentCapability[];
+      updates.capabilities = mergedCapabilities;
       break;
   }
   

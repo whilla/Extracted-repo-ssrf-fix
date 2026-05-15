@@ -734,7 +734,7 @@ export class DirectPublishService {
   }
 
   /**
-   * Publish to Twitch (for live streaming announcements)
+   * Publish to Twitch (for live streaming announcements, clips, and schedule updates)
    */
   static async publishToTwitch(text: string, mediaUrls: string[] = []): Promise<DirectPublishResult> {
     const accessToken = sanitizeApiKey(await kvGet('twitch_access_token'));
@@ -743,12 +743,6 @@ export class DirectPublishService {
     }
 
     try {
-      // Twitch does not have a "post to feed" API.
-      // The closest option is the EventSub API for channel announcements
-      // or IRC chat integration for sending messages in chat.
-      // Posting a channel announcement via Helix API:
-      //   POST https://api.twitch.tv/helix/chat/announcements?broadcaster_id={channelId}&moderator_id={channelId}
-      //   Headers: Authorization: Bearer {token}, Client-Id: {clientId}
       const clientId = await kvGet('twitch_client_id');
       const channelId = await kvGet('twitch_channel_id');
       if (!channelId || !clientId) {
@@ -758,6 +752,89 @@ export class DirectPublishService {
         };
       }
 
+      // Determine publish type based on content
+      const isClip = mediaUrls.length > 0 && mediaUrls[0].includes('clip');
+      const isSchedule = text.toLowerCase().includes('schedule') || text.toLowerCase().includes('going live');
+
+      if (isClip) {
+        // Upload clip via Twitch API
+        const clipUrl = mediaUrls[0];
+        const response = await fetch(`https://api.twitch.tv/helix/clips?broadcaster_id=${channelId}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Client-Id': clientId,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            url: clipUrl,
+            title: text.substring(0, 100),
+          }),
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          return {
+            success: false,
+            error: 'Twitch requires OAuth with clips:edit scope. Configure via Twitch Developer Portal.',
+          };
+        }
+
+        if (!response.ok) {
+          throw new Error(`Twitch clip upload error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return {
+          success: true,
+          postId: data.id || `twitch_clip_${Date.now()}`,
+          platformUrl: `https://twitch.tv/${channelId}/clip/${data.id || ''}`,
+        };
+      }
+
+      if (isSchedule) {
+        // Create scheduled stream
+        const scheduledTime = this.extractScheduledTime(text);
+        if (!scheduledTime) {
+          return {
+            success: false,
+            error: 'Could not extract scheduled time from message. Include a date/time like "2024-01-15T20:00:00Z".',
+          };
+        }
+
+        const response = await fetch(`https://api.twitch.tv/helix/schedule/broadcasts?broadcaster_id=${channelId}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Client-Id': clientId,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            start_time: scheduledTime,
+            title: text.substring(0, 140),
+            is_recurring: false,
+            category_id: '',
+          }),
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          return {
+            success: false,
+            error: 'Twitch requires OAuth with channel:manage:schedule scope. Configure via Twitch Developer Portal.',
+          };
+        }
+
+        if (!response.ok) {
+          throw new Error(`Twitch schedule error: ${response.statusText}`);
+        }
+
+        return {
+          success: true,
+          postId: `twitch_schedule_${Date.now()}`,
+          platformUrl: `https://twitch.tv/${channelId}/schedule`,
+        };
+      }
+
+      // Default: channel announcement
       const response = await fetch(`https://api.twitch.tv/helix/chat/announcements?broadcaster_id=${channelId}&moderator_id=${channelId}`, {
         method: 'POST',
         headers: {
@@ -765,7 +842,7 @@ export class DirectPublishService {
           'Client-Id': clientId,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text.substring(0, 500) }),
       });
 
       if (response.status === 401 || response.status === 403) {
@@ -781,7 +858,7 @@ export class DirectPublishService {
 
       return {
         success: true,
-        postId: `twitch_${Date.now()}`,
+        postId: `twitch_announcement_${Date.now()}`,
         platformUrl: `https://twitch.tv/${channelId}`,
       };
     } catch (error) {
@@ -790,5 +867,26 @@ export class DirectPublishService {
         error: error instanceof Error ? error.message : 'Unknown Twitch error',
       };
     }
+  }
+
+  /**
+   * Extract scheduled time from text
+   */
+  private static extractScheduledTime(text: string): string | null {
+    // ISO 8601 pattern
+    const isoMatch = text.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/);
+    if (isoMatch) return isoMatch[0];
+
+    // Simple date patterns like "Jan 15, 2024 at 8:00 PM"
+    const dateMatch = text.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}(?:\s+at\s+\d{1,2}:\d{2}\s*(?:AM|PM))?/i);
+    if (dateMatch) {
+      try {
+        return new Date(dateMatch[0]).toISOString();
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
   }
 }

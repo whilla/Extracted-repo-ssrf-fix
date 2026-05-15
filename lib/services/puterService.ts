@@ -3,8 +3,8 @@
 
 import { encryptSensitiveData, decryptSensitiveData, markAsEncrypted, isEncrypted, extractCiphertext } from '../utils/crypto.ts';
 
-const PUTER_READY_TIMEOUT = 8000;
-const PUTER_AUTH_TIMEOUT = 45000;
+const PUTER_READY_TIMEOUT = 4000;
+const PUTER_AUTH_TIMEOUT = 30000;
 const PUTER_AUTH_POLL_INTERVAL = 500;
 // Puter.js is loaded from CDN without SRI since the hash changes frequently.
 // Regenerate SRI with: curl https://js.puter.com/v2/ 2>/dev/null | openssl dgst -sha384 -binary | openssl enc -base64 -A

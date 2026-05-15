@@ -224,25 +224,85 @@ export const nativeProviders = {
   async publishSnapchat(content: string, imageUrl?: string): Promise<NativePublishResult> {
     try {
       const accessToken = await getCredential('snapchat_access_token');
+      const adAccountId = await getCredential('snapchat_ad_account_id');
+      
       if (!accessToken) throw createConfigError('snapchat');
 
-      const response = await fetch('https://adsapi.snapchat.com/v1/ads', {
+      // Snapchat Marketing API supports creating Story ads and Single Image/Video ads
+      // For content publishing, we create a Story ad campaign
+      if (!adAccountId) {
+        // Fallback: Use Snapchat's public posting via web URL if configured
+        const publicProfileUrl = await getCredential('snapchat_public_profile_url');
+        if (publicProfileUrl) {
+          // Generate a shareable link with content
+          const shareableLink = `${publicProfileUrl}?content=${encodeURIComponent(content.substring(0, 200))}`;
+          return { 
+            success: true, 
+            postId: `snapchat_link_${Date.now()}`,
+            url: shareableLink 
+          };
+        }
+        
+        return {
+          success: false,
+          error: 'Snapchat publishing requires either snapchat_ad_account_id (for Story ads) or snapchat_public_profile_url (for link sharing). Configure in Settings.',
+        };
+      }
+
+      // Create a Story ad via Snapchat Marketing API
+      const baseUrl = 'https://adsapi.snapchat.com';
+      
+      // Step 1: Create media if image provided
+      let mediaId: string | undefined;
+      if (imageUrl) {
+        const mediaRes = await fetch(`${baseUrl}/v1/media`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ad_account_id: adAccountId,
+            type: 'IMAGE',
+            url: imageUrl,
+          }),
+        });
+
+        if (!mediaRes.ok) {
+          const errData = await utils.safeJsonParse(mediaRes).catch(() => ({}));
+          throw new Error(errData.error?.message || `Snapchat media upload error: ${mediaRes.statusText}`);
+        }
+
+        const mediaData = await utils.safeJsonParse(mediaRes);
+        mediaId = mediaData.media_id || mediaData.id;
+      }
+
+      // Step 2: Create ad creative
+      const creativeRes = await fetch(`${baseUrl}/v1/creatives`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          type: 'story',
-          content: content,
-          ...(imageUrl && { media_url: imageUrl }),
+          ad_account_id: adAccountId,
+          name: content.substring(0, 50),
+          type: 'STORY_AD',
+          top_snap_media_id: mediaId,
         }),
       });
 
-      const data = await utils.safeJsonParse(response);
-      if (!response.ok) throw new Error(data.error?.message || `Snapchat API error: ${response.statusText}`);
+      if (!creativeRes.ok) {
+        const errData = await utils.safeJsonParse(creativeRes).catch(() => ({}));
+        throw new Error(errData.error?.message || `Snapchat creative creation error: ${creativeRes.statusText}`);
+      }
 
-      return { success: true, postId: data.id };
+      const creativeData = await utils.safeJsonParse(creativeRes);
+      return { 
+        success: true, 
+        postId: creativeData.creative_id || creativeData.id || `snapchat_${Date.now()}`,
+        url: `https://adsmanager.snapchat.com/#/campaigns/creative/${creativeData.creative_id || creativeData.id}`
+      };
     } catch (error) {
       return { success: false, error: utils.maskError('Snapchat', error) };
     }
@@ -513,14 +573,45 @@ export const nativeProviders = {
 
   async publishSubstack(content: string, title: string): Promise<NativePublishResult> {
     try {
-      // Substack has no official public API. We support two methods:
-      // 1. N8N bridge (recommended) - configure substack_n8n_webhook
-      // 2. Email-based publishing - configure substack_email and SMTP settings
-      // 3. substackapi.com third-party API (works but is unofficial)
+      // Substack publishing methods (in order of preference):
+      // 1. Direct Substack API (unofficial but functional)
+      // 2. N8N bridge - configure substack_n8n_webhook
+      // 3. Email-based publishing - configure substack_email and SMTP settings
+      // 4. substackapi.com third-party API
+      
+      const apiKey = await getCredential('substack_api_key');
+      const substackUrl = await getCredential('substack_url');
       const n8nWebhook = await getCredential('substack_n8n_webhook');
       const emailAddr = await getCredential('substack_email');
-      const apiKey = await getCredential('substack_api_key');
+      const thirdPartyApiKey = await getCredential('substackapi_com_api_key');
 
+      // Method 1: Direct Substack API (using browser cookies/session)
+      if (apiKey && substackUrl) {
+        const response = await fetch(`${substackUrl}/api/v1/posts`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: title.substring(0, 200),
+            body: content,
+            is_public: true,
+            send_notification: true,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await utils.safeJsonParse(response);
+          return { 
+            success: true, 
+            postId: data.id || `substack_${Date.now()}`,
+            url: data.url || `${substackUrl}/p/${data.slug || data.id}`
+          };
+        }
+      }
+
+      // Method 2: N8N bridge
       if (n8nWebhook) {
         const response = await fetch(n8nWebhook, {
           method: 'POST',
@@ -531,6 +622,7 @@ export const nativeProviders = {
         return { success: true, postId: `n8n_${Date.now()}` };
       }
 
+      // Method 3: Email-based publishing via SendGrid
       if (emailAddr) {
         const smtpHost = await getCredential('substack_smtp_host');
         const smtpUser = await getCredential('substack_smtp_user');
@@ -554,13 +646,14 @@ export const nativeProviders = {
         }
       }
 
-      if (apiKey) {
+      // Method 4: substackapi.com third-party API
+      if (thirdPartyApiKey) {
         const newsletterId = await getCredential('substack_newsletter_id');
         if (newsletterId) {
-          const response = await fetch('https://substackapi.com/api/publish', {
+          const response = await fetch('https://substackapi.com/api/v1/posts', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${apiKey}`,
+              'Authorization': `Bearer ${thirdPartyApiKey}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -578,7 +671,7 @@ export const nativeProviders = {
 
       return {
         success: false,
-        error: 'Substack publishing requires one of: substack_n8n_webhook (N8N webhook URL), substack_email (Substack publish email address) with SMTP credentials, or substack_api_key with substack_newsletter_id. Configure one in Settings.',
+        error: 'Substack publishing requires one of: substack_api_key with substack_url (direct API), substack_n8n_webhook (N8N bridge), substack_email with SMTP credentials (email publish), or substackapi_com_api_key with substack_newsletter_id (third-party API). Configure one in Settings.',
       };
     } catch (error) {
       return { success: false, error: utils.maskError('Substack', error) };

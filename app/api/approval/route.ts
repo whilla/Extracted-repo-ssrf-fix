@@ -1,131 +1,86 @@
-export const dynamic = "force-dynamic";
-import { NextResponse, type NextRequest } from 'next/server';
-import { getPendingApprovals, updateApprovalStatus, getApprovalQueue } from '@/lib/services/approvalQueueService';
+import { NextRequest, NextResponse } from 'next/server';
 
-async function getAuthenticatedUser(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    return null;
-  }
-  
-  try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) return null;
-    
-    const { data: { user } } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    );
-    return user;
-  } catch {
-    return null;
-  }
+export interface ApprovalItem {
+  id: string;
+  content: string;
+  platform: string;
+  author: string;
+  status: 'pending' | 'approved' | 'rejected' | 'revisions_requested';
+  submittedAt: string;
+  reviewer?: string;
+  reviewNotes?: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
 }
 
-async function getSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    return null;
-  }
-  
-  try {
-    const { createClient } = await import('@supabase/supabase-js');
-    return createClient(supabaseUrl, supabaseKey);
-  } catch {
-    return null;
-  }
+const APPROVAL_KEY = 'nexus_approval_queue';
+
+async function loadApprovalQueue(): Promise<ApprovalItem[]> {
+  const { kvGet } = await import('@/lib/services/puterService');
+  const data = await kvGet(APPROVAL_KEY);
+  return data ? JSON.parse(data) : [];
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    const user = await getAuthenticatedUser(request);
+async function saveApprovalQueue(items: ApprovalItem[]): Promise<void> {
+  const { kvSet } = await import('@/lib/services/puterService');
+  await kvSet(APPROVAL_KEY, JSON.stringify(items));
+}
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const supabase = await getSupabaseClient();
-    if (!supabase) {
-      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
-    }
-
-    const { data: userData, error: roleError } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (roleError) {
-      console.error('Role check failed:', roleError);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-    }
-
-    if (userData?.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const view = searchParams.get('view');
-
-    if (view === 'all') {
-      const queue = await getApprovalQueue();
-      return NextResponse.json(queue);
-    }
-
-    const pending = await getPendingApprovals();
-    return NextResponse.json(pending);
-  } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+export async function GET() {
+  const items = await loadApprovalQueue();
+  return NextResponse.json({ items });
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const user = await getAuthenticatedUser(request);
+  const body = await request.json();
+  const items = await loadApprovalQueue();
+  
+  const newItem: ApprovalItem = {
+    id: `approval_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    content: body.content,
+    platform: body.platform,
+    author: body.author,
+    status: 'pending',
+    submittedAt: new Date().toISOString(),
+    priority: body.priority || 'medium',
+  };
+  
+  items.push(newItem);
+  await saveApprovalQueue(items);
+  
+  return NextResponse.json({ item: newItem }, { status: 201 });
+}
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const supabase = await getSupabaseClient();
-    if (!supabase) {
-      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
-    }
-
-    const { data: userData, error: roleError } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (roleError) {
-      console.error('Role check failed:', roleError);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-    }
-
-    if (userData?.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const body = await request.json();
-    const { id, status, feedback } = body;
-
-    if (!id || !status) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    try {
-      await updateApprovalStatus(id, status, feedback);
-      return NextResponse.json({ success: true });
-    } catch {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 });
-    }
-  } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+export async function PATCH(request: NextRequest) {
+  const body = await request.json();
+  const { id, action, notes, reviewer } = body;
+  
+  const items = await loadApprovalQueue();
+  const index = items.findIndex(i => i.id === id);
+  
+  if (index === -1) {
+    return NextResponse.json({ error: 'Item not found' }, { status: 404 });
   }
+  
+  switch (action) {
+    case 'approve':
+      items[index].status = 'approved';
+      items[index].reviewer = reviewer;
+      items[index].reviewNotes = notes;
+      break;
+    case 'reject':
+      items[index].status = 'rejected';
+      items[index].reviewer = reviewer;
+      items[index].reviewNotes = notes;
+      break;
+    case 'request_revisions':
+      items[index].status = 'revisions_requested';
+      items[index].reviewer = reviewer;
+      items[index].reviewNotes = notes;
+      break;
+    default:
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  }
+  
+  await saveApprovalQueue(items);
+  return NextResponse.json({ item: items[index] });
 }

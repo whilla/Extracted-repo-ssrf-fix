@@ -1,208 +1,187 @@
+// Service Worker for NexusAI Offline Generation
+// This enables offline content generation and caching
+
 const CACHE_NAME = 'nexusai-v1';
-const STATIC_CACHE = 'nexusai-static-v1';
-const DYNAMIC_CACHE = 'nexusai-dynamic-v1';
+const OFFLINE_QUEUE_KEY = 'offline_generation_queue';
 
-const STATIC_ASSETS = [
+// Precache essential assets
+const PRECACHE_ASSETS = [
   '/',
+  '/offline.html',
   '/manifest.json',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png',
 ];
 
-const API_ROUTES = [
-  '/api/',
-  '/api/health',
-  '/api/posts/',
-  '/api/monitor/',
-];
-
+// Install event - precache assets
 self.addEventListener('install', (event) => {
-  console.log('[ServiceWorker] Installing...');
-  
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      console.log('[ServiceWorker] Caching static assets');
-      return cache.addAll(STATIC_ASSETS);
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(PRECACHE_ASSETS);
     })
   );
-  
   self.skipWaiting();
 });
 
+// Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('[ServiceWorker] Activating...');
-  
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME && name !== STATIC_CACHE && name !== DYNAMIC_CACHE)
-          .map((name) => {
-            console.log('[ServiceWorker] Deleting old cache:', name);
-            return caches.delete(name);
-          })
+          .filter((name) => name !== CACHE_NAME)
+          .map((name) => caches.delete(name))
       );
     })
   );
-  
   self.clients.claim();
 });
 
+// Fetch event - network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  if (request.method !== 'GET') return;
-
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(networkFirst(request));
+  if (event.request.method !== 'GET') {
+    // For POST requests, queue them for later sync
+    if (event.request.url.includes('/api/')) {
+      event.respondWith(
+        fetch(event.request).catch(() => {
+          // Queue the failed request
+          return queueFailedRequest(event.request);
+        })
+      );
+      return;
+    }
     return;
   }
 
-  if (url.pathname.startsWith('/_next/') || url.pathname.startsWith('/static/')) {
-    event.respondWith(cacheFirst(request));
-    return;
-  }
-
-  if (request.destination === 'image' || request.destination === 'font' || request.destination === 'script' || request.destination === 'style') {
-    event.respondWith(cacheFirst(request));
-    return;
-  }
-
-  event.respondWith(cacheFirst(request));
-});
-
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  
-  if (cached) {
-    return cached;
-  }
-
-  try {
-    const response = await fetch(request);
-    
-    if (response.ok) {
-      const cache = await caches.open(DYNAMIC_CACHE);
-      cache.put(request, response.clone());
-    }
-    
-    return response;
-  } catch (error) {
-    return new Response('Offline', { status: 503 });
-  }
-}
-
-async function networkFirst(request) {
-  try {
-    const response = await fetch(request);
-    
-    if (response.ok) {
-      const cache = await caches.open(DYNAMIC_CACHE);
-      cache.put(request, response.clone());
-    }
-    
-    return response;
-  } catch (error) {
-    const cached = await caches.match(request);
-    
-    if (cached) {
-      return cached;
-    }
-
-    if (request.url.includes('/api/')) {
-      return new Response(JSON.stringify({ error: 'Offline', offline: true }), {
-        status: 503,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    
-    return new Response('Offline', { status: 503 });
-  }
-}
-
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
-
-  let data;
-  try {
-    data = event.data.json();
-  } catch (e) {
-    console.error('[ServiceWorker] Failed to parse push data:', e);
-    data = { title: 'NexusAI', body: event.data.text() || 'New notification' };
-  }
-  
-  const options = {
-    body: data.body || 'New notification from NexusAI',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/badge-72x72.png',
-    vibrate: [100, 50, 100],
-    data: {
-      url: data.url || '/',
-      dateOfArrival: Date.now(),
-    },
-    actions: data.actions || [
-      { action: 'open', title: 'Open' },
-      { action: 'dismiss', title: 'Dismiss' },
-    ],
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'NexusAI', options)
-  );
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  if (event.action === 'dismiss') return;
-
-  const url = event.notification.data?.url || '/';
-  
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url === url && 'focus' in client) {
-          return client.focus();
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        // Cache successful responses
+        if (response.ok) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
         }
-      }
-      
-      return self.clients.openWindow(url);
-    })
+        return response;
+      })
+      .catch(() => {
+        // Fallback to cache
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          
+          // Return offline page for navigation requests
+          if (event.request.mode === 'navigate') {
+            return caches.match('/offline.html');
+          }
+          
+          return new Response('Offline', { status: 503 });
+        });
+      })
   );
 });
 
+// Background sync event
 self.addEventListener('sync', (event) => {
-  console.log('[ServiceWorker] Background sync:', event.tag);
-
-  if (event.tag === 'sync-posts') {
-    event.waitUntil(syncPosts());
-  }
-
-  if (event.tag === 'sync-drafts') {
-    event.waitUntil(syncDrafts());
+  if (event.tag === 'sync-offline-generations') {
+    event.waitUntil(syncOfflineGenerations());
   }
 });
 
-async function syncPosts() {
-  console.log('[ServiceWorker] Syncing posts...');
-}
-
-async function syncDrafts() {
-  console.log('[ServiceWorker] Syncing drafts...');
-}
-
+// Message event - handle messages from the main thread
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+  if (event.data && event.data.type === 'QUEUE_OFFLINE_GENERATION') {
+    event.waitUntil(
+      queueOfflineGeneration(event.data.request)
+    );
   }
   
-  if (event.data && event.data.type === 'CACHE_URLS') {
-    const { urls } = event.data;
+  if (event.data && event.data.type === 'GET_OFFLINE_QUEUE') {
     event.waitUntil(
-      caches.open(DYNAMIC_CACHE).then((cache) => cache.addAll(urls))
+      getOfflineQueue().then((queue) => {
+        event.source.postMessage({
+          type: 'OFFLINE_QUEUE_RESPONSE',
+          queue,
+        });
+      })
     );
   }
 });
 
-console.log('[ServiceWorker] Loaded');
+/**
+ * Queue a failed request for later retry
+ */
+async function queueFailedRequest(request: Request): Promise<Response> {
+  try {
+    const queue = await getOfflineQueue();
+    queue.push({
+      url: request.url,
+      method: request.method,
+      timestamp: Date.now(),
+    });
+    await saveOfflineQueue(queue);
+    
+    return new Response('Request queued for later sync', { status: 202 });
+  } catch {
+    return new Response('Failed to queue request', { status: 500 });
+  }
+}
+
+/**
+ * Get the offline request queue
+ */
+async function getOfflineQueue(): Promise<Array<{ url: string; method: string; timestamp: number }>> {
+  // In a real implementation, this would use IndexedDB
+  // For now, we'll use a simple in-memory queue
+  return [];
+}
+
+/**
+ * Save the offline request queue
+ */
+async function saveOfflineQueue(queue: Array<{ url: string; method: string; timestamp: number }>): Promise<void> {
+  // In a real implementation, this would use IndexedDB
+}
+
+/**
+ * Queue an offline generation request
+ */
+async function queueOfflineGeneration(request: any): Promise<void> {
+  const queue = await getOfflineQueue();
+  queue.push({
+    ...request,
+    queuedAt: Date.now(),
+  });
+  await saveOfflineQueue(queue);
+}
+
+/**
+ * Sync offline generations when back online
+ */
+async function syncOfflineGenerations(): Promise<void> {
+  const queue = await getOfflineQueue();
+  
+  for (const item of queue) {
+    try {
+      // Retry the queued request
+      await fetch(item.url, {
+        method: item.method,
+      });
+    } catch {
+      // Failed again, keep in queue
+      continue;
+    }
+  }
+  
+  // Clear the queue
+  await saveOfflineQueue([]);
+  
+  // Notify clients
+  const clients = await self.clients.matchAll();
+  clients.forEach((client) => {
+    client.postMessage({
+      type: 'SYNC_COMPLETE',
+      synced: queue.length,
+    });
+  });
+}

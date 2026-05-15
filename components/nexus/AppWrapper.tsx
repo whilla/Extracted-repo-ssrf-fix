@@ -5,7 +5,7 @@ import { AppLoading } from './AppLoading';
 import { usePathname } from 'next/navigation';
 
 export function AppWrapper({ children }: { children: React.ReactNode }) {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [initialCheckDone, setInitialCheckDone] = useState(false);
   const pathname = usePathname();
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -13,7 +13,6 @@ export function AppWrapper({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkReady = () => {
       if (document.documentElement.dataset.nexusAppReady === 'true') {
-        setLoading(false);
         setInitialCheckDone(true);
       } else {
         setTimeout(checkReady, 50);
@@ -24,9 +23,8 @@ export function AppWrapper({ children }: { children: React.ReactNode }) {
 
     const forceReadyTimeout = setTimeout(() => {
       document.documentElement.dataset.nexusAppReady = 'true';
-      setLoading(false);
       setInitialCheckDone(true);
-    }, 5000);
+    }, 3000);
 
     return () => clearTimeout(forceReadyTimeout);
   }, []);
@@ -39,7 +37,7 @@ export function AppWrapper({ children }: { children: React.ReactNode }) {
     setLoading(true);
     routeTimerRef.current = setTimeout(() => {
       setLoading(false);
-    }, 200);
+    }, 150);
 
     return () => {
       if (routeTimerRef.current) clearTimeout(routeTimerRef.current);

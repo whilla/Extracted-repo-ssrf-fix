@@ -35,30 +35,9 @@ const runtimeBootstrap = `
     };
   }
 
-  // Make Puter.js optional - load it but don't block if it fails
-  window.__puterAvailable = false;
-  const puterScript = document.createElement('script');
-  puterScript.src = 'https://js.puter.com/v2/';
-  puterScript.crossOrigin = 'anonymous';
-  puterScript.onload = () => {
-    console.log('[Puter] Loaded successfully');
-    window.__puterAvailable = true;
-  };
-  puterScript.onerror = () => {
-    console.warn('[Puter] Failed to load. Core features will work without Puter.');
-    window.__puterAvailable = false;
-  };
-  document.head.appendChild(puterScript);
-
   // Mark app as ready immediately - don't wait for external services
   document.documentElement.dataset.nexusAppReady = 'true';
   console.log('[NexusAI] App initialized successfully');
-  
-  // Remove any existing loading indicators
-  const existingLoader = document.getElementById('nexus-app-loader');
-  if (existingLoader) {
-    existingLoader.style.display = 'none';
-  }
 })();
 `;
 
@@ -120,13 +99,12 @@ export default function RootLayout({
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: runtimeBootstrap }}
         />
-        {/* Puter.js CDN - non-critical, graceful degradation if unavailable */}
+        {/* Puter.js CDN - loaded once, afterInteractive, non-blocking */}
         <Script
           src="https://js.puter.com/v2/"
           strategy="afterInteractive"
           crossOrigin="anonymous"
         />
-
       </head>
       <body className="font-sans antialiased">
         <noscript>

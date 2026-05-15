@@ -7,7 +7,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { BrandKit } from '@/lib/types';
 
 const GUEST_MODE_KEY = 'nexus:guest-mode';
-const AUTH_BOOTSTRAP_TIMEOUT = 12000;
+const AUTH_BOOTSTRAP_TIMEOUT = 6000;
 
 interface AuthState {
   isLoading: boolean;
