@@ -3,7 +3,7 @@ import { deleteSSOProvider, updateSSOProvider, getServerSession } from '@/lib/se
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession();
@@ -11,8 +11,9 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const { id } = await context.params;
     const body = await request.json();
-    const provider = await updateSSOProvider(params.id, body);
+    const provider = await updateSSOProvider(id, body);
 
     if (!provider) {
       return NextResponse.json(
@@ -30,7 +31,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession();
@@ -38,7 +39,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const success = await deleteSSOProvider(params.id);
+    const { id } = await context.params;
+    const success = await deleteSSOProvider(id);
     if (!success) {
       return NextResponse.json(
         { error: 'Provider not found or delete failed' },
