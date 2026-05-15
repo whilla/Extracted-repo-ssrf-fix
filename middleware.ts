@@ -5,9 +5,17 @@ export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
+  // Skip middleware if Supabase is not configured - allow public access
   if (!supabaseUrl || !supabaseKey) {
-    console.error('Middleware error: Supabase authentication is not configured');
-    return new Response('Authentication service unavailable', { status: 503 });
+    // Allow access to public paths and API routes
+    if (request.nextUrl.pathname.startsWith('/api/') || 
+        request.nextUrl.pathname.startsWith('/_next/') ||
+        request.nextUrl.pathname.startsWith('/login') ||
+        request.nextUrl.pathname.startsWith('/auth')) {
+      return NextResponse.next();
+    }
+    // For other paths, continue without auth requirement
+    return NextResponse.next();
   }
 
   try {
@@ -37,9 +45,7 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   } catch (error) {
     console.error('Middleware error:', error);
-    if (!request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
+    // On error, allow access rather than blocking
     return NextResponse.next();
   }
 }
