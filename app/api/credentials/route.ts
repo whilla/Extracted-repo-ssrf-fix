@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CredentialVaultService, SecretCredential } from '@/lib/services/credentialVaultService';
-import { kvSet, kvGet, kvDel } from '@/lib/services/puterService';
+import { kvSet, kvGet, kvDelete as kvDel } from '@/lib/services/puterService';
 
 interface CredentialRequest {
   provider: string;
