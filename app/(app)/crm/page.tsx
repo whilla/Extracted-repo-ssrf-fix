@@ -1,9 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useApiLoading } from '@/context/ApiLoadingContext';
 import { GlassCard } from '@/components/nexus/GlassCard';
 import { NeonButton } from '@/components/nexus/NeonButton';
 import { LoadingPulse } from '@/components/nexus/LoadingPulse';
+import { StatsSkeleton } from '@/components/crm/StatsSkeleton';
+import { CustomerTableSkeleton } from '@/components/crm/CustomerTableSkeleton';
+import { SegmentsSkeleton } from '@/components/crm/SegmentsSkeleton';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { toast } from 'sonner';
 import {
@@ -76,9 +80,12 @@ export default function CRMPage() {
     criteria: '',
   });
 
+  const { startLoading, stopLoading } = useApiLoading();
+
   const fetchCRMData = useCallback(async () => {
     try {
       setLoading(true);
+      startLoading();
       const [segmentsRes, customersRes, statsRes] = await Promise.allSettled([
         fetch('/api/crm?type=get_segments'),
         fetch('/api/crm/customer?type=customers'),
@@ -104,6 +111,7 @@ export default function CRMPage() {
       toast.error('Failed to load CRM data');
     } finally {
       setLoading(false);
+      stopLoading();
     }
   }, []);
 
@@ -177,8 +185,38 @@ export default function CRMPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-bg-primary via-bg-primary to-violet-900/20 p-4 md:p-8 flex items-center justify-center">
-        <LoadingPulse text="Loading CRM..." />
+      <div className="min-h-screen bg-gradient-to-br from-bg-primary via-bg-primary to-violet-900/20 p-4 md:p-8">
+        <GlassCard className="p-6 mb-6">
+          <h1 className="text-2xl font-bold text-foreground mb-6">Customer Relationship Management</h1>
+          
+          {/* Tabs skeleton */}
+          <div className="flex gap-2 mb-6">
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-8 w-24" />
+          </div>
+          
+          {/* Content based on active tab */}
+          <StatsSkeleton />
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-8 w-24" />
+              </div>
+              <CustomerTableSkeleton />
+            </div>
+            
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-8 w-24" />
+              </div>
+              <SegmentsSkeleton />
+            </div>
+          </div>
+        </GlassCard>
       </div>
     );
   }
