@@ -10,6 +10,7 @@ import { initSentry } from '@/lib/utils/sentry'
 import { validateEnv } from '@/lib/utils/env'
 import { AppWrapper } from '@/components/nexus/AppWrapper'
 import { ApiLoadingProvider } from '@/context/ApiLoadingContext'
+import { GlobalLoader } from '@/components/nexus/GlobalLoader'
 
 if (typeof window !== 'undefined') {
   initSentry();
