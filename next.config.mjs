@@ -10,9 +10,7 @@ const nextConfig = {
     ignoreBuildErrors: false,
   },
   experimental: {
-    turbo: {
-      enabled: false,
-    },
+    // Turbopack configuration (renamed from turbo in Next.js 16)
   },
 
   images: {
