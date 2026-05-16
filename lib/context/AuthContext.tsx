@@ -7,7 +7,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { BrandKit } from '@/lib/types';
 
 const GUEST_MODE_KEY = 'nexus:guest-mode';
-const AUTH_BOOTSTRAP_TIMEOUT = 3000; // Reduced from 6000ms for faster initial load
+const AUTH_BOOTSTRAP_TIMEOUT = 1000; // Ultra-fast bootstrap to prevent UI hang
 
 interface AuthState {
   isLoading: boolean;
@@ -116,27 +116,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         void (async () => {
           try {
-            // SECURITY FIX: Improve error handling with proper error logging
-            let onboarding = false;
-            let brandKit = null;
-            
-            try {
-              onboarding = await withTimeout(isOnboardingComplete().catch((e) => {
-                console.warn('[AuthContext] Failed to check onboarding status:', e);
-                return false;
-              }), false);
-            } catch (e) {
-              console.error('[AuthContext] Onboarding check failed:', e);
-            }
-
-            try {
-              brandKit = await withTimeout(loadBrandKit().catch((e) => {
-                console.warn('[AuthContext] Failed to load brand kit:', e);
-                return null;
-              }), null);
-            } catch (e) {
-              console.error('[AuthContext] Brand kit load failed:', e);
-            }
+            const [onboarding, brandKit] = await Promise.all([
+              withTimeout(isOnboardingComplete().catch(() => false), false),
+              withTimeout(loadBrandKit().catch(() => null), null),
+            ]);
 
             if (!mounted || abortController.signal.aborted) return;
             setState((current) => ({
@@ -152,35 +135,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        // SECURITY FIX: Separate error handling for authentication and onboarding
-        let authenticated = false;
-        let user = null;
-        
-        try {
-          authenticated = await withTimeout(isSignedIn().catch((e) => {
-            console.warn('[AuthContext] Failed to check sign-in status:', e);
-            return false;
-          }), false);
-        } catch (e) {
-          console.error('[AuthContext] Sign-in check failed:', e);
-        }
-
-        if (authenticated) {
-          try {
-            user = await withTimeout(getUser().catch((e) => {
-              console.warn('[AuthContext] Failed to get user:', e);
-              return null;
-            }), null);
-          } catch (e) {
-            console.error('[AuthContext] User fetch failed:', e);
-          }
-        }
+        // Parallelize initial auth check
+        const [authenticated, user] = await Promise.all([
+          withTimeout(isSignedIn().catch(() => false), false),
+          withTimeout(getUser().catch(() => null), null),
+        ]);
 
         if (!mounted || abortController.signal.aborted) return;
 
         if (!authenticated || !user) {
           clearCachedAuth();
-
           setState({
             isLoading: false,
             isAuthenticated: false,
@@ -193,30 +157,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         writeGuestMode(false);
-        await withTimeout(initMemory().catch((e) => {
-          console.warn('[AuthContext] Failed to initialize memory:', e);
-          return undefined;
-        }), undefined);
         
-        let onboarding = false;
-        let brandKit = null;
-        
-        try {
-          const results = await Promise.all([
-            withTimeout(isOnboardingComplete().catch((e) => {
-              console.warn('[AuthContext] Failed to check onboarding:', e);
-              return false;
-            }), false),
-            withTimeout(loadBrandKit().catch((e) => {
-              console.warn('[AuthContext] Failed to load brand kit:', e);
-              return null;
-            }), null),
-          ]);
-          onboarding = results[0];
-          brandKit = results[1];
-        } catch (e) {
-          console.error('[AuthContext] Failed to load onboarding/brandkit:', e);
-        }
+        // Parallelize memory and brand data loading
+        const [memoryResult, onboarding, brandKit] = await Promise.all([
+          withTimeout(initMemory().catch(() => undefined), undefined),
+          withTimeout(isOnboardingComplete().catch(() => false), false),
+          withTimeout(loadBrandKit().catch(() => null), null),
+        ]);
 
         if (!mounted || abortController.signal.aborted) return;
 
