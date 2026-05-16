@@ -383,13 +383,20 @@ FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
 
   private extractToolCalls(text: string): { name: string; args: Record<string, any> }[] {
     const calls: { name: string; args: Record<string, any> }[] = [];
-    // Match pattern: Tool: action_name({"arg": "val"})
-    const regex = /Tool:\s*([a-zA-Z0-9_]+)\s*\((.*)\)/g;
+    // Match pattern: [[tool:action_name(key: val, ...)]]
+    const regex = /\[\[tool:([a-zA-Z0-9_]+)\((.*?)\)\]\]/g;
     let match;
     while ((match = regex.exec(text)) !== null) {
       try {
         const name = match[1];
-        const args = JSON.parse(match[2]);
+        const argsString = match[2];
+        const args: Record<string, any> = {};
+        argsString.split(',').forEach(pair => {
+          const [key, val] = pair.split(':').map(s => s.trim());
+          if (key && val) {
+            args[key] = val.replace(/^["']|["']$/g, '');
+          }
+        });
         calls.push({ name, args });
       } catch (e) {
         console.error(`Failed to parse tool args for ${match[1]}: ${match[2]}`);

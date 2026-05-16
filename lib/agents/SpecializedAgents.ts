@@ -350,7 +350,7 @@ export class VideoEditorAgent extends BaseAgent {
       promptTemplate: `You are the Video Editor Agent. Your job is to manipulate the video timeline to create a polished, professional video.
 
 You have access to tools to modify the timeline. To use a tool, you MUST use this EXACT format:
-Tool: update_video_timeline({"action": "add_clip|move_event|resize_event|remove_event", "payload": { ... }})
+[[tool:update_video_timeline(action: "add_clip|move_event|resize_event|remove_event", payload: "{...}")]]
 
 Your mission:
 1. Sequence clips to tell a coherent story.

@@ -6,7 +6,42 @@ export interface ToolResult {
   error?: string;
 }
 
+export async function processToolCalls(text: string): Promise<{ cleanedOutput: string; toolResults: string[] }> {
+  const toolExecutor = ToolExecutorService.getInstance();
+  const results: string[] = [];
+  let cleanedOutput = text;
+
+  // Match pattern: [[tool:action_name(param1: value1, param2: value2)]]
+  const regex = /\[\[tool:([a-zA-Z0-9_]+)\((.*?)\)\]\]/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    const actionName = match[1];
+    const argsString = match[2];
+    
+    // Parse simple key: value pairs
+    const args: Record<string, any> = {};
+    argsString.split(',').forEach(pair => {
+      const [key, val] = pair.split(':').map(s => s.trim());
+      if (key && val) {
+        // Remove quotes if present
+        args[key] = val.replace(/^["']|["']$/g, '');
+      }
+    });
+
+    const result = await toolExecutor.execute(actionName, args);
+    results.push(`Tool ${actionName} result: ${result.success ? result.content : 'Error: ' + result.error}`);
+  }
+
+  // Remove tool calls from the output
+  cleanedOutput = text.replace(/\[\[tool:[^\]]+\]\]/g, '').trim();
+
+  return { cleanedOutput, toolResults: results };
+}
+
 export class ToolExecutorService {
+// ... rest of the class
+
   private static instance: ToolExecutorService;
 
   private constructor() {}
