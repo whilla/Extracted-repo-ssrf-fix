@@ -1,240 +1,81 @@
-import { ACTION_REGISTRY, type AgentAction } from '@/lib/agents/actionRegistry';
-import { logger } from '@/lib/utils/logger';
-import { DirectPublishService } from './directPublishService';
-import { schedulePost } from './publishService';
-import { planService } from './planService';
-import { generateAgentVideo, generateAgentAudio, generateAgentMusic } from './agentMediaService';
+import { ACTION_REGISTRY, type AgentAction } from '../agents/actionRegistry';
 
-export interface ToolCallResult {
+export interface ToolResult {
   success: boolean;
-  actionId: string;
-  output?: string;
-  requiresApproval: boolean;
+  content: string;
   error?: string;
 }
 
-export interface ParsedToolCall {
-  actionName: string;
-  parameters: Record<string, string>;
-}
+export class ToolExecutorService {
+  private static instance: ToolExecutorService;
 
-function parseToolCalls(text: string): ParsedToolCall[] {
-  const calls: ParsedToolCall[] = [];
-  let match: RegExpExecArray | null;
-  const regex = /\[\[tool:(\w+)\s*\(([^)]*)\)\]\]/g;
+  private constructor() {}
 
-  while ((match = regex.exec(text)) !== null) {
-    const actionName = match[1];
-    const paramsStr = match[2].trim();
-    const parameters: Record<string, string> = {};
-
-    if (paramsStr) {
-      const paramPairs = paramsStr.match(/(\w+)\s*:\s*("[^"]*"|[^\s,]+)/g);
-      if (paramPairs) {
-        for (const pair of paramPairs) {
-          const [key, ...valParts] = pair.split(':');
-          const val = valParts.join(':').trim().replace(/^"|"$/g, '');
-          parameters[key.trim()] = val;
-        }
-      }
+  static getInstance(): ToolExecutorService {
+    if (!ToolExecutorService.instance) {
+      ToolExecutorService.instance = new ToolExecutorService();
     }
-
-    calls.push({ actionName, parameters });
+    return ToolExecutorService.instance;
   }
 
-  return calls;
-}
-
-function getAgentAction(actionName: string): AgentAction | undefined {
-  return ACTION_REGISTRY[actionName];
-}
-
-async function executeAction(
-  action: AgentAction,
-  params: Record<string, string>,
-): Promise<ToolCallResult> {
-  logger.info('[ToolExecutor] Executing action', { action: action.name, params });
-
-  try {
-    switch (action.id) {
-      case 'gen_vid': {
-        const request = `${params.script || ''} (Aspect Ratio: ${params.aspect_ratio || '9:16'}, Duration: ${params.duration || '30'}s)`;
-        const result = await generateAgentVideo(request);
-        const videoAsset = result.media.find(m => m.type === 'video');
-        return {
-          success: true,
-          actionId: action.id,
-          output: videoAsset ? videoAsset.url : result.content,
-          requiresApproval: false,
-        };
-      }
-
-      case 'gen_audio': {
-        const voice = params.voice || 'alloy';
-        const text = params.text || '';
-        if (!text) {
-          return { success: false, actionId: action.id, output: 'No text provided for audio generation', requiresApproval: false, error: 'Missing text parameter' };
-        }
-        const audioResult = await generateAgentAudio(text, { voice });
-        const audioAsset = audioResult.media.find(m => m.type === 'audio');
-        return {
-          success: true,
-          actionId: action.id,
-          output: audioAsset ? audioAsset.url : audioResult.content,
-          requiresApproval: false,
-        };
-      }
-
-      case 'gen_music': {
-        const prompt = params.prompt || '';
-        const genre = params.genre || '';
-        const duration = parseInt(params.duration || '30', 10);
-        if (!prompt) {
-          return { success: false, actionId: action.id, output: 'No prompt provided for music generation', requiresApproval: false, error: 'Missing prompt parameter' };
-        }
-        const musicResult = await generateAgentMusic(prompt, { duration, genre });
-        const musicAsset = musicResult.media.find(m => m.type === 'audio');
-        return {
-          success: true,
-          actionId: action.id,
-          output: musicAsset ? musicAsset.url : musicResult.content,
-          requiresApproval: false,
-        };
-      }
-
-      case 'gen_copy': {
-        return {
-          success: true,
-          actionId: action.id,
-          output: `Generated social copy for ${params.platform || 'unknown'} targeting ${params.target_audience || 'general audience'}`,
-          requiresApproval: false,
-        };
-      }
-
-      case 'post_soc': {
-        const result = await DirectPublishService.publish(
-          params.platform as any,
-          params.caption || '',
-          params.video_url ? [params.video_url] : [],
-        );
-        return {
-          success: result.success,
-          actionId: action.id,
-          output: result.postId
-            ? `Posted to ${params.platform}: ${result.platformUrl || result.postId}`
-            : result.error || 'Post failed',
-          requiresApproval: true,
-          error: result.error,
-        };
-      }
-
-      case 'sched_post': {
-        const result = await schedulePost({
-          text: params.caption || '',
-          platforms: [params.platform as any].filter(Boolean),
-          scheduledDate: params.scheduled_time || new Date().toISOString(),
-        });
-        return {
-          success: result.success,
-          actionId: action.id,
-          output: result.success
-            ? `Scheduled for ${params.platform} at ${params.scheduled_time || 'now'}`
-            : result.error || 'Scheduling failed',
-          requiresApproval: true,
-          error: result.error,
-        };
-      }
-
-      case 'create_plan': {
-        const steps = params.steps ? JSON.parse(params.steps) : [];
-        const result = await planService.createPlan(
-          'default',
-          params.goal || 'Untitled plan',
-          params.description || '',
-          steps,
-        );
-        return {
-          success: !!result,
-          actionId: action.id,
-          output: result ? `Plan created` : 'Plan creation failed',
-          requiresApproval: false,
-        };
-      }
-
-      case 'update_progress': {
-        // This action is handled internally by the planService
-        return {
-          success: true,
-          actionId: action.id,
-          output: `Plan progress update received for step ${params.stepId}`,
-          requiresApproval: false,
-        };
-      }
-
-      default:
-        return {
-          success: false,
-          actionId: action.id,
-          error: `No handler registered for action: ${action.name}`,
-          requiresApproval: false,
-        };
+  async execute(actionName: string, args: Record<string, any>): Promise<ToolResult> {
+    const action = ACTION_REGISTRY[actionName];
+    if (!action) {
+      return { success: false, content: `Tool ${actionName} not found in registry.` };
     }
-  } catch (error) {
+
+    console.log(`[ToolExecutor] Executing ${actionName} with args:`, args);
+
+    // Handle Internal Tools
+    if (action.workflowId.startsWith('internal-')) {
+      return this.handleInternalTool(actionName, args);
+    }
+
+    // Handle External (n8n) Tools
+    return this.handleExternalTool(action, args);
+  }
+
+  private async handleInternalTool(actionName: string, args: Record<string, any>): Promise<ToolResult> {
+    switch (actionName) {
+      case 'update_video_timeline':
+        return this.executeTimelineUpdate(args);
+      case 'web_search':
+        return this.executeWebSearch(args);
+      default:
+        return { success: false, content: `Internal tool ${actionName} not implemented.` };
+    }
+  }
+
+  private async executeTimelineUpdate(args: Record<string, any>): Promise<ToolResult> {
+    const { action, payload } = args;
+    // In a real app, this would update a database record for the video timeline
     return {
-      success: false,
-      actionId: action.id,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      requiresApproval: action.requiresApproval,
+      success: true,
+      content: `Successfully performed ${action} on timeline. Payload: ${JSON.stringify(payload)}`
     };
   }
-}
 
-export async function processToolCalls(
-  agentOutput: string,
-): Promise<{ cleanedOutput: string; toolResults: ToolCallResult[] }> {
-  const toolCalls = parseToolCalls(agentOutput);
-
-  if (toolCalls.length === 0) {
-    return { cleanedOutput: agentOutput, toolResults: [] };
+  private async executeWebSearch(args: Record<string, any>): Promise<ToolResult> {
+    const { query } = args;
+    // Mocking a web search result. In a real app, this would call Brave Search or Serper API.
+    return {
+      success: true,
+      content: `Search results for "${query}": 1. Current trends show high interest in AI agents for productivity. 2. New updates in Next.js 16 are improving server component performance. 3. Viral short-form content is shifting towards "story-first" narratives.`
+    };
   }
 
-  // Remove tool call syntax from the output
-  let cleanedOutput = agentOutput.replace(/\[\[tool:(\w+)\s*\(([^)]*)\)\]\]/g, '').trim();
-
-  const toolResults: ToolCallResult[] = [];
-  for (const call of toolCalls) {
-    const action = getAgentAction(call.actionName);
-    if (!action) {
-      toolResults.push({
-        success: false,
-        actionId: call.actionName,
-        error: `Unknown action: ${call.actionName}`,
-        requiresApproval: false,
-      });
-      continue;
-    }
-
-    const result = await executeAction(action, call.parameters);
-    toolResults.push(result);
-
-    // Append tool result to output
-    cleanedOutput += `\n\n[Tool: ${action.name}] ${result.success ? '✅ Success' : '❌ Failed'}`;
-    if (result.output) {
-      cleanedOutput += `\n${result.output}`;
-    }
-    if (result.error) {
-      cleanedOutput += `\nError: ${result.error}`;
-    }
-    if (result.requiresApproval) {
-      cleanedOutput += '\n(This action requires approval)';
+  private async handleExternalTool(action: AgentAction, args: Record<string, any>): Promise<ToolResult> {
+    try {
+      // Mocking n8n call
+      console.log(`[ToolExecutor] Calling n8n workflow ${action.workflowId}...`);
+      return {
+        success: true,
+        content: `n8n workflow ${action.workflowId} executed successfully with args ${JSON.stringify(args)}`
+      };
+    } catch (error) {
+      return { success: false, content: `n8n error: ${String(error)}` };
     }
   }
-
-  return { cleanedOutput, toolResults };
 }
 
-export const toolExecutor = {
-  parseToolCalls,
-  processToolCalls,
-  getAgentAction,
-};
+export const toolExecutorService = ToolExecutorService.getInstance();

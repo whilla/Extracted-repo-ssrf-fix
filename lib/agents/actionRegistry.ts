@@ -12,6 +12,27 @@ export interface AgentAction {
 }
 
 export const ACTION_REGISTRY: Record<string, AgentAction> = {
+  'update_video_timeline': {
+    id: 'upd_tim',
+    name: 'Update Video Timeline',
+    description: 'Modifies the video timeline by adding, moving, resizing, or removing clips.',
+    workflowId: 'internal-timeline-update',
+    parameters: {
+      action: { type: 'string', description: 'add_clip, move_event, resize_event, or remove_event' },
+      payload: { type: 'string', description: 'JSON payload with clip details (url, start, duration, etc.)' },
+    },
+    requiresApproval: false,
+  },
+  'web_search': {
+    id: 'web_src',
+    name: 'Web Search',
+    description: 'Searches the web for real-time information, trends, and facts.',
+    workflowId: 'internal-web-search',
+    parameters: {
+      query: { type: 'string', description: 'The search query' },
+    },
+    requiresApproval: false,
+  },
   'generate_video': {
     id: 'gen_vid',
     name: 'Generate Video',
