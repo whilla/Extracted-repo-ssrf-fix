@@ -82,7 +82,11 @@ function OnboardingContent() {
     refreshBrandKit,
     setOnboardingComplete: setAuthOnboardingComplete,
   } = useAuth();
-  const [routeState, setRouteState] = useState(readOnboardingSearchState);
+  const [routeState, setRouteState] = useState({
+    nextPath: '/onboarding',
+    connectRequested: false,
+    guestRouteRequested: false,
+  });
   const [isConnectingPuter, setIsConnectingPuter] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [authBootstrapExpired, setAuthBootstrapExpired] = useState(false);
@@ -90,6 +94,11 @@ function OnboardingContent() {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  
+  // Initialize route state on mount to avoid hydration mismatch
+  useEffect(() => {
+    setRouteState(readOnboardingSearchState());
+  }, []);
   
   // Form state
   const [brandKit, setBrandKit] = useState<Partial<BrandKit>>({

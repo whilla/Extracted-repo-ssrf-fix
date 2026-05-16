@@ -187,8 +187,16 @@ export class GovernorSystem {
     }
 
     // SEMANTIC VALIDATION: use LLM to analyze quality and robotic patterns
+    // Falls back to heuristic-only analysis if no AI provider is configured
     let semanticResult: { approved: boolean; score: number; feedback: string; issues: GovernorIssue[] } | null = null;
     try {
+      // Check if we have AI providers available
+      const hasAiProvider = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY;
+      if (!hasAiProvider) {
+        console.log('[GovernorSystem] No AI provider configured, skipping semantic validation');
+        throw new Error('NO_AI_PROVIDER');
+      }
+
       const escapedContent = content
         .replace(/\\/g, '\\\\')
         .replace(/"/g, '\\"')
@@ -234,7 +242,11 @@ Return NO other text.`;
       
       semanticResult = { approved: parsed.approved, score: safeScore, feedback: parsed.feedback, issues: safeIssues };
     } catch (e) {
-      console.warn('[GovernorSystem] Semantic validation failed, falling back to heuristics:', e);
+      const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+      if (errorMsg !== 'NO_AI_PROVIDER') {
+        console.warn('[GovernorSystem] Semantic validation failed, falling back to heuristics:', e);
+      }
+      // semanticResult stays null - will use heuristic-only analysis
     }
 
     const issues: GovernorIssue[] = [];
