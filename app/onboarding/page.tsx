@@ -125,14 +125,10 @@ function OnboardingContent() {
   // Redirect if already onboarded
   useEffect(() => {
     if (!isLoading && isAuthenticated && onboardingComplete) {
+      if (typeof window !== 'undefined' && window.location.pathname === '/dashboard') return;
       router.push('/dashboard');
     }
   }, [isLoading, isAuthenticated, onboardingComplete, router]);
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    setRouteState(readOnboardingSearchState());
-  }, []);
 
   useEffect(() => {
     if (!isLoading) {

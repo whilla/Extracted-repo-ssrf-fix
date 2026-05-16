@@ -59,23 +59,25 @@ function LandingContent() {
 
   // Redirect authenticated users - only once
   useEffect(() => {
-    if (isGuest && !hasRedirected) {
+    if (hasRedirected) return;
+
+    if (isGuest) {
       setHasRedirected(true);
-      // SECURITY FIX: Sanitize redirect URL before navigation
       const safeUrl = sanitizeRedirectUrl(nextPath, onboardingComplete ? '/dashboard' : '/onboarding');
+      // Don't redirect if already on the target page
+      if (typeof window !== 'undefined' && window.location.pathname === safeUrl) return;
       router.push(safeUrl);
       return;
     }
 
-    if (isAuthenticated && user && !hasRedirected) {
+    if (isAuthenticated && user) {
       setHasRedirected(true);
       try {
-        // SECURITY FIX: Validate nextPath before redirect
         const safeUrl = sanitizeRedirectUrl(nextPath, onboardingComplete ? '/dashboard' : '/onboarding');
+        if (typeof window !== 'undefined' && window.location.pathname === safeUrl) return;
         router.push(safeUrl);
       } catch (error) {
         console.error('[LandingPage] Navigation error:', error);
-        // Fallback to dashboard on error
         router.push('/dashboard');
       }
     }
