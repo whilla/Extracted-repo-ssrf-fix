@@ -7,7 +7,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { BrandKit } from '@/lib/types';
 
 const GUEST_MODE_KEY = 'nexus:guest-mode';
-const AUTH_BOOTSTRAP_TIMEOUT = 6000;
+const AUTH_BOOTSTRAP_TIMEOUT = 3000; // Reduced from 6000ms for faster initial load
 
 interface AuthState {
   isLoading: boolean;
@@ -77,9 +77,10 @@ async function withTimeout<T>(task: Promise<T>, fallback: T, ms = AUTH_BOOTSTRAP
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const cachedUser = getCachedAuthUser();
+  const hasSession = hasCachedAuthSession();
   const [state, setState] = useState<AuthState>({
-    isLoading: true,
-    isAuthenticated: false,
+    isLoading: !cachedUser, // Fast-path: if we have a cached user, don't block the UI
+    isAuthenticated: !!cachedUser,
     isGuest: false,
     user: cachedUser,
     onboardingComplete: false,

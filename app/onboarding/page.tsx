@@ -51,7 +51,7 @@ const MODEL_OPTIONS = [
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Faster and cheaper, good for testing' },
   { id: 'claude-sonnet-4-5', name: 'Claude Sonnet', description: 'Great for creative content' },
 ];
-const ONBOARDING_AUTH_TIMEOUT = 15000;
+const ONBOARDING_AUTH_TIMEOUT = 8000; // Reduced from 15000ms to make fallback to guest mode faster
 
 function readOnboardingSearchState() {
   if (typeof window === 'undefined') {
