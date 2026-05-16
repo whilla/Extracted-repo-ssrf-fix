@@ -13,6 +13,7 @@ function LandingContent() {
   const [hasRedirected, setHasRedirected] = useState(false);
   const [nextPath, setNextPath] = useState<string | null>(null);
   const [needsManualReauth, setNeedsManualReauth] = useState(false);
+  const [authUnavailable, setAuthUnavailable] = useState(false);
   const [puterReady, setPuterReady] = useState(false);
   const [authDiagnostics, setAuthDiagnostics] = useState<PuterAuthDiagnostics | null>(null);
   const guestEntryHref = `/onboarding?guest=1${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}`;
@@ -32,6 +33,10 @@ function LandingContent() {
     const next = params.get('next');
     setNextPath(next);
     setNeedsManualReauth(params.get('reauth') === '1');
+    const authStatus = params.get('auth');
+    if (authStatus === 'unconfigured' || authStatus === 'unavailable') {
+      setAuthUnavailable(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -76,11 +81,21 @@ function LandingContent() {
     }
   }, [isAuthenticated, isGuest, user, onboardingComplete, hasRedirected, nextPath, router]);
 
+  const isRedirecting = (isGuest || (isAuthenticated && user)) && !hasRedirected;
+
   // Don't show loading screen - page loads instantly
   // Auth check happens in background
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
+      {isRedirecting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="text-center">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-[var(--nexus-cyan)] to-[var(--nexus-violet)] animate-pulse mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <header className="p-6 border-b border-border">
         <div className="max-w-6xl mx-auto flex items-center gap-3">
@@ -130,6 +145,11 @@ function LandingContent() {
             {needsManualReauth && (
               <p className="text-sm text-muted-foreground max-w-md">
                 Your session needs to be reconnected. Tap the button to authorize Puter.
+              </p>
+            )}
+            {authUnavailable && (
+              <p className="text-sm text-amber-400 max-w-md">
+                Authentication service is currently unavailable. You can still explore the app in guest mode.
               </p>
             )}
             {authDiagnostics && (

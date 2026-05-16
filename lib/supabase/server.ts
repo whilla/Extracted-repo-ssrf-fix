@@ -26,9 +26,9 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
  * Returns the admin Supabase client (bypasses RLS).
  * Use only for server-side admin operations.
  */
-export function getSupabaseAdminClient() {
+export function getSupabaseAdminClient(): any {
   if (!supabaseClient) {
-    throw new Error('Supabase admin client is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+    return null;
   }
   return supabaseClient;
 }

@@ -6,6 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const baseConfig = {
   output: 'standalone',
+  turbopack: {
+    root: __dirname,
+  },
   typescript: {
     ignoreBuildErrors: false,
   },

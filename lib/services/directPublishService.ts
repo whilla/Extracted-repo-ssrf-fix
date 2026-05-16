@@ -297,19 +297,54 @@ export class DirectPublishService {
   }
 
   /**
-   * Publish directly to Twitter/X using API v2
+   * Publish directly to Twitter/X using API v2 with OAuth 1.0a signing
+   * Twitter requires OAuth 1.0a User Context for write operations.
+   * This implementation uses HMAC-SHA1 signing with stored credentials.
    */
   static async publishToTwitter(text: string, mediaUrls: string[] = []): Promise<DirectPublishResult> {
-    const apiKey = sanitizeApiKey(await kvGet('twitter_api_key'));
-    if (!apiKey) {
-      return { success: false, error: 'Twitter API key not configured. Add twitter_api_key in Settings.' };
+    const consumerKey = sanitizeApiKey(await kvGet('twitter_consumer_key'));
+    const consumerSecret = await kvGet('twitter_consumer_secret');
+    const accessToken = sanitizeApiKey(await kvGet('twitter_access_token'));
+    const accessSecret = await kvGet('twitter_access_secret');
+
+    if (!consumerKey || !consumerSecret || !accessToken || !accessSecret) {
+      return {
+        success: false,
+        error: 'Twitter/X requires OAuth 1.0a credentials. Configure twitter_consumer_key, twitter_consumer_secret, twitter_access_token, and twitter_access_secret in Settings.',
+      };
     }
 
     try {
-      const response = await fetch('https://api.twitter.com/2/tweets', {
-        method: 'POST',
+      const url = 'https://api.twitter.com/2/tweets';
+      const method = 'POST';
+      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const nonce = crypto.randomUUID().replace(/-/g, '');
+
+      const params = new URLSearchParams({
+        oauth_consumer_key: consumerKey,
+        oauth_nonce: nonce,
+        oauth_signature_method: 'HMAC-SHA1',
+        oauth_timestamp: timestamp,
+        oauth_token: accessToken,
+        oauth_version: '1.0',
+      });
+
+      const baseString = `${method}&${encodeURIComponent(url)}&${encodeURIComponent(params.toString())}`;
+      const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(accessSecret)}`;
+
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(signingKey);
+      const baseStringData = encoder.encode(baseString);
+      const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, baseStringData);
+      const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+
+      const authHeader = `OAuth oauth_consumer_key="${encodeURIComponent(consumerKey)}", oauth_nonce="${nonce}", oauth_signature="${encodeURIComponent(signature)}", oauth_signature_method="HMAC-SHA1", oauth_timestamp="${timestamp}", oauth_token="${encodeURIComponent(accessToken)}", oauth_version="1.0"`;
+
+      const response = await fetch(url, {
+        method,
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': authHeader,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -318,16 +353,13 @@ export class DirectPublishService {
         }),
       });
 
-      if (response.status === 401 || response.status === 403) {
-        return {
-          success: false,
-          error: 'Twitter/X API requires OAuth 1.0a User Context or OAuth 2.0 PKCE. A Bearer token alone cannot post tweets. Use the N8N bridge or configure OAuth 2.0 PKCE with the required scopes (tweet.read, tweet.write, users.read, offline.access).',
-        };
-      }
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Twitter API request failed');
+        const errorMessage = errorData.detail || errorData.title || `Twitter API request failed (${response.status})`;
+        return {
+          success: false,
+          error: errorMessage,
+        };
       }
 
       const data = await response.json();
@@ -510,57 +542,32 @@ export class DirectPublishService {
 
   /**
    * Publish directly to YouTube via YouTube Data API v3
+   * Supports both OAuth 2.0 access tokens (for real uploads) and API key fallback
+   * for metadata-only operations.
+   *
+   * For actual video uploads, YouTube requires the resumable upload protocol:
+   * 1. Initiate upload to get upload URL
+   * 2. Upload video bytes in chunks
+   *
+   * This implementation handles the metadata creation step. For full video uploads,
+   * use the N8N bridge or configure OAuth 2.0 with youtube.upload scope.
    */
   static async publishToYouTube(title: string, description: string, mediaUrls: string[] = []): Promise<DirectPublishResult> {
+    const oauthToken = await kvGet('youtube_oauth_token');
     const apiKey = sanitizeApiKey(await kvGet('youtube_api_key'));
-    if (!apiKey) {
-      return { success: false, error: 'YouTube API key not configured. Add youtube_api_key in Settings.' };
+
+    if (!oauthToken && !apiKey) {
+      return { success: false, error: 'YouTube not configured. Add youtube_oauth_token (for uploads) or youtube_api_key in Settings.' };
     }
 
     try {
-      // YouTube Data API v3 video upload requires OAuth 2.0 with https://www.googleapis.com/auth/youtube.upload scope.
-      // An API key alone cannot upload videos. The key must be used as a query parameter (?key=), not as a Bearer token.
-      // For video uploads, use the resumable upload protocol:
-      //   POST https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status&key={API_KEY}
-      //   Authorization: Bearer {OAUTH2_ACCESS_TOKEN}
-      const response = await fetch('https://www.googleapis.com/youtube/v3/videos?part=snippet,status&key=' + encodeURIComponent(apiKey), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          snippet: {
-            title: title.substring(0, 100),
-            description: description.substring(0, 5000),
-            tags: [],
-            categoryId: '22',
-          },
-          status: {
-            privacyStatus: 'public',
-            selfDeclaredMadeForKids: false,
-          },
-        }),
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        return {
-          success: false,
-          error: 'YouTube upload requires OAuth 2.0 with the youtube.upload scope. The API key must be passed as a query parameter (?key=), while the Authorization header must contain an OAuth 2.0 access token. Configure OAuth 2.0 via Google Cloud Console or use the N8N bridge.',
-        };
+      if (oauthToken) {
+        return this.publishToYouTubeWithOAuth(title, description, mediaUrls, oauthToken);
       }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || 'YouTube API request failed');
-      }
-
-      const data = await response.json();
-      const videoId = data.items?.[0]?.id;
       return {
-        success: true,
-        postId: videoId,
-        platformUrl: videoId ? `https://youtube.com/watch?v=${videoId}` : undefined,
+        success: false,
+        error: 'YouTube video uploads require OAuth 2.0 with the youtube.upload scope. Configure youtube_oauth_token in Settings, or use the N8N bridge for automated uploads. An API key alone can only read data, not upload videos.',
       };
     } catch (error) {
       return {
@@ -568,6 +575,97 @@ export class DirectPublishService {
         error: error instanceof Error ? error.message : 'Unknown YouTube error',
       };
     }
+  }
+
+  /**
+   * Publish to YouTube using OAuth 2.0 access token with resumable upload protocol
+   */
+  private static async publishToYouTubeWithOAuth(
+    title: string,
+    description: string,
+    mediaUrls: string[],
+    oauthToken: string,
+  ): Promise<DirectPublishResult> {
+    if (mediaUrls.length === 0) {
+      return {
+        success: false,
+        error: 'YouTube upload requires a video file URL. Provide a mediaUrl pointing to the video file.',
+      };
+    }
+
+    const videoUrl = mediaUrls[0];
+
+    const metadata = {
+      snippet: {
+        title: title.substring(0, 100),
+        description: description.substring(0, 5000),
+        tags: [],
+        categoryId: '22',
+      },
+      status: {
+        privacyStatus: 'public',
+        selfDeclaredMadeForKids: false,
+      },
+    };
+
+    const initResponse = await fetch(
+      'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${oauthToken}`,
+          'Content-Type': 'application/json',
+          'X-Upload-Content-Type': 'video/*',
+        },
+        body: JSON.stringify(metadata),
+      },
+    );
+
+    if (!initResponse.ok) {
+      const errorData = await initResponse.json().catch(() => ({}));
+      if (initResponse.status === 401 || initResponse.status === 403) {
+        return {
+          success: false,
+          error: 'YouTube OAuth token expired or lacks youtube.upload scope. Re-authenticate via Google Cloud Console.',
+        };
+      }
+      throw new Error(errorData.error?.message || `YouTube init failed (${initResponse.status})`);
+    }
+
+    const uploadUrl = initResponse.headers.get('location');
+    if (!uploadUrl) {
+      throw new Error('YouTube did not return an upload URL');
+    }
+
+    const videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      throw new Error(`Failed to fetch video from ${videoUrl}`);
+    }
+
+    const videoBlob = await videoResponse.blob();
+    const videoBytes = await videoBlob.arrayBuffer();
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Length': String(videoBytes.byteLength),
+        'Content-Type': 'video/*',
+      },
+      body: videoBytes,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorData = await uploadResponse.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `YouTube upload failed (${uploadResponse.status})`);
+    }
+
+    const data = await uploadResponse.json();
+    const videoId = data.id;
+    return {
+      success: true,
+      postId: videoId,
+      platformUrl: videoId ? `https://youtube.com/watch?v=${videoId}` : undefined,
+    };
   }
 
   /**

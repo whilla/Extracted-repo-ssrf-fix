@@ -23,7 +23,7 @@ export interface ReaderResult {
  */
 export class DirectReaderService {
   /**
-   * Read comments for any supported platform with graceful fallback
+   * Read comments for any supported platform.
    */
   static async readComments(platform: string, postId: string): Promise<ReaderResult> {
     try {
@@ -44,34 +44,19 @@ export class DirectReaderService {
         case 'threads':
           return await this.readThreadsComments(postId);
         default:
-          // Return mock data for unsupported platforms
-          return this.getMockComments(platform, postId);
+          return {
+            success: false,
+            comments: [],
+            error: `Unsupported platform: ${platform}`,
+          };
       }
     } catch (error) {
-      // On error, return mock data to keep the app functional
-      return this.getMockComments(platform, postId, error instanceof Error ? error.message : 'Unknown error');
+      return {
+        success: false,
+        comments: [],
+        error: error instanceof Error ? error.message : 'Unknown read error',
+      };
     }
-  }
-
-  /**
-   * Generate mock comments when real API data is unavailable
-   */
-  private static getMockComments(platform: string, postId: string, error?: string): ReaderResult {
-    const mockComments: SocialComment[] = [
-      {
-        id: `mock1-${platform}`,
-        author: 'Sample User',
-        text: `This is a sample comment for ${platform} post ${postId}. Configure API credentials to see real comments.`,
-        timestamp: new Date().toISOString(),
-        platform,
-      },
-    ];
-
-    return {
-      success: !!error,
-      comments: mockComments,
-      error: error ? `Using sample data: ${error}` : undefined,
-    };
   }
 
   /**

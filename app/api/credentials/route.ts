@@ -95,22 +95,19 @@ export async function GET(request: NextRequest) {
 
         default:
           const configured: Record<string, string> = {};
-          const credentials: Record<string, string> = {};
           for (const cred of PLATFORM_CREDENTIALS) {
             const value = await CredentialVaultService.getSecret(cred.key);
             if (value) {
               configured[cred.key] = '****' + value.slice(-4);
-              credentials[cred.key] = value;
             }
           }
 
           const allKeys = await CredentialVaultService.listAllKeys();
           for (const key of allKeys) {
-            if (!credentials[key]) {
+            if (!configured[key]) {
               const value = await CredentialVaultService.getSecret(key);
               if (value) {
                 configured[key] = '****' + value.slice(-4);
-                credentials[key] = value;
               }
             }
           }
@@ -118,7 +115,6 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({
             success: true,
             configured,
-            credentials,
           });
       }
     } catch (error) {

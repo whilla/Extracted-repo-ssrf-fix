@@ -83,6 +83,14 @@ export interface AgentConstraint {
 }
 
 export interface CreatedAgent extends AgentConfig {
+  id: string;
+  performanceScore: number;
+  taskHistory: { taskId: string; taskType: string; input: string; output: string; score: number; timestamp: string; duration: number }[];
+  evolutionState: 'active' | 'promoted' | 'demoted' | 'deprecated' | 'hybrid';
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  parentAgents?: string[];
   blueprint: AgentBlueprint;
   codeModules: AgentCodeModule[];
   selfModificationLog: SelfModificationEntry[];
@@ -293,6 +301,7 @@ export async function createAgentFromBlueprint(blueprint: AgentBlueprint): Promi
       engagement: blueprint.scoringWeights.engagement,
       brandAlignment: blueprint.scoringWeights.brandAlignment,
     },
+    optimizationRules: [],
     performanceScore: 0.5,
     taskHistory: [],
     evolutionState: 'active',

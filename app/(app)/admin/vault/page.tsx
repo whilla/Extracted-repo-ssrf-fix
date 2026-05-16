@@ -152,7 +152,7 @@ export default function AdminVaultPage() {
       const res = await fetch('/api/credentials');
       if (res.ok) {
         const data = await res.json();
-        setValues(data.credentials || {});
+        setValues(data.configured || {});
       }
     } catch (err) {
       console.error('Failed to load secrets:', err);
@@ -168,7 +168,7 @@ export default function AdminVaultPage() {
       const credentials: Record<string, string> = {};
       for (const key of keys) {
         const val = values[key];
-        if (val) {
+        if (val && !val.startsWith('****')) {
           credentials[key] = val;
         }
       }
@@ -202,7 +202,7 @@ export default function AdminVaultPage() {
         for (const platform of group.platforms) {
           for (const key of platform.keys) {
             const val = values[key];
-            if (val) {
+            if (val && !val.startsWith('****')) {
               credentials[key] = val;
             }
           }
@@ -344,6 +344,7 @@ export default function AdminVaultPage() {
                     {platform.keys.map((key) => {
                       const isVisible = visibleKeys.has(key);
                       const value = values[key] || '';
+                      const isMasked = value.startsWith('****');
                       const isConfigured = value.length >= 8;
 
                       return (
@@ -364,24 +365,28 @@ export default function AdminVaultPage() {
                             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                               {value && (
                                 <>
-                                  <button
-                                    onClick={() => toggleVisibility(key)}
-                                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                                    title={isVisible ? 'Hide' : 'Show'}
-                                  >
-                                    {isVisible ? (
-                                      <EyeOff className="w-4 h-4" />
-                                    ) : (
-                                      <Eye className="w-4 h-4" />
-                                    )}
-                                  </button>
-                                  <button
-                                    onClick={() => copyToClipboard(value)}
-                                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                                    title="Copy"
-                                  >
-                                    <Copy className="w-4 h-4" />
-                                  </button>
+                                  {!isMasked && (
+                                    <>
+                                      <button
+                                        onClick={() => toggleVisibility(key)}
+                                        className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                                        title={isVisible ? 'Hide' : 'Show'}
+                                      >
+                                        {isVisible ? (
+                                          <EyeOff className="w-4 h-4" />
+                                        ) : (
+                                          <Eye className="w-4 h-4" />
+                                        )}
+                                      </button>
+                                      <button
+                                        onClick={() => copyToClipboard(value)}
+                                        className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                                        title="Copy"
+                                      >
+                                        <Copy className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
                                 </>
                               )}
                               {isConfigured && (

@@ -1,13 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { videoRenderingService } from '@/lib/services/videoRenderingService';
 import { VideoEditingService } from '@/lib/services/videoEditingService';
-import { kvGet } from '@/lib/services/puterService';
+import { kvGet, kvSet } from '@/lib/services/puterService';
 import { withApiMiddleware } from '@/lib/utils/apiMiddleware';
 
-/**
- * Video rendering API endpoint
- * Supports both browser-based and cloud-based rendering
- */
+interface RenderJob {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  outputUrl?: string;
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
+  composition?: any;
+  timeline?: any;
+  options?: any;
+}
+
+const activeJobs = new Map<string, RenderJob>();
+
+async function createJob(composition: any, timeline: any, options: any): Promise<RenderJob> {
+  const jobId = `render_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const job: RenderJob = {
+    id: jobId,
+    status: 'pending',
+    progress: 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    composition,
+    timeline,
+    options,
+  };
+  activeJobs.set(jobId, job);
+  await kvSet(`render_job_${jobId}`, JSON.stringify(job));
+  return job;
+}
+
+async function updateJob(jobId: string, updates: Partial<RenderJob>): Promise<void> {
+  const job = activeJobs.get(jobId);
+  if (!job) return;
+  Object.assign(job, updates, { updatedAt: Date.now() });
+  activeJobs.set(jobId, job);
+  await kvSet(`render_job_${jobId}`, JSON.stringify(job));
+}
+
+async function getJob(jobId: string): Promise<RenderJob | null> {
+  const cached = activeJobs.get(jobId);
+  if (cached) return cached;
+
+  const stored = await kvGet(`render_job_${jobId}`);
+  if (stored) {
+    try {
+      const job = JSON.parse(stored);
+      activeJobs.set(jobId, job);
+      return job;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   return withApiMiddleware(request, async () => {
     const body = await request.json();
@@ -40,34 +93,69 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleRender(composition: any, options: any) {
-  // Check if we're in Node.js or browser environment
   const isNode = typeof window === 'undefined';
 
   if (isNode) {
-    // For server-side, return a job token for async processing
-    const jobId = `render_${Date.now()}`;
-    
-    // Store job info
-    await kvGet(`render_job_${jobId}`);
-    
+    const job = await createJob(composition, null, options);
+
+    setImmediate(async () => {
+      await updateJob(job.id, { status: 'processing', progress: 0 });
+      try {
+        const result = await videoRenderingService.renderCanvas(
+          composition,
+          options,
+          (progress) => {
+            updateJob(job.id, { progress }).catch(() => {});
+          }
+        );
+
+        if (result.success) {
+          await updateJob(job.id, {
+            status: 'completed',
+            progress: 100,
+            outputUrl: result.outputUrl,
+          });
+        } else {
+          await updateJob(job.id, {
+            status: 'failed',
+            error: result.error || 'Render failed',
+          });
+        }
+      } catch (error) {
+        await updateJob(job.id, {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown render error',
+        });
+      }
+    });
+
     return NextResponse.json({
       success: true,
-      jobId,
-      message: 'Render job queued. Poll /api/video/status?jobId=' + jobId,
+      jobId: job.id,
+      message: 'Render job queued. Poll /api/video?action=status&jobId=' + job.id,
     });
   }
 
-  // Browser-based rendering
+  const job = await createJob(composition, null, options);
+  await updateJob(job.id, { status: 'processing' });
+
   const result = await videoRenderingService.renderCanvas(
     composition,
     options,
     (progress) => {
-      // Progress would be sent via WebSocket in production
+      updateJob(job.id, { progress }).catch(() => {});
     }
   );
 
+  if (result.success) {
+    await updateJob(job.id, { status: 'completed', progress: 100, outputUrl: result.outputUrl });
+  } else {
+    await updateJob(job.id, { status: 'failed', error: result.error });
+  }
+
   return NextResponse.json({
     success: result.success,
+    jobId: job.id,
     outputUrl: result.outputUrl,
     renderTime: result.renderTime,
     fileSize: result.fileSize,
@@ -76,10 +164,73 @@ async function handleRender(composition: any, options: any) {
 }
 
 async function handleTimelineRender(timeline: any, options: any) {
-  const result = await VideoEditingService.renderTimeline();
-  
+  if (!timeline || !timeline.tracks || timeline.tracks.length === 0) {
+    return NextResponse.json(
+      { success: false, error: 'Timeline must have at least one track' },
+      { status: 400 }
+    );
+  }
+
+  VideoEditingService.createTimeline(timeline.resolution || { width: 1920, height: 1080 });
+
+  for (const track of timeline.tracks) {
+    VideoEditingService.addTrack(track);
+  }
+
+  if (timeline.transitions) {
+    for (const [key, transition] of Object.entries(timeline.transitions)) {
+      const [trackId1, trackId2] = key.split('-');
+      VideoEditingService.addTransition(trackId1, trackId2, transition as any);
+    }
+  }
+
+  const isNode = typeof window === 'undefined';
+  if (isNode) {
+    const job = await createJob(null, timeline, options);
+
+    setImmediate(async () => {
+      await updateJob(job.id, { status: 'processing', progress: 0 });
+      try {
+        const result = await VideoEditingService.renderTimeline((progress) => {
+          updateJob(job.id, { progress }).catch(() => {});
+        });
+
+        if (result.success) {
+          await updateJob(job.id, { status: 'completed', progress: 100, outputUrl: result.outputUrl });
+        } else {
+          await updateJob(job.id, { status: 'failed', error: result.error });
+        }
+      } catch (error) {
+        await updateJob(job.id, {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown timeline render error',
+        });
+      }
+    });
+
+    return NextResponse.json({
+      success: true,
+      jobId: job.id,
+      message: 'Timeline render job queued. Poll /api/video?action=status&jobId=' + job.id,
+    });
+  }
+
+  const job = await createJob(null, timeline, options);
+  await updateJob(job.id, { status: 'processing' });
+
+  const result = await VideoEditingService.renderTimeline((progress) => {
+    updateJob(job.id, { progress }).catch(() => {});
+  });
+
+  if (result.success) {
+    await updateJob(job.id, { status: 'completed', progress: 100, outputUrl: result.outputUrl });
+  } else {
+    await updateJob(job.id, { status: 'failed', error: result.error });
+  }
+
   return NextResponse.json({
     success: result.success,
+    jobId: job.id,
     outputUrl: result.outputUrl,
     error: result.error,
   });
@@ -90,7 +241,6 @@ async function getNextPreset(preset: string) {
   return NextResponse.json({ success: true, options });
 }
 
-// GET endpoint for render status
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -98,16 +248,36 @@ export async function GET(request: NextRequest) {
     const action = searchParams.get('action') || 'presets';
 
     if (action === 'status' && jobId) {
-      // Check render job status
+      const job = await getJob(jobId);
+      if (!job) {
+        return NextResponse.json(
+          { success: false, error: 'Job not found' },
+          { status: 404 }
+        );
+      }
+
       return NextResponse.json({
         success: true,
-        jobId,
-        status: 'completed', // Placeholder
-        progress: 100,
+        jobId: job.id,
+        status: job.status,
+        progress: job.progress,
+        outputUrl: job.outputUrl,
+        error: job.error,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
       });
     }
 
-    // Return available presets
+    if (action === 'list') {
+      const limit = parseInt(searchParams.get('limit') || '20', 10);
+      const jobs = Array.from(activeJobs.values())
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, limit)
+        .map(({ composition, timeline, ...rest }) => rest);
+
+      return NextResponse.json({ success: true, jobs });
+    }
+
     const presets = {
       social: videoRenderingService.getPreset('social'),
       youtube: videoRenderingService.getPreset('youtube'),

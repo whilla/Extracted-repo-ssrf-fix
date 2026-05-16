@@ -1,11 +1,45 @@
-// Client-side encryption utility for sensitive data
-// Uses Web Crypto API for AES-GCM encryption
+// Isomorphic encryption utility for sensitive data.
+// Uses Web Crypto AES-GCM in browsers and Node 20+.
 
-const ENCRYPTION_KEY_STORAGE = 'nexus:crypto:key';
 const ALGORITHM = 'AES-GCM';
 const KEY_LENGTH = 256;
 const TAG_LENGTH = 128;
 const SALT = new TextEncoder().encode('nexusai-salt-v1'); // Use consistent salt for key derivation
+
+function getCrypto(): Crypto {
+  const cryptoImpl = globalThis.crypto;
+  if (!cryptoImpl?.subtle) {
+    throw new Error('Web Crypto API is not available in this runtime');
+  }
+  return cryptoImpl;
+}
+
+function getKeyMaterial(): string {
+  if (typeof window !== 'undefined') {
+    return `nexusai-${window.location.hostname}`;
+  }
+
+  return (
+    process.env.MASTER_SECRET ||
+    process.env.NEXUS_CRYPTO_SECRET ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    'nexusai-development-server-secret'
+  );
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64');
+  }
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function decodeBase64(value: string): Uint8Array {
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(value, 'base64'));
+  }
+  return Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
+}
 
 /**
  * Derives a consistent key from the browser's origin/fingerprint
@@ -13,12 +47,11 @@ const SALT = new TextEncoder().encode('nexusai-salt-v1'); // Use consistent salt
  */
 async function deriveKey(): Promise<CryptoKey> {
   try {
+    const cryptoImpl = getCrypto();
     // Use a combination of factors for the key material
-    const material = new TextEncoder().encode(
-      `nexusai-${typeof window !== 'undefined' ? window.location.hostname : 'server'}`
-    );
+    const material = new TextEncoder().encode(getKeyMaterial());
 
-    const keyMaterial = await window.crypto.subtle.importKey(
+    const keyMaterial = await cryptoImpl.subtle.importKey(
       'raw',
       material,
       { name: 'PBKDF2' },
@@ -26,7 +59,7 @@ async function deriveKey(): Promise<CryptoKey> {
       ['deriveBits', 'deriveKey']
     );
 
-    return window.crypto.subtle.deriveKey(
+    return cryptoImpl.subtle.deriveKey(
       {
         name: 'PBKDF2',
         salt: SALT,
@@ -49,11 +82,12 @@ async function deriveKey(): Promise<CryptoKey> {
  */
 export async function encryptSensitiveData(plaintext: string): Promise<string> {
   try {
+    const cryptoImpl = getCrypto();
     const key = await deriveKey();
-    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const iv = cryptoImpl.getRandomValues(new Uint8Array(12));
     const encodedText = new TextEncoder().encode(plaintext);
 
-    const encryptedData = await window.crypto.subtle.encrypt(
+    const encryptedData = await cryptoImpl.subtle.encrypt(
       { name: ALGORITHM, iv, tagLength: TAG_LENGTH },
       key,
       encodedText
@@ -64,7 +98,7 @@ export async function encryptSensitiveData(plaintext: string): Promise<string> {
     combined.set(iv, 0);
     combined.set(new Uint8Array(encryptedData), iv.length);
 
-    return btoa(String.fromCharCode(...combined));
+    return encodeBase64(combined);
   } catch (error) {
     console.error('[Crypto] Encryption failed:', error);
     throw error;
@@ -76,14 +110,15 @@ export async function encryptSensitiveData(plaintext: string): Promise<string> {
  */
 export async function decryptSensitiveData(encrypted: string): Promise<string> {
   try {
+    const cryptoImpl = getCrypto();
     const key = await deriveKey();
-    const combined = Uint8Array.from(atob(encrypted), (c) => c.charCodeAt(0));
+    const combined = decodeBase64(encrypted);
 
     // Extract IV and encrypted data
     const iv = combined.slice(0, 12);
     const encryptedData = combined.slice(12);
 
-    const decryptedData = await window.crypto.subtle.decrypt(
+    const decryptedData = await cryptoImpl.subtle.decrypt(
       { name: ALGORITHM, iv, tagLength: TAG_LENGTH },
       key,
       encryptedData

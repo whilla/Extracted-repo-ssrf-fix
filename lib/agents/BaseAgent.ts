@@ -71,12 +71,30 @@ export type AgentCapability =
   | 'optimization';
 
 export interface AgentConfig {
+  id?: string;
   name: string;
   role: AgentRole;
   capabilities: AgentCapability[];
   promptTemplate: string;
   scoringWeights: ScoringWeights;
-  optimizationRules: OptimizationRule[];
+  optimizationRules?: OptimizationRule[];
+  performanceScore?: number;
+  taskHistory?: AgentTaskRecord[];
+  evolutionState?: 'active' | 'promoted' | 'demoted' | 'deprecated' | 'hybrid';
+  version?: number;
+  parentAgents?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AgentTaskRecord {
+  taskId: string;
+  taskType: string;
+  input: string;
+  output: string;
+  score: number;
+  timestamp: string;
+  duration: number;
 }
 
 export interface ScoringWeights {
@@ -101,6 +119,8 @@ export interface AgentOutput {
   reasoning: string;
   metadata: Record<string, unknown>;
   viralScore?: ViralScore;
+  score?: number;
+  fullPrompt?: string;
 }
 
 export interface AgentExecutionContext {
@@ -397,7 +417,7 @@ FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
 
     // Update performance score (exponential moving average)
     this.state.performanceScore = 
-      this.state.performanceScore * 0.8 + record.score * 0.2;
+      (this.state.performanceScore || 75) * 0.8 + record.score * 0.2;
 
     // Check if optimization is needed
     await this.checkOptimizationTriggers();
@@ -410,7 +430,7 @@ FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
    * Get performance score
    */
   getPerformanceScore(): number {
-    return Math.round(this.state.performanceScore);
+    return Math.round(this.state.performanceScore || 0);
   }
 
   /**
@@ -447,7 +467,7 @@ FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
     // Also optimize if average drops below threshold
     const avgScore = this.state.recentScores.length > 0
       ? this.state.recentScores.reduce((a, b) => a + b, 0) / this.state.recentScores.length
-      : this.state.performanceScore;
+      : this.state.performanceScore || 0;
 
     if (avgScore < 60 && this.state.recentScores.length >= 5) {
       await this.selfOptimize();
@@ -465,14 +485,14 @@ FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
       if (Date.now() - lastOpt < 60 * 60 * 1000) return;
     }
 
-    const beforeScore = this.state.performanceScore;
+    const beforeScore = this.state.performanceScore || 0;
     console.log(`[${this.config.name}] Starting self-optimization. Current score: ${beforeScore}`);
 
     // Analyze weak points
     const weakPoints = this.analyzeWeakPoints();
 
     // Apply optimization rules
-    for (const rule of this.config.optimizationRules) {
+    for (const rule of this.config.optimizationRules || []) {
       if (weakPoints.includes(rule.condition)) {
         await this.applyOptimization(rule);
       }
@@ -493,7 +513,7 @@ FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
       trigger: weakPoints.join(', ') || 'performance_decline',
       action: 'self_optimization',
       beforeScore,
-      afterScore: this.state.performanceScore,
+      afterScore: this.state.performanceScore || 0,
     });
 
     // Keep last 20 optimization events
@@ -514,7 +534,7 @@ FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
     // Check average score
     const avgScore = this.state.recentScores.length > 0
       ? this.state.recentScores.reduce((a, b) => a + b, 0) / this.state.recentScores.length
-      : this.state.performanceScore;
+      : this.state.performanceScore || 0;
 
     if (avgScore < 65) {
       weakPoints.push('low_score');
@@ -676,7 +696,7 @@ FAILURE TO FOLLOW THESE INSTRUCTIONS WILL RESULT IN REJECTION.`;
       id: this.id,
       name: this.config.name,
       role: this.config.role,
-      performanceScore: Math.round(this.state.performanceScore),
+      performanceScore: Math.round(this.state.performanceScore || 0),
       totalExecutions: this.state.totalExecutions,
       successRate: this.state.totalExecutions > 0
         ? Math.round((this.state.successfulExecutions / this.state.totalExecutions) * 100)

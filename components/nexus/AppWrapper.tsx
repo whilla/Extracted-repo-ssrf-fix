@@ -1,48 +1,60 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppLoading } from './AppLoading';
 import { usePathname } from 'next/navigation';
 
+const LOADING_DURATION_MS = 150;
+const HARD_STOP_MS = 1000;
+
 export function AppWrapper({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
-  const [initialCheckDone, setInitialCheckDone] = useState(false);
   const pathname = usePathname();
+  const isInitialMountRef = useRef(true);
+  const previousPathnameRef = useRef<string | null>(null);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hardStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const checkReady = () => {
-      if (document.documentElement.dataset.nexusAppReady === 'true') {
-        setInitialCheckDone(true);
-      } else {
-        setTimeout(checkReady, 50);
-      }
-    };
-
-    checkReady();
-
-    const forceReadyTimeout = setTimeout(() => {
-      document.documentElement.dataset.nexusAppReady = 'true';
-      setInitialCheckDone(true);
-    }, 3000);
-
-    return () => clearTimeout(forceReadyTimeout);
+    document.documentElement.dataset.nexusAppReady = 'true';
   }, []);
 
   useEffect(() => {
-    if (!initialCheckDone) return;
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      previousPathnameRef.current = pathname;
+      return;
+    }
+
+    if (previousPathnameRef.current === pathname) {
+      return;
+    }
+
+    previousPathnameRef.current = pathname;
 
     if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+    if (hardStopTimerRef.current) clearTimeout(hardStopTimerRef.current);
 
     setLoading(true);
     routeTimerRef.current = setTimeout(() => {
       setLoading(false);
-    }, 150);
+    }, LOADING_DURATION_MS);
+    hardStopTimerRef.current = setTimeout(() => {
+      setLoading(false);
+    }, HARD_STOP_MS);
 
     return () => {
       if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+      if (hardStopTimerRef.current) clearTimeout(hardStopTimerRef.current);
     };
-  }, [pathname, initialCheckDone]);
+  }, [pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+      if (hardStopTimerRef.current) clearTimeout(hardStopTimerRef.current);
+    };
+  }, []);
 
   if (loading) {
     return <AppLoading />;

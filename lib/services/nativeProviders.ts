@@ -405,7 +405,23 @@ export const nativeProviders = {
       const data = await utils.safeJsonParse(response);
       if (!response.ok) throw new Error(data.title || `Mailchimp API error: ${response.statusText}`);
 
-      return { success: true, postId: data.id };
+      const campaignId = data.id;
+
+      // Step 2: Send the campaign
+      const sendRes = await fetch(`https://${serverPrefix}.api.mailchimp.com/3.0/campaigns/${campaignId}/actions/send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${utils.safeBase64Encode(`user:${apiKey}`)}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!sendRes.ok) {
+        const sendErr = await utils.safeJsonParse(sendRes).catch(() => ({}));
+        throw new Error(sendErr.title || `Mailchimp send failed: ${sendRes.statusText}`);
+      }
+
+      return { success: true, postId: campaignId, url: `https://${serverPrefix}.admin.mailchimp.com/campaigns/${campaignId}` };
     } catch (error) {
       return { success: false, error: utils.maskError('Mailchimp', error) };
     }
@@ -502,7 +518,22 @@ export const nativeProviders = {
         }
       }
 
-      return { success: true, postId: campaignId };
+      // Step 3: Send the campaign
+      const sendRes = await fetch(`https://a.klaviyo.com/api/campaigns/${campaignId}/actions/send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Klaviyo-API-Key ${apiKey}`,
+          'revision': '2024-02-15',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!sendRes.ok) {
+        const sendErr = await utils.safeJsonParse(sendRes).catch(() => ({}));
+        logger.warn('[NativeProviders/Klaviyo] Send failed, campaign created but not sent', sendErr as any);
+      }
+
+      return { success: true, postId: campaignId, url: `https://www.klaviyo.com/campaigns/${campaignId}` };
     } catch (error) {
       return { success: false, error: utils.maskError('Klaviyo', error) };
     }
@@ -531,7 +562,21 @@ export const nativeProviders = {
       const data = await utils.safeJsonParse(response);
       if (!response.ok) throw new Error(data.message || `ConvertKit API error: ${response.statusText}`);
 
-      return { success: true, postId: String(data.id) };
+      const broadcastId = data.id || data.broadcast?.id;
+
+      // Step 2: Send the broadcast
+      const sendRes = await fetch(`https://api.convertkit.com/v3/broadcasts/${broadcastId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey }),
+      });
+
+      if (!sendRes.ok) {
+        const sendErr = await utils.safeJsonParse(sendRes).catch(() => ({}));
+        logger.warn('[NativeProviders/ConvertKit] Send failed, broadcast created but not sent', sendErr as any);
+      }
+
+      return { success: true, postId: String(broadcastId), url: `https://app.convertkit.com/broadcasts/${broadcastId}` };
     } catch (error) {
       return { success: false, error: utils.maskError('ConvertKit', error) };
     }

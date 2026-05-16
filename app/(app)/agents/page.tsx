@@ -24,7 +24,8 @@ import {
   Play,
   Pause,
 } from 'lucide-react';
-import { loadAgents, getAgentStats, type AgentConfig } from '@/lib/services/multiAgentService';
+import { loadAgents, getAgentStats } from '@/lib/services/multiAgentService';
+import type { AgentConfig } from '@/lib/services/multiAgentService';
 import { getEvolutionHistory, runEvolutionCycle, type EvolutionProposal } from '@/lib/services/agentEvolutionService';
 import { getGovernorDashboard, saveGovernorConfig, type GovernorConfig } from '@/lib/services/governorService';
 import { getOrchestrationStatus } from '@/lib/services/orchestrationEngine';
@@ -290,8 +291,8 @@ export default function AgentsPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Performance</span>
-                  <span className={agent.performanceScore >= 80 ? 'text-green-400' : agent.performanceScore >= 60 ? 'text-yellow-400' : 'text-red-400'}>
-                    {agent.performanceScore}%
+                  <span className={agent.performanceScore || 0 >= 80 ? 'text-green-400' : agent.performanceScore || 0 >= 60 ? 'text-yellow-400' : 'text-red-400'}>
+                    {agent.performanceScore || 0}%
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -300,7 +301,7 @@ export default function AgentsPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Tasks</span>
-                  <span>{agent.taskHistory.length}</span>
+                  <span>{(agent.taskHistory || []).length}</span>
                 </div>
               </div>
 

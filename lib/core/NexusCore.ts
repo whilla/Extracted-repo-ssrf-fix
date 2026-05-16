@@ -7,7 +7,7 @@
 
 import { ProviderRouter } from './ProviderRouter';
 import { ViralScoringEngine, type ViralScore } from './ViralScoringEngine';
-import { LearningSystem } from './LearningSystem';
+import { LearningSystem, learningSystem } from './LearningSystem';
 import { MemoryManager, type MemoryContext } from './MemoryManager';
 import { AgentBlackboard } from './AgentBlackboard';
 import { tokenBudgetManager } from '../services/tokenBudgetManager';
@@ -224,9 +224,15 @@ export class NexusCore {
       }
       // Inject remembered instructions into agent context
       const rememberedInstructions = this.state.memoryManager.getActiveInstructions();
+      
+      // Integrate Adaptive Learning Strategy
+      const adaptiveStrategy = await learningSystem.getAdaptiveContentStrategy(request.platform);
+      const learningGuidance = adaptiveStrategy.guidance.join('\n');
+
       const combinedInstructions = [
         request.customInstructions,
         ...rememberedInstructions.filter(i => i !== request.customInstructions),
+        `\n\nADAPTIVE LEARNING GUIDANCE:\n${learningGuidance}`,
       ].filter(Boolean).join('\n');
 
       const governorState = await loadGovernorState();
@@ -263,6 +269,7 @@ export class NexusCore {
       const resultContent = finalResult?.content || '';
       const resultOutputs = finalResult?.outputs || [];
       const resultValidation = finalResult?.validation || { approved: false, feedback: 'Rejected' };
+      const resultAssets = finalResult?.assets || [];
 
       if (request.requireApproval && resultValidation.approved) {
         await addToApprovalQueue(resultContent, {
@@ -276,11 +283,20 @@ export class NexusCore {
       const scoredOutputs = await this.scoreOutputs(resultOutputs);
       const bestOutput = scoredOutputs[0] || this.createFallbackOutput();
 
+      // Record success in LearningSystem if approved
+      if (resultValidation.approved && bestOutput.success) {
+        await learningSystem.recordSuccess(bestOutput, request);
+      }
+
       return {
         success: resultValidation.approved,
         suite: {
-          champion: { text: resultContent, assets: [], version: 1 },
-          challengers: scoredOutputs.slice(1, 4).map(out => ({ text: out.content, assets: [], version: 1 })),
+          champion: { text: resultContent, assets: resultAssets, version: 1 },
+          challengers: scoredOutputs.slice(1, 4).map(out => ({ 
+            text: out.content, 
+            assets: [], // In a full implementation, we'd map specific assets to specific challenger outputs
+            version: 1 
+          })),
         },
         score: bestOutput.viralScore?.total || 0,
         allOutputs: scoredOutputs,

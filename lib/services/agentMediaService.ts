@@ -383,7 +383,7 @@ async function buildMediaPrompt(
           .filter(Boolean)
           .map(agent => executeAgentTask(agent!, request, context, aiProvider))
       )
-    ).filter(output => output.content.trim().length > 0);
+    ).filter((output: { content: string }) => output.content.trim().length > 0);
   } catch (error) {
     console.warn('Media specialist planning failed, using deterministic fallback plan', error);
     return fallbackPlan;

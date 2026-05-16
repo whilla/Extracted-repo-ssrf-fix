@@ -164,12 +164,26 @@ export class VideoEditingService {
                 case 'image':
                 case 'video':
                   if (track.mediaUrl) {
-                    const img = new Image();
-                    img.src = track.mediaUrl;
-                    if (img.complete) {
-                      ctx.globalAlpha = track.style?.opacity || 1;
-                      ctx.drawImage(img, 0, 0, width, height);
-                      ctx.globalAlpha = 1;
+                    if (track.type === 'video') {
+                      const videoEl = (window as any).__videoCache?.[track.mediaUrl] as HTMLVideoElement | undefined;
+                      if (videoEl && !videoEl.paused) {
+                        ctx.globalAlpha = track.style?.opacity || 1;
+                        const vw = videoEl.videoWidth;
+                        const vh = videoEl.videoHeight;
+                        const scale = Math.min(width / vw, height / vh);
+                        const dw = vw * scale;
+                        const dh = vh * scale;
+                        ctx.drawImage(videoEl, (width - dw) / 2, (height - dh) / 2, dw, dh);
+                        ctx.globalAlpha = 1;
+                      }
+                    } else {
+                      const img = new Image();
+                      img.src = track.mediaUrl;
+                      if (img.complete) {
+                        ctx.globalAlpha = track.style?.opacity || 1;
+                        ctx.drawImage(img, 0, 0, width, height);
+                        ctx.globalAlpha = 1;
+                      }
                     }
                   }
                   break;

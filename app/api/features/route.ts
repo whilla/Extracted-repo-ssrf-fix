@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
         description: 'Generate 3D models, AR filters, and VR environments',
         apiPath: '/api/spatial',
         status: 'implemented',
+        note: 'Uses Replicate when configured; otherwise creates procedural Three.js HTML scenes.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'low'
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
         description: 'Predict content performance before publishing',
         apiPath: '/api/predictive',
         status: 'implemented',
-        note: 'ML-powered predictions with real engagement metrics integration. Feature analysis and optimization suggestions.',
+        note: 'Heuristic scoring with optional real engagement metrics integration; not a trained ML model.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'
@@ -198,6 +199,7 @@ export async function GET(request: NextRequest) {
         description: 'Real engagement metrics from social platforms',
         apiPath: '/api/social/metrics',
         status: 'implemented',
+        note: 'Reads metrics for configured OAuth/API credentials and returns empty data when providers are not connected.',
         auth: 'enabled',
         rateLimiting: 'enabled',
         priority: 'high'

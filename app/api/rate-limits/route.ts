@@ -1,33 +1,15 @@
 import { NextResponse } from 'next/server';
+import { RateLimiter } from '@/lib/services/rateLimiter';
 
 export async function GET() {
-  // In production, this would fetch actual rate limit data from services
-  // For now, return mock data structure
-  
+  const stats = RateLimiter.getStats();
   const limits = [
     {
-      service: 'OpenAI',
-      limit: 10000,
-      remaining: 8500,
-      resetAt: new Date(Date.now() + 3600000).toISOString(),
-      usage: 1500,
+      service: 'Nexus API',
+      scope: 'in-memory fallback',
+      activeEntries: stats.activeEntries,
+      totalKeys: stats.totalKeys,
       isNearLimit: false,
-    },
-    {
-      service: 'Anthropic',
-      limit: 5000,
-      remaining: 4200,
-      resetAt: new Date(Date.now() + 3600000).toISOString(),
-      usage: 800,
-      isNearLimit: false,
-    },
-    {
-      service: 'Twitter/X',
-      limit: 1500,
-      remaining: 200,
-      resetAt: new Date(Date.now() + 900000).toISOString(),
-      usage: 1300,
-      isNearLimit: true,
     },
   ];
 

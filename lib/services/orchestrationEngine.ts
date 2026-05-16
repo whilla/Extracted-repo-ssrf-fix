@@ -212,6 +212,7 @@ Requirement: Provide the final, perfect output that a specialized agent would ha
     reasoning: 'Handled by Brand Manager fallback after specialized agent failure',
     fullPrompt: prompt,
     metadata: { duration: 0 },
+    success: true,
   };
 }
 
@@ -650,6 +651,7 @@ async function executeOrchestrationPlan(
           reasoning: 'Real-time discovery data fetched successfully',
           fullPrompt: `Fetch real-time trends and geo-data for: ${task.input || plan.userRequest}`,
           metadata: { duration: 0, discovery },
+          success: true,
         };
         
         task.output = output;
@@ -752,7 +754,7 @@ async function executeOrchestrationPlan(
 
       
       task.output = output;
-      task.status = output.score > 0 ? 'completed' : 'failed';
+      task.status = (output.score || 0) > 0 ? 'completed' : 'failed';
       
       // Record trace
       trace.push({
@@ -815,7 +817,7 @@ async function executeOrchestrationPlan(
     
     case 'weighted':
       // Weighted combination based on agent performance scores
-      const sortedByWeight = outputs.sort((a, b) => b.score - a.score);
+      const sortedByWeight = outputs.sort((a, b) => (b.score || 0) - (a.score || 0));
       combinedContent = sortedByWeight[0]?.content || '';
       break;
     
@@ -825,7 +827,7 @@ async function executeOrchestrationPlan(
   
   const criticOutput = outputs
     .filter((output) => output.agentRole === 'critic')
-    .sort((a, b) => b.score - a.score)[0];
+    .sort((a, b) => (b.score || 0) - (a.score || 0))[0];
   const criticFeedback = criticOutput?.content || '';
   const rawVerdict = parseCriticVerdict(criticFeedback);
   const criticVerdict: PrimitiveCriticVerdict = {

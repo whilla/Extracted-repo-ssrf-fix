@@ -53,71 +53,11 @@ async function setCachedOutput(agentId: string, input: string, output: AgentOutp
   await kvSet(cacheKey, JSON.stringify(cacheData));
 }
 
-// Agent Types
-export type AgentRole = 
-  | 'planner'
-  | 'identity'
-  | 'rules'
-  | 'structure'
-  | 'generator'
-  | 'distribution'
-  | 'memory'
-  | 'trend'
-  | 'writer'
-  | 'hook'
-  | 'strategist'
-  | 'optimizer'
-  | 'critic'
-  | 'visual'
-  | 'hashtag'
-  | 'engagement'
-  | 'hybrid'
-  | 'mediaDirector'
-  | 'videoEditor';
+// Agent Types - centralized in BaseAgent.ts, re-exported here for compatibility
+export type { AgentRole, AgentCapability, AgentConfig, AgentOutput, AgentState } from '../agents/BaseAgent';
+import type { AgentRole, AgentCapability, AgentConfig, AgentOutput, AgentState } from '../agents/BaseAgent';
 
-
-export type AgentCapability =
-  | 'execution_planning'
-  | 'identity_modeling'
-  | 'rule_generation'
-  | 'structure_design'
-  | 'distribution_formatting'
-  | 'memory_management'
-  | 'trend_optimization'
-  | 'critical_validation'
-  | 'text_generation'
-  | 'hook_creation'
-  | 'strategy_planning'
-  | 'content_optimization'
-  | 'quality_critique'
-  | 'visual_description'
-  | 'hashtag_research'
-  | 'engagement_prediction'
-  | 'multi_task'
-  | 'tool_use';
-
-export interface AgentConfig {
-  id: string;
-  name: string;
-  role: AgentRole;
-  capabilities: AgentCapability[];
-  promptTemplate: string;
-  scoringWeights: {
-    creativity: number;
-    relevance: number;
-    engagement: number;
-    brandAlignment: number;
-  };
-  performanceScore: number;
-  taskHistory: AgentTaskRecord[];
-  evolutionState: 'active' | 'promoted' | 'demoted' | 'deprecated' | 'hybrid';
-  version: number;
-  parentAgents?: string[]; // For hybrid agents
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface AgentTaskRecord {
+interface AgentTaskRecord {
   taskId: string;
   taskType: string;
   input: string;
@@ -125,18 +65,6 @@ export interface AgentTaskRecord {
   score: number;
   timestamp: string;
   duration: number;
-}
-
-export interface AgentOutput {
-  agentId: string;
-  agentRole: AgentRole;
-  content: string;
-  score: number;
-  reasoning: string;
-  fullPrompt: string;
-  metadata: Record<string, unknown>;
-  success?: boolean;
-  error?: string;
 }
 
 export interface SubTask {
@@ -651,7 +579,7 @@ const VALID_EVOLUTION_STATES: ReadonlySet<AgentConfig['evolutionState']> = new S
 ]);
 
 function syncDefaultAgentTemplate(agent: AgentConfig, template: typeof DEFAULT_AGENTS[number]): AgentConfig {
-  if (agent.version >= template.version) {
+  if ((agent.version || 0) >= (template.version || 0)) {
     return agent;
   }
 
@@ -861,7 +789,7 @@ export async function getAgentByRole(role: AgentRole): Promise<any | null> {
   const agents = await loadAgents();
   const roleAgents = agents
     .filter(a => a.role === role && a.evolutionState !== 'deprecated')
-    .sort((a, b) => b.performanceScore - a.performanceScore);
+    .sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0));
   
   const config = roleAgents[0];
   if (!config) return null;
@@ -919,7 +847,7 @@ export async function recordAgentTask(
   };
 
   // Keep last 100 tasks
-  agent.taskHistory = [record, ...agent.taskHistory].slice(0, 100);
+  agent.taskHistory = [record, ...(agent.taskHistory || [])].slice(0, 100);
 
   // Update performance score based on recent tasks
   const recentTasks = agent.taskHistory.slice(0, 20);
@@ -1180,10 +1108,11 @@ export async function executeAgentTask(
       
       const duration = Date.now() - startTime;
       const output = {
-        agentId: agent.id,
+        agentId: agent.id || '',
         agentRole: agent.role,
         content: generation.finalVersion,
         score: 95,
+        success: true,
         reasoning: `Cognitive Chain: Deconstruction -> Draft -> Critique -> Refine. Core Truth: ${generation.deconstruction.coreTruth}`,
         fullPrompt: `Cognitive Generation for ${input}`,
         metadata: { duration, mode: 'cognitive-chain' },
@@ -1192,7 +1121,7 @@ export async function executeAgentTask(
       if (traceId) {
         await swarmTraceService.recordStep(traceId, {
           stepId: generateId(),
-          agentId: agent.id,
+          agentId: agent.id || '',
           agentRole: agent.role,
           input,
           output: output.content,
@@ -1208,7 +1137,7 @@ export async function executeAgentTask(
       if (traceId) {
         await swarmTraceService.recordStep(traceId, {
           stepId: generateId(),
-          agentId: agent.id,
+          agentId: agent.id || '',
           agentRole: agent.role,
           input,
           output: '',
@@ -1260,10 +1189,10 @@ export async function executeAgentTask(
     }
 
     const duration = Date.now() - startTime;
-    const score = await calculateOutputScore(content, agent.scoringWeights, agent.id);
+    const score = await calculateOutputScore(content, agent.scoringWeights, agent.id || '');
     const finalScore = score;
 
-    await recordAgentTask(agent.id, {
+    await recordAgentTask(agent.id || '', {
       taskType: agent.role,
       input,
       output: content,
@@ -1272,19 +1201,20 @@ export async function executeAgentTask(
     });
 
     const output = {
-      agentId: agent.id,
+      agentId: agent.id || '',
       agentRole: agent.role,
       content,
       score: finalScore,
-      reasoning: `Generated by ${agent.name} (v${agent.version}) with ${iterations > 1 ? 'ReAct loop (' + iterations + ' iterations)' : 'deep reasoning'} in ${duration}ms`,
+      reasoning: `Generated by ${agent.name} (v${agent.version || 1}) with ${iterations > 1 ? 'ReAct loop (' + iterations + ' iterations)' : 'deep reasoning'} in ${duration}ms`,
       fullPrompt: reasoningPrompt,
       metadata: { duration, promptLength: reasoningPrompt.length, outputLength: content.length, iterations, reasoningMode: iterations > 1 ? 'react' : 'deep' },
+      success: true,
     };
 
     if (traceId) {
       await swarmTraceService.recordStep(traceId, {
         stepId: generateId(),
-        agentId: agent.id,
+        agentId: agent.id || '',
         agentRole: agent.role,
         input,
         output: content,
@@ -1300,7 +1230,7 @@ export async function executeAgentTask(
     if (traceId) {
       await swarmTraceService.recordStep(traceId, {
         stepId: generateId(),
-        agentId: agent.id,
+        agentId: agent.id || '',
         agentRole: agent.role,
         input,
         output: '',
@@ -1312,10 +1242,11 @@ export async function executeAgentTask(
       });
     }
     return {
-      agentId: agent.id,
+      agentId: agent.id || '',
       agentRole: agent.role,
       content: '',
       score: 0,
+      success: false,
       reasoning: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
       fullPrompt: reasoningPrompt,
       metadata: { error: true },
@@ -1356,10 +1287,10 @@ export function selectBestOutput(outputs: AgentOutput[]): AgentOutput | null {
   if (outputs.length === 1) return outputs[0];
 
   // Sort by score descending
-  const sorted = [...outputs].sort((a, b) => b.score - a.score);
+  const sorted = [...outputs].sort((a, b) => (b.score || 0) - (a.score || 0));
 
   // If top 2 are close (within 5 points), consider other factors
-  if (sorted.length >= 2 && sorted[0].score - sorted[1].score <= 5) {
+  if (sorted.length >= 2 && (sorted[0].score || 0) - (sorted[1].score || 0) <= 5) {
     // Prefer longer, more detailed content
     const byLength = sorted.slice(0, 2).sort((a, b) => b.content.length - a.content.length);
     return byLength[0];
@@ -1383,15 +1314,15 @@ export async function getAgentStats(): Promise<{
 }> {
   const agents = await loadAgents();
   const activeAgents = agents.filter(a => a.evolutionState !== 'deprecated');
-  const totalTasks = agents.reduce((sum, a) => sum + a.taskHistory.length, 0);
+  const totalTasks = agents.reduce((sum, a) => sum + (a.taskHistory || []).length, 0);
 
   return {
     totalAgents: agents.length,
     activeAgents: activeAgents.length,
     avgPerformance: Math.round(
-      activeAgents.reduce((sum, a) => sum + a.performanceScore, 0) / (activeAgents.length || 1)
+      activeAgents.reduce((sum, a) => sum + (a.performanceScore || 0), 0) / (activeAgents.length || 1)
     ),
-    topPerformer: activeAgents.sort((a, b) => b.performanceScore - a.performanceScore)[0] || null,
+    topPerformer: activeAgents.sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0))[0] || null,
     recentTasks: totalTasks,
   };
 }
@@ -1402,7 +1333,7 @@ export async function createHybridAgent(
   name: string
 ): Promise<AgentConfig | null> {
   const agents = await loadAgents();
-  const parents = agents.filter(a => parentIds.includes(a.id));
+  const parents = agents.filter(a => parentIds.includes(a.id || ''));
 
   if (parents.length < 2) return null;
 
@@ -1438,7 +1369,7 @@ Generate optimized content using your combined expertise.`;
     capabilities,
     promptTemplate: combinedPrompt,
     scoringWeights: avgWeights,
-    performanceScore: Math.round(parents.reduce((sum, p) => sum + p.performanceScore, 0) / parents.length),
+    performanceScore: Math.round(parents.reduce((sum, p) => sum + (p.performanceScore || 0), 0) / parents.length),
     taskHistory: [],
     evolutionState: 'hybrid',
     version: 1,

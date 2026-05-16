@@ -29,16 +29,13 @@ export interface PodcastVoice {
   id: string;
   name: string;
   role: 'host' | 'cohost' | 'guest' | 'narrator';
-  voiceId: string; // TTS voice ID
-  segments: string[]; // Text segments this voice speaks
+  voiceId: string;
+  segments: string[];
 }
 
 const PODCASTS_KEY = 'nexus_podcasts';
 const EPISODES_KEY = 'nexus_podcast_episodes';
 
-/**
- * Create a new podcast configuration
- */
 export async function createPodcast(config: Omit<PodcastConfig, 'id'>): Promise<PodcastConfig & { id: string }> {
   const podcasts = await loadPodcasts();
   
@@ -53,24 +50,15 @@ export async function createPodcast(config: Omit<PodcastConfig, 'id'>): Promise<
   return newPodcast;
 }
 
-/**
- * Load all podcasts
- */
 export async function loadPodcasts(): Promise<Array<PodcastConfig & { id: string }>> {
   const data = await kvGet(PODCASTS_KEY);
   return data ? JSON.parse(data) : [];
 }
 
-/**
- * Save podcasts
- */
 async function savePodcasts(podcasts: Array<PodcastConfig & { id: string }>): Promise<void> {
   await kvSet(PODCASTS_KEY, JSON.stringify(podcasts));
 }
 
-/**
- * Create a podcast episode from text content
- */
 export async function createPodcastEpisode(
   podcastId: string,
   episode: Omit<PodcastEpisode, 'id' | 'publishedAt' | 'status'>
@@ -90,9 +78,6 @@ export async function createPodcastEpisode(
   return newEpisode;
 }
 
-/**
- * Convert article/blog post to podcast script
- */
 export function convertToPodcastScript(
   content: string,
   options: {
@@ -135,9 +120,6 @@ export function convertToPodcastScript(
   ];
 }
 
-/**
- * Generate podcast audio using TTS
- */
 export async function generatePodcastAudio(
   episode: PodcastEpisode,
   ttsProvider: (text: string, voiceId: string) => Promise<string>
@@ -152,33 +134,116 @@ export async function generatePodcastAudio(
       }
     }
     
-    // In production, concatenate audio segments using FFmpeg or similar
-    // For now, return the first segment URL
-    return audioSegments[0] || null;
+    if (audioSegments.length === 0) {
+      return null;
+    }
+    
+    const wavUrl = await concatenateAudioSegments(audioSegments);
+    return wavUrl;
   } catch (error) {
     console.error('Podcast audio generation failed:', error);
     return null;
   }
 }
 
-/**
- * Load all episodes
- */
+export async function concatenateAudioSegments(audioUrls: string[]): Promise<string | null> {
+  const audioContext = new AudioContext();
+  const buffers: AudioBuffer[] = [];
+  
+  for (const url of audioUrls) {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    buffers.push(audioBuffer);
+  }
+  
+  const totalLength = buffers.reduce((sum, buf) => sum + buf.length, 0);
+  const sampleRate = buffers[0].sampleRate;
+  const numberOfChannels = buffers[0].numberOfChannels;
+  
+  const concatenated = audioContext.createBuffer(numberOfChannels, totalLength, sampleRate);
+  
+  let offset = 0;
+  for (const buffer of buffers) {
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const sourceData = buffer.getChannelData(channel);
+      const destData = concatenated.getChannelData(channel);
+      destData.set(sourceData, offset);
+    }
+    offset += buffer.length;
+  }
+  
+  const wavBlob = audioBuffersToWav(concatenated);
+  const wavUrl = URL.createObjectURL(wavBlob);
+  
+  await audioContext.close();
+  
+  return wavUrl;
+}
+
+export function audioBuffersToWav(buffer: AudioBuffer): Blob {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const bitsPerSample = 16;
+  const bytesPerSample = bitsPerSample / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const length = buffer.length;
+  const dataSize = length * blockAlign;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+  
+  const arrayBuffer = new ArrayBuffer(totalSize);
+  const view = new DataView(arrayBuffer);
+  
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, totalSize - 8, true);
+  writeString(view, 8, 'WAVE');
+  
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+  
+  const channels: Float32Array[] = [];
+  for (let ch = 0; ch < numChannels; ch++) {
+    channels.push(buffer.getChannelData(ch));
+  }
+  
+  let offset = 44;
+  for (let i = 0; i < length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset, intSample, true);
+      offset += 2;
+    }
+  }
+  
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
 export async function loadEpisodes(): Promise<PodcastEpisode[]> {
   const data = await kvGet(EPISODES_KEY);
   return data ? JSON.parse(data) : [];
 }
 
-/**
- * Save episodes
- */
 async function saveEpisodes(episodes: PodcastEpisode[]): Promise<void> {
   await kvSet(EPISODES_KEY, JSON.stringify(episodes));
 }
 
-/**
- * Get episodes for a podcast
- */
 export async function getPodcastEpisodes(podcastId: string): Promise<PodcastEpisode[]> {
   const episodes = await loadEpisodes();
   return episodes
@@ -186,9 +251,6 @@ export async function getPodcastEpisodes(podcastId: string): Promise<PodcastEpis
     .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
 }
 
-/**
- * Generate podcast RSS feed (for Apple Podcasts, Spotify, etc.)
- */
 export async function generatePodcastRSS(
   podcast: PodcastConfig & { id: string },
   episodes: PodcastEpisode[]

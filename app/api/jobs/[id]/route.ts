@@ -40,7 +40,7 @@ export async function POST(
     const { id } = await params;
 
     const { data: job, error: jobError } = await supabase
-      .from('job_queue')
+      .from('system_jobs')
       .select('user_id')
       .eq('id', id)
       .single();

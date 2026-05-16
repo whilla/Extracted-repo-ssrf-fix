@@ -1,23 +1,51 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { updateSession } from '@/utils/supabase/middleware';
 
+const PUBLIC_ROUTES = ['/', '/onboarding', '/login', '/signup'];
+const PUBLIC_PREFIXES = ['/auth', '/api'];
+
+function isPublicRoute(pathname: string): boolean {
+  if (PUBLIC_ROUTES.includes(pathname)) return true;
+  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
 export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-  // Skip middleware if Supabase is not configured - allow public access
-  if (!supabaseUrl || !supabaseKey) {
+  // Allow public access to landing and auth routes even when Supabase is unconfigured
+  if (isPublicRoute(request.nextUrl.pathname)) {
     return NextResponse.next();
   }
 
+  // Skip middleware if Supabase is not configured - redirect to landing for protected routes
+  if (!supabaseUrl || !supabaseKey) {
+    const landingUrl = new URL('/?auth=unconfigured', request.url);
+    return NextResponse.redirect(landingUrl);
+  }
+
   try {
-    const { supabase, supabaseResponse } = await updateSession(request);
-    
-    if (!supabase) {
+    // Check session with a timeout to prevent hanging on slow/unreachable Supabase
+    const sessionPromise = (async () => {
+      const { supabase, supabaseResponse } = await updateSession(request);
+      if (!supabase) return { session: null, supabaseResponse };
+      const { data: { session } } = await supabase.auth.getSession();
+      return { session, supabaseResponse };
+    })();
+
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), 3000);
+    });
+
+    const result = await Promise.race([sessionPromise, timeoutPromise]);
+
+    // If session check timed out, allow request through (don't block on slow Supabase)
+    if (result === null) {
+      console.warn('[Middleware] Supabase session check timed out, allowing request');
       return NextResponse.next();
     }
-    
-    const { data: { session } } = await supabase.auth.getSession();
+
+    const { session, supabaseResponse } = result;
 
     // Allow public access to landing page and auth routes
     if (request.nextUrl.pathname === '/' || 
@@ -42,8 +70,11 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   } catch (error) {
     console.error('Middleware error:', error);
-    // Fail open: allow access when Supabase is unreachable to prevent app lockout
-    return NextResponse.next();
+    if (isPublicRoute(request.nextUrl.pathname)) {
+      return NextResponse.next();
+    }
+    const landingUrl = new URL('/?auth=unavailable', request.url);
+    return NextResponse.redirect(landingUrl);
   }
 }
 

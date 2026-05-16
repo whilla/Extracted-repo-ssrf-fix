@@ -116,7 +116,7 @@ Predict content performance before publishing.
 }
 ```
 
-### POST /api/audience/analyze
+### POST /api/audience
 Analyze audience behavior across platforms.
 
 **Request Body:**

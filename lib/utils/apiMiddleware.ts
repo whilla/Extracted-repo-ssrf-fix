@@ -44,6 +44,10 @@ export async function authenticateRequest(request: NextRequest): Promise<AuthRes
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    if (process.env.NODE_ENV === 'production') {
+      const authError = createAuthError('Authentication is not configured');
+      return { error: NextResponse.json(formatErrorResponse(authError), { status: 503 }) };
+    }
     return {};
   }
 

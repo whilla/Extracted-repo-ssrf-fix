@@ -9,21 +9,29 @@ const SECRET_KEY_NAME_PATTERN = /(?:^|_)(?:api_?)?key$/i;
 const ENCRYPTION_PREFIX = 'SEC_V2_';
 
 async function getMasterKey(): Promise<CryptoKey> {
-  const seed = await kvGet('app_master_secret');
+  const seed =
+    process.env.MASTER_SECRET ||
+    process.env.NEXUS_CRYPTO_SECRET ||
+    await kvGet('app_master_secret');
   if (!seed || typeof seed !== 'string' || seed.length < 32) {
     throw new Error('[Security] Master secret not configured. Set app_master_secret in KV store or MASTER_SECRET environment variable.');
   }
   
-  let salt = await kvGet('app_master_salt');
+  const cryptoImpl = globalThis.crypto;
+  if (!cryptoImpl?.subtle) {
+    throw new Error('[Security] Web Crypto API is not available in this runtime.');
+  }
+
+  let salt = process.env.NEXUS_CRYPTO_SALT || await kvGet('app_master_salt');
   if (!salt || typeof salt !== 'string') {
     const randomSalt = new Uint8Array(16);
-    window.crypto.getRandomValues(randomSalt);
-    salt = btoa(String.fromCharCode(...randomSalt));
+    cryptoImpl.getRandomValues(randomSalt);
+    salt = encodeBase64(randomSalt);
     await kvSet('app_master_salt', salt);
   }
   
   const encoder = new TextEncoder();
-  const keyMaterial = await window.crypto.subtle.importKey(
+  const keyMaterial = await cryptoImpl.subtle.importKey(
     'raw',
     encoder.encode(seed),
     'PBKDF2',
@@ -31,7 +39,7 @@ async function getMasterKey(): Promise<CryptoKey> {
     ['deriveKey']
   );
   
-  return window.crypto.subtle.deriveKey(
+  return cryptoImpl.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: encoder.encode(salt),
@@ -43,6 +51,20 @@ async function getMasterKey(): Promise<CryptoKey> {
     false,
     ['encrypt', 'decrypt']
   );
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64');
+  }
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function decodeBase64(value: string): Uint8Array {
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(value, 'base64'));
+  }
+  return Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
 }
 
 export function sanitizeApiKey(value: string | null | undefined): string {
@@ -89,10 +111,14 @@ export function isEncryptedValue(value: string): boolean {
 
 export async function storeSecureCredential(key: string, value: string): Promise<void> {
   const encoder = new TextEncoder();
+  const cryptoImpl = globalThis.crypto;
+  if (!cryptoImpl?.subtle) {
+    throw new Error('[Security] Web Crypto API is not available in this runtime.');
+  }
   const masterKey = await getMasterKey();
   
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await window.crypto.subtle.encrypt(
+  const iv = cryptoImpl.getRandomValues(new Uint8Array(12));
+  const encrypted = await cryptoImpl.subtle.encrypt(
     { name: 'AES-GCM', iv },
     masterKey,
     encoder.encode(value)
@@ -102,7 +128,7 @@ export async function storeSecureCredential(key: string, value: string): Promise
   combined.set(iv);
   combined.set(new Uint8Array(encrypted), iv.length);
   
-  await kvSet(`cred_${key}`, ENCRYPTION_PREFIX + btoa(String.fromCharCode(...combined)));
+  await kvSet(`cred_${key}`, ENCRYPTION_PREFIX + encodeBase64(combined));
 }
 
 export async function getSecureCredential(key: string): Promise<string> {
@@ -115,18 +141,19 @@ export async function getSecureCredential(key: string): Promise<string> {
     return stored;
   }
   
-  const encryptedData = atob(stored.slice(ENCRYPTION_PREFIX.length));
-  const combined = new Uint8Array(encryptedData.length);
-  for (let i = 0; i < encryptedData.length; i++) {
-    combined[i] = encryptedData.charCodeAt(i);
+  const cryptoImpl = globalThis.crypto;
+  if (!cryptoImpl?.subtle) {
+    throw new Error('[Security] Web Crypto API is not available in this runtime.');
   }
+
+  const combined = decodeBase64(stored.slice(ENCRYPTION_PREFIX.length));
   
   const masterKey = await getMasterKey();
   const iv = combined.slice(0, 12);
   const encrypted = combined.slice(12);
   
   try {
-    const decrypted = await window.crypto.subtle.decrypt(
+    const decrypted = await cryptoImpl.subtle.decrypt(
       { name: 'AES-GCM', iv },
       masterKey,
       encrypted

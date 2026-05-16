@@ -14,6 +14,7 @@ import {
   type AgentRole,
   type AgentCapability,
 } from './multiAgentService';
+import { type ScoringWeights } from '../agents/BaseAgent';
 import { PromptManager } from './promptManager';
 import { stateStore } from './supabaseStore';
 
@@ -27,8 +28,8 @@ export interface EvolutionProposal {
   id: string;
   agentId: string;
   proposalType: 'prompt_update' | 'weight_adjustment' | 'capability_add' | 'strategy_change';
-  currentValue: string | number | Record<string, unknown>;
-  proposedValue: string | number | Record<string, unknown>;
+  currentValue: string | number | ScoringWeights | Record<string, unknown>;
+  proposedValue: string | number | ScoringWeights | Record<string, unknown>;
   reasoning: string;
   expectedImprovement: number;
   status: 'pending' | 'testing' | 'approved' | 'rejected' | 'applied';
@@ -106,8 +107,8 @@ export async function analyzeAgentPerformance(
     month: 30 * 24 * 60 * 60 * 1000,
   };
   
-  const relevantTasks = agent.taskHistory.filter(
-    t => now - new Date(t.timestamp).getTime() < periodMs[period]
+  const relevantTasks = (agent.taskHistory || []).filter(
+    (t: { timestamp: string }) => now - new Date(t.timestamp).getTime() < periodMs[period]
   );
   
   if (relevantTasks.length === 0) {
@@ -115,7 +116,7 @@ export async function analyzeAgentPerformance(
       agentId,
       period,
       totalTasks: 0,
-      avgScore: agent.performanceScore,
+      avgScore: agent.performanceScore || 0,
       scoresTrend: 'stable',
       weaknesses: [],
       strengths: [],
@@ -125,15 +126,15 @@ export async function analyzeAgentPerformance(
   
   // Calculate average score
   const avgScore = Math.round(
-    relevantTasks.reduce((sum, t) => sum + t.score, 0) / relevantTasks.length
+    relevantTasks.reduce((sum: number, t: { score: number }) => sum + t.score, 0) / relevantTasks.length
   );
   
   // Determine trend
   const halfPoint = Math.floor(relevantTasks.length / 2);
   const firstHalfAvg = relevantTasks.slice(0, halfPoint)
-    .reduce((sum, t) => sum + t.score, 0) / (halfPoint || 1);
+    .reduce((sum: number, t: { score: number }) => sum + t.score, 0) / (halfPoint || 1);
   const secondHalfAvg = relevantTasks.slice(halfPoint)
-    .reduce((sum, t) => sum + t.score, 0) / (relevantTasks.length - halfPoint || 1);
+    .reduce((sum: number, t: { score: number }) => sum + t.score, 0) / (relevantTasks.length - halfPoint || 1);
   
   let scoresTrend: 'improving' | 'stable' | 'declining';
   if (secondHalfAvg - firstHalfAvg > 5) {
@@ -160,19 +161,19 @@ export async function analyzeAgentPerformance(
   }
   
   // Task-specific analysis
-  const lowScoreTasks = relevantTasks.filter(t => t.score < 60);
+  const lowScoreTasks = relevantTasks.filter((t: { score: number }) => t.score < 60);
   if (lowScoreTasks.length > relevantTasks.length * 0.3) {
     weaknesses.push('High proportion of low-scoring outputs');
     recommendations.push('Review prompt template for clarity');
   }
   
-  const highScoreTasks = relevantTasks.filter(t => t.score > 85);
+  const highScoreTasks = relevantTasks.filter((t: { score: number }) => t.score > 85);
   if (highScoreTasks.length > relevantTasks.length * 0.5) {
     strengths.push('Consistently high-quality outputs');
   }
   
   // Duration analysis
-  const avgDuration = relevantTasks.reduce((sum, t) => sum + t.duration, 0) / relevantTasks.length;
+  const avgDuration = relevantTasks.reduce((sum: number, t: { duration: number }) => sum + t.duration, 0) / relevantTasks.length;
   if (avgDuration > 10000) {
     weaknesses.push('Slow response times');
     recommendations.push('Consider simplifying prompt template');
@@ -211,8 +212,8 @@ export async function proposeEvolution(agentId: string): Promise<EvolutionPropos
   
   // Generate proposal based on weaknesses
   let proposalType: EvolutionProposal['proposalType'] = 'prompt_update';
-  let currentValue: string | number | Record<string, unknown> = agent.promptTemplate;
-  let proposedValue: string | number | Record<string, unknown> = agent.promptTemplate;
+  let currentValue: string | number | ScoringWeights | Record<string, unknown> = agent.promptTemplate;
+  let proposedValue: string | number | ScoringWeights | Record<string, unknown> = agent.promptTemplate;
   let reasoning = '';
   let expectedImprovement = 5;
   
@@ -389,18 +390,18 @@ export async function applyEvolution(proposalId: string): Promise<boolean> {
   
   // Save current version before updating
   await saveAgentVersion({
-    version: agent.version,
-    agentId: agent.id,
+    version: agent.version || 1,
+    agentId: agent.id || '',
     promptTemplate: agent.promptTemplate,
     scoringWeights: agent.scoringWeights,
-    performanceScore: agent.performanceScore,
+    performanceScore: agent.performanceScore || 0,
     appliedAt: new Date().toISOString(),
     changedBy: 'evolution',
   });
   
   // Apply the change
-  const updates: Partial<AgentConfig> = {
-    version: agent.version + 1,
+  const updates: Record<string, unknown> = {
+    version: (agent.version || 1) + 1,
   };
   
   switch (proposal.proposalType) {
@@ -408,7 +409,7 @@ export async function applyEvolution(proposalId: string): Promise<boolean> {
       updates.promptTemplate = proposal.proposedValue as string;
       break;
     case 'weight_adjustment':
-      updates.scoringWeights = proposal.proposedValue as AgentConfig['scoringWeights'];
+      updates.scoringWeights = proposal.proposedValue as unknown as AgentConfig['scoringWeights'];
       break;
     case 'capability_add':
       const newCapabilities = proposal.proposedValue as { capabilities: string[] };
@@ -418,7 +419,7 @@ export async function applyEvolution(proposalId: string): Promise<boolean> {
       break;
   }
   
-  await updateAgent(agent.id, updates);
+  await updateAgent(agent.id || '', updates);
   
   proposal.status = 'applied';
   await saveEvolutionProposals(proposals);
@@ -480,7 +481,7 @@ export async function runEvolutionCycle(): Promise<{
     analyzed++;
     
     // Analyze and propose evolution
-    const proposal = await proposeEvolution(agent.id);
+    const proposal = await proposeEvolution(agent.id || '');
     if (proposal) {
       proposed++;
     }
@@ -507,12 +508,12 @@ export async function runEvolutionCycle(): Promise<{
     }
     
     // Promote/demote based on performance
-    const analysis = await analyzeAgentPerformance(agent.id, 'week');
+    const analysis = await analyzeAgentPerformance(agent.id || '', 'week');
     
     if (analysis.avgScore >= 90 && agent.evolutionState === 'active') {
-      await promoteAgent(agent.id);
+      await promoteAgent(agent.id || '');
     } else if (analysis.avgScore < 50 && analysis.totalTasks >= 10) {
-      await demoteAgent(agent.id);
+      await demoteAgent(agent.id || '');
     }
   }
   
@@ -520,14 +521,14 @@ export async function runEvolutionCycle(): Promise<{
   const promotedAgents = agents.filter(a => a.evolutionState === 'promoted');
   if (promotedAgents.length >= 2) {
     const topTwo = promotedAgents
-      .sort((a, b) => b.performanceScore - a.performanceScore)
+      .sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0))
       .slice(0, 2);
     
     // Only create hybrid if we don't have too many
     const existingHybrids = agents.filter(a => a.evolutionState === 'hybrid');
     if (existingHybrids.length < 5) {
       const hybrid = await createHybridAgent(
-        topTwo.map(a => a.id),
+        topTwo.map(a => a.id).filter((id): id is string => id !== undefined),
         `Hybrid_${topTwo[0].role}_${topTwo[1].role}`
       );
       if (hybrid) hybridsCreated++;

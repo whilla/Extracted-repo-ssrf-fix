@@ -18,6 +18,7 @@ const LOCAL_AUTH_KEY = 'nexus:auth:user';
 const LOCAL_AUTH_SESSION_KEY = 'nexus:auth:session';
 const MAX_LOCAL_BINARY_MIRROR_BYTES = 750000;
 const MAX_LOCAL_BINARY_MIRROR_CHARS = 1200000;
+const serverKvStore = new Map<string, string>();
 const SENSITIVE_KV_KEY_PATTERN = /(?:^|[-_])(key|api[-_]?key|access[-_]?token|refresh[-_]?token|token|secret|password|credential)(?:$|[-_])/i;
 const SAFE_LOCAL_KV_KEYS = new Set([
   'ai_model',
@@ -422,6 +423,18 @@ export function isPuterAvailable(): boolean {
   return typeof window !== 'undefined' && !!window.puter;
 }
 
+const PUTER_DIAGNOSTIC_TIMEOUT = 3000;
+
+function withDiagnosticTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), PUTER_DIAGNOSTIC_TIMEOUT);
+    promise
+      .then((result) => resolve(result))
+      .catch(() => resolve(fallback))
+      .finally(() => clearTimeout(timer));
+  });
+}
+
 export async function getPuterAuthDiagnostics(): Promise<PuterAuthDiagnostics> {
   if (typeof window === 'undefined') {
     return {
@@ -444,9 +457,9 @@ export async function getPuterAuthDiagnostics(): Promise<PuterAuthDiagnostics> {
 
   if (sdkReady) {
     try {
-      signedIn = await window.puter.auth.isSignedIn();
+      signedIn = await withDiagnosticTimeout(window.puter.auth.isSignedIn(), false);
       if (signedIn) {
-        userPresent = !!(await window.puter.auth.getUser());
+        userPresent = !!(await withDiagnosticTimeout(window.puter.auth.getUser(), null));
       }
     } catch {
       signedIn = false;
@@ -647,6 +660,9 @@ export async function kvSet(key: string, value: unknown): Promise<boolean> {
     if (isPuterAvailable() && hasCachedAuthSession()) {
       await window.puter.kv.set(key, stringValue);
     }
+    if (typeof window === 'undefined') {
+      serverKvStore.set(key, stringValue);
+    }
     return true;
   } catch (error) {
     console.error('Puter kv.set error:', error);
@@ -672,6 +688,10 @@ export async function kvGet<T = string>(key: string, parse = false): Promise<T |
 
     if (value === null && hasLocalStorage() && canMirrorKvToLocalStorage(key)) {
       value = window.localStorage.getItem(localKvKey(key));
+    }
+
+    if (value === null && typeof window === 'undefined') {
+      value = serverKvStore.get(key) ?? null;
     }
 
     if (value === null) return null;
@@ -709,6 +729,9 @@ export async function kvDelete(key: string): Promise<boolean> {
       window.localStorage.removeItem(localKvKey(key));
       window.localStorage.removeItem(localSecretKey(key));
     }
+    if (typeof window === 'undefined') {
+      serverKvStore.delete(key);
+    }
     if (isPuterAvailable() && hasCachedAuthSession()) {
       await window.puter.kv.del(key);
     }
@@ -725,6 +748,10 @@ export async function kvList(): Promise<string[]> {
 
     if (isPuterAvailable() && hasCachedAuthSession()) {
       (await window.puter.kv.list()).forEach(key => keys.add(key));
+    }
+
+    if (typeof window === 'undefined') {
+      serverKvStore.forEach((_value, key) => keys.add(key));
     }
 
     if (hasLocalStorage()) {
